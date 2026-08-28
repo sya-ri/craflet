@@ -115,6 +115,13 @@ export async function restrictBackupTestAclToModify(
         `
 $ErrorActionPreference = 'Stop'
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+# Elevated runners can create fixture directories owned by Administrators.
+# Establish the intended owner before removing WRITE_OWNER from the DACL.
+$existing = [System.IO.Directory]::GetAccessControl($env:CRAFLET_TEST_ACL_PATH)
+if ($existing.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) {
+    $existing.SetOwner($sid)
+    [System.IO.Directory]::SetAccessControl($env:CRAFLET_TEST_ACL_PATH, $existing)
+}
 $acl = [System.Security.AccessControl.DirectorySecurity]::new()
 $acl.SetAccessRuleProtection($true, $false)
 $inherit = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
