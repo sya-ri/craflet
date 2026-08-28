@@ -1,0 +1,37 @@
+{
+    "schemaVersion": 1,
+    "resolvedAt": "2026-08-29",
+    "java": {
+        "major": 25,
+        "version": "25.0.3",
+        "toolchain": "temurin-25.0.3+9.0.LTS"
+    },
+    "servers": {
+        "paper": {
+            "source": {
+                "provider": "paper",
+                "project": "paper",
+                "version": "26.2",
+                "build": "120"
+            },
+            "version": "26.2",
+            "sha256": "2d1a4c3e5152171c3ef327a8ae10baeae44d6c13b4620bc2578cc15ea6c6ab47",
+            "size": 64521103,
+            "url": "https://fill-data.papermc.io/v1/objects/2d1a4c3e5152171c3ef327a8ae10baeae44d6c13b4620bc2578cc15ea6c6ab47/paper-26.2-120.jar",
+            "upstreamId": "paper:26.2:120"
+        },
+        "velocity": {
+            "source": {
+                "provider": "paper",
+                "project": "velocity",
+                "version": "4.1.1",
+                "build": "24"
+            },
+            "version": "4.1.1",
+            "sha256": "846411d2d0560fed0f23496ffb89681be528d2c0650ecdcf21724d2d7bd9c1ee",
+            "size": 42022458,
+            "url": "https://fill-data.papermc.io/v1/objects/846411d2d0560fed0f23496ffb89681be528d2c0650ecdcf21724d2d7bd9c1ee/velocity-4.1.1-24.jar",
+            "upstreamId": "velocity:4.1.1:24"
+        }
+    }
+}

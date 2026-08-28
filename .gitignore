@@ -1,0 +1,14 @@
+node_modules/
+.pnpm-store/
+.tools/
+.turbo/
+coverage/
+packages/cli/dist/
+artifacts/
+.test-tmp/
+*.tgz
+*.log
+.env
+.env.*
+!.env.example
+work/

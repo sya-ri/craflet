@@ -1,0 +1,130 @@
+name: Craflet verification
+
+on:
+    pull_request:
+    push:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: verification-${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    servers:
+        name: Real servers (${{ matrix.os }})
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, windows-latest, macos-latest]
+        runs-on: ${{ matrix.os }}
+        timeout-minutes: 45
+        env:
+            CI: "true"
+            # Set this repository variable to "true" only after explicitly
+            # accepting https://www.minecraft.net/eula for test servers.
+            # An unset value fails Paper E2E; it is never silently skipped.
+            CRAFLET_E2E_EULA: ${{ vars.CRAFLET_E2E_EULA }}
+            CRAFLET_TEST_RESTIC: "1"
+            CRAFLET_E2E_PACKAGE: artifacts/craflet-0.1.0.tgz
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version-file: .node-version
+                  package-manager-cache: false
+            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+              with:
+                  version: 11.24.0
+                  cache: true
+            - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+              with:
+                  distribution: temurin
+                  java-version: "25.0.3+9"
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm verify
+            - name: Build locked real server and plugin fixtures
+              run: node tests/fixtures/build.mjs --with-servers --verify-reproducible
+            - name: Real Paper and Velocity E2E using the verified tarball
+              run: pnpm test:e2e
+            - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              if: failure()
+              with:
+                  name: diagnostics-${{ matrix.os }}
+                  path: |
+                      coverage/
+                      .test-tmp/**/diagnostics/
+                  if-no-files-found: warn
+                  include-hidden-files: true
+                  retention-days: 7
+
+    databases:
+        name: Real database (${{ matrix.kind }})
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - kind: mysql
+                      image: mysql:26.7.0@sha256:66aec17cd21a956029b83f083b813073859e8355dc1a00e55df6ba02f0e32345
+                      health: mysqladmin ping -h 127.0.0.1 --user=root --password=craflet-disposable-ci-password --silent
+                    - kind: mariadb
+                      image: mariadb:12.3.3@sha256:dd9b303aed4f4890ed09f766d8ca9ddfd176c0c6f6267feff53b3192ec65a979
+                      health: mariadb-admin ping -h 127.0.0.1 --user=root --password=craflet-disposable-ci-password --silent
+        services:
+            database:
+                image: ${{ matrix.image }}
+                env:
+                    MYSQL_ROOT_PASSWORD: craflet-disposable-ci-password
+                    MYSQL_DATABASE: craflet_test_service
+                    MARIADB_ROOT_PASSWORD: craflet-disposable-ci-password
+                    MARIADB_DATABASE: craflet_test_service
+                options: >-
+                    --health-cmd="${{ matrix.health }}"
+                    --health-interval=5s
+                    --health-timeout=5s
+                    --health-retries=30
+        env:
+            CI: "true"
+            CRAFLET_TEST_DATABASE_KIND: ${{ matrix.kind }}
+            CRAFLET_TEST_DATABASE_NAME: craflet_test_service
+            CRAFLET_TEST_DATABASE_USER: root
+            CRAFLET_TEST_DATABASE_PASSWORD: craflet-disposable-ci-password
+            CRAFLET_TEST_DATABASE_PORT: "3306"
+            CRAFLET_TEST_DATABASE_DUMP_COMMAND: ${{ github.workspace }}/tests/support/database-dump.mjs
+            CRAFLET_TEST_DATABASE_CLIENT_COMMAND: ${{ github.workspace }}/tests/support/database-client.mjs
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version-file: .node-version
+                  package-manager-cache: false
+            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+              with:
+                  version: 11.24.0
+                  cache: true
+            - run: pnpm install --frozen-lockfile
+            - run: chmod +x tests/support/database-dump.mjs tests/support/database-client.mjs
+            - name: Dump and restore actual data using the matching server clients
+              env:
+                  CRAFLET_TEST_DATABASE_CONTAINER: ${{ job.services.database.id }}
+              run: pnpm exec vitest run --project integration tests/integration/backup-database-service.test.ts
+
+    required:
+        name: All platforms and databases
+        if: always()
+        needs: [servers, databases]
+        runs-on: ubuntu-latest
+        steps:
+            - name: Require every OS and database job to succeed
+              env:
+                  SERVERS: ${{ needs.servers.result }}
+                  DATABASES: ${{ needs.databases.result }}
+              run: test "$SERVERS" = success && test "$DATABASES" = success

@@ -1,0 +1,22 @@
+{
+    "name": "@craflet/adapters",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "dependencies": {
+        "@craflet/core": "workspace:*",
+        "arktype": "2.2.3",
+        "picomatch": "4.0.7",
+        "yaml": "2.9.0",
+        "yauzl": "3.4.0",
+        "seek-bzip": "2.0.0",
+        "smol-toml": "1.8.0"
+    },
+    "devDependencies": {
+        "@types/picomatch": "4.0.3",
+        "@types/yauzl": "3.4.0"
+    }
+}

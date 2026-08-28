@@ -1,0 +1,34 @@
+{
+    "schemaVersion": 1,
+    "resolvedAt": "2026-08-29",
+    "dependencies": {
+        "paper-api": {
+            "coordinate": "io.papermc.paper:paper-api:26.2.build.120-stable",
+            "url": "https://repo.papermc.io/repository/maven-public/io/papermc/paper/paper-api/26.2.build.120-stable/paper-api-26.2.build.120-stable.jar",
+            "sha256": "301fef198bd2bdf053ecc6425707b517c6f972c95907de8e158e4e3c70565bc2",
+            "size": 2888967,
+            "platforms": ["bukkit", "paper"]
+        },
+        "adventure-key": {
+            "coordinate": "net.kyori:adventure-key:5.2.0",
+            "url": "https://repo.papermc.io/repository/maven-public/net/kyori/adventure-key/5.2.0/adventure-key-5.2.0.jar",
+            "sha256": "0184d173200e2eef8fbc791f622d1d58fd459f8930c616b5a4fe79e83eda6c55",
+            "size": 11211,
+            "platforms": ["bukkit", "paper"]
+        },
+        "adventure-api": {
+            "coordinate": "net.kyori:adventure-api:5.2.0",
+            "url": "https://repo.papermc.io/repository/maven-public/net/kyori/adventure-api/5.2.0/adventure-api-5.2.0.jar",
+            "sha256": "7e52fe7190be3e87b3b3f71712cfa12315fcd27109f302a7b440c12f01fae827",
+            "size": 428448,
+            "platforms": ["bukkit", "paper"]
+        },
+        "velocity-api": {
+            "coordinate": "com.velocitypowered:velocity-api:4.1.1-20260826.101250-1",
+            "url": "https://repo.papermc.io/repository/maven-public/com/velocitypowered/velocity-api/4.1.1-SNAPSHOT/velocity-api-4.1.1-20260826.101250-1.jar",
+            "sha256": "f5835a4a6191f909005b695ccc07b915e8dadeff4ab69c82a7cac1c9e4c8e6ce",
+            "size": 196397,
+            "platforms": ["velocity"]
+        }
+    }
+}

@@ -1,0 +1,36 @@
+{
+    "name": "craflet-workspace",
+    "private": true,
+    "type": "module",
+    "packageManager": "pnpm@11.24.0",
+    "engines": {
+        "node": ">=24.20.0 <25"
+    },
+    "scripts": {
+        "format": "node scripts/quality.mjs format",
+        "check": "node scripts/quality.mjs check",
+        "check:fix": "node scripts/quality.mjs fix",
+        "typecheck": "tsc --noEmit",
+        "test": "vitest run --project unit",
+        "test:watch": "vitest --project unit",
+        "test:integration": "vitest run --project integration",
+        "test:coverage": "vitest run --project unit --project integration --coverage",
+        "test:e2e": "vitest run --project e2e",
+        "test:package": "node scripts/test-package.mjs",
+        "check:architecture": "node scripts/check-architecture.mjs",
+        "build": "tsdown && node scripts/build-assets.mjs",
+        "verify": "pnpm check && pnpm typecheck && pnpm check:architecture && pnpm test:coverage && pnpm build && pnpm test:package"
+    },
+    "devDependencies": {
+        "@craflet/core": "workspace:*",
+        "@craflet/adapters": "workspace:*",
+        "@biomejs/biome": "2.5.11",
+        "@types/node": "24.13.3",
+        "@vitest/coverage-v8": "4.1.11",
+        "arktype": "2.2.3",
+        "tsdown": "0.22.14",
+        "typescript": "7.0.2",
+        "vitest": "4.1.11",
+        "yaml": "2.9.0"
+    }
+}
