@@ -1,16 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { type HumanResultContext, renderHumanResult } from "./human.js";
+import { renderHumanResult } from "./human.js";
 
-function render(
-    command: string,
-    result: unknown,
-    dryRun = false,
-    artifactMutation?: HumanResultContext["artifactMutation"],
-): string {
+function render(command: string, result: unknown, dryRun = false): string {
     return renderHumanResult(result, {
         command,
         dryRun,
-        ...(artifactMutation ? { artifactMutation } : {}),
     });
 }
 
@@ -45,7 +39,7 @@ describe("human CLI result presentation", () => {
 
     it("explains pending plugin changes and running-JAR safety", () => {
         const output = render(
-            "update",
+            "plugins update",
             [
                 {
                     project: "survival",
@@ -57,17 +51,11 @@ describe("human CLI result presentation", () => {
                 },
             ],
             false,
-            {
-                plugins: ["LuckPerms", "spark"],
-                server: false,
-                all: false,
-            },
         );
 
         expect(output).toContain(
             "Resolved updates and prepared 1 pending installation.",
         );
-        expect(output).toContain("Requested updates: LuckPerms, spark.");
         expect(output).toContain(
             "survival: pending ready; declared plugins: LuckPerms, spark",
         );
@@ -76,7 +64,7 @@ describe("human CLI result presentation", () => {
         expect(output).not.toContain("pending-id");
     });
 
-    it("reports explicit server, all-artifact, and removal targets", () => {
+    it("reports server updates and plugin removal safety", () => {
         const unchanged = [
             {
                 project: "survival",
@@ -85,38 +73,18 @@ describe("human CLI result presentation", () => {
             },
         ];
 
-        expect(
-            render("update", unchanged, true, {
-                plugins: [],
-                server: true,
-                all: false,
-            }),
-        ).toContain("Requested updates: the server.");
-        expect(
-            render("update", unchanged, true, {
-                plugins: [],
-                server: false,
-                all: true,
-            }),
-        ).toContain("Requested updates: all declared plugins and the server.");
-        expect(
-            render("remove", unchanged, true, {
-                plugins: ["LuckPerms"],
-                server: false,
-                all: false,
-            }),
-        ).toContain("Requested removals: LuckPerms.");
+        expect(render("server update", unchanged, true)).toContain(
+            "0 of 1 selected project would receive a pending installation.",
+        );
+        expect(render("plugins remove", unchanged, true)).toContain(
+            "Plugin data under runtime was left unchanged.",
+        );
     });
 
     it("shows requested sources and versions while redacting local paths", () => {
-        const output = render("list", [
+        const output = render("plugins", [
             {
                 project: "survival",
-                server: {
-                    declared: { type: "paper", version: "26.2" },
-                    locked: "26.2",
-                    active: "26.2",
-                },
                 plugins: [
                     {
                         name: "LuckPerms",
@@ -150,24 +118,106 @@ describe("human CLI result presentation", () => {
     });
 
     it("uses provider display versions for update checks", () => {
-        const output = render("outdated", [
+        const output = render("plugins check", [
             {
                 project: "survival",
                 updates: [
                     {
+                        kind: "provider",
                         name: "LuckPerms",
-                        current: "v5.5.53-bukkit",
-                        available: "modrinth:Vebnzrzj@b0mk8uS6",
-                        availableVersion: "v5.5.71-bukkit",
-                        changed: true,
+                        lockedVersion: "v5.5.53-bukkit",
+                        latestSource: "modrinth:Vebnzrzj@b0mk8uS6",
+                        latestVersion: "v5.5.71-bukkit",
+                        updateAvailable: true,
                     },
                 ],
             },
         ]);
 
         expect(output).toContain("1 update available.");
-        expect(output).toContain("LuckPerms: v5.5.53-bukkit -> v5.5.71-bukkit");
+        expect(output).toContain(
+            "LuckPerms: locked v5.5.53-bukkit -> latest v5.5.71-bukkit",
+        );
         expect(output).not.toContain("b0mk8uS6");
+    });
+
+    it("renders latest plugin and server versions with scoped update hints", () => {
+        expect(
+            render("plugins", [
+                {
+                    project: "survival",
+                    plugins: [
+                        {
+                            name: "LuckPerms",
+                            requested: "modrinth:luckperms",
+                            latest: "5.5.71",
+                            status: "update-available",
+                        },
+                    ],
+                },
+            ]),
+        ).toContain("latest 5.5.71 (update available)");
+        expect(
+            render("server", [
+                {
+                    project: "survival",
+                    server: {
+                        declared: { type: "paper", version: "1.21.11" },
+                        requested: {
+                            provider: "paper",
+                            project: "paper",
+                            version: "1.21.11",
+                            build: "121",
+                        },
+                        locked: "120",
+                        active: "120",
+                        pending: null,
+                        latest: "121",
+                        status: "update-available",
+                    },
+                },
+            ]),
+        ).toContain(
+            "requested paper 1.21.11 build 121 | locked 120 | active 120 | pending - | latest 121 (update available)",
+        );
+        const custom = render("server", [
+            {
+                project: "proxy",
+                server: {
+                    requested: {
+                        provider: "github",
+                        version: "v4",
+                    },
+                },
+            },
+            {
+                project: "private",
+                server: {
+                    requested: {
+                        provider: "file",
+                        path: "C:/private/server.jar",
+                    },
+                },
+            },
+        ]);
+        expect(custom).toContain("Server: requested github@v4");
+        expect(custom).toContain("Server: requested local file");
+        expect(custom).not.toContain("C:/private");
+        expect(custom).not.toContain("server.jar");
+        const local = render("server check", [
+            {
+                project: "survival",
+                updates: [
+                    {
+                        kind: "local",
+                        name: "server",
+                        lockedVersion: "1.0",
+                    },
+                ],
+            },
+        ]);
+        expect(local).toContain("craflet server update");
+        expect(local).not.toContain("--server");
     });
 
     it("reports stop failures with their safe message", () => {
@@ -255,9 +305,11 @@ describe("human CLI result presentation", () => {
                 true,
             ),
         ).toContain('Would create Velocity server "proxy"');
-        expect(render("inspect", undefined)).toBe("JAR inspection completed.");
+        expect(render("plugins inspect", undefined)).toBe(
+            "JAR inspection completed.",
+        );
         expect(
-            render("inspect", {
+            render("plugins inspect", {
                 id: "ProxyPlugin",
                 version: "2",
                 format: "velocity",
@@ -265,7 +317,7 @@ describe("human CLI result presentation", () => {
             }),
         ).toContain("Required plugins: required");
         expect(
-            render("inspect", {
+            render("plugins inspect", {
                 id: "PaperPlugin",
                 version: "3",
                 format: "paper",
@@ -276,7 +328,7 @@ describe("human CLI result presentation", () => {
 
     it("renders install previews, unchanged projects, warnings, and removal safety", () => {
         const addPreview = render(
-            "add",
+            "plugins add",
             {
                 action: "add",
                 projects: [],
@@ -306,7 +358,7 @@ describe("human CLI result presentation", () => {
         expect(unchanged).toContain("Warning: Review this warning");
         expect(unchanged).toContain("Unresolved during preview");
         expect(
-            render("remove", [
+            render("plugins remove", [
                 {
                     project: "alpha",
                     changed: true,
@@ -317,39 +369,51 @@ describe("human CLI result presentation", () => {
     });
 
     it("renders empty and multi-project plugin states", () => {
-        expect(render("list", [])).toBe("No projects were selected.");
+        expect(render("plugins", [])).toBe("No projects were selected.");
         expect(
-            render("list", [
+            render("plugins", [
                 { project: "alpha", plugins: [] },
                 {
                     project: "beta",
-                    server: {
-                        declared: { type: "velocity", version: "4.1.1" },
-                        locked: null,
-                        active: null,
-                    },
                     plugins: [],
                 },
             ]),
         ).toContain("Plugins: none declared.");
 
-        expect(render("outdated", [])).toContain("No plugins are declared");
-        const checked = render("outdated", [
+        expect(render("plugins check", [])).toContain(
+            "No plugins are declared",
+        );
+        const checked = render("plugins check", [
             {
                 project: "alpha",
                 updates: [
-                    { name: "A", current: "1", available: { version: "1" } },
                     {
+                        kind: "provider",
+                        name: "A",
+                        lockedVersion: "1",
+                        latestVersion: "1",
+                        latestSource: "github:o/r@v1#A.jar",
+                        updateAvailable: false,
+                    },
+                    {
+                        kind: "provider",
                         name: "B",
-                        current: "1",
-                        available: "github:o/r@v2#B.jar",
-                        changed: true,
+                        lockedVersion: "1",
+                        latestVersion: "v2",
+                        latestSource: "github:o/r@v2#B.jar",
+                        updateAvailable: true,
+                    },
+                    {
+                        kind: "local",
+                        name: "--local-plugin",
+                        lockedVersion: "3",
                     },
                 ],
             },
         ]);
-        expect(checked).toContain("A: up to date at 1");
-        expect(checked).toContain("B: 1 -> v2");
+        expect(checked).toContain("A: locked 1 is the latest version");
+        expect(checked).toContain("B: locked 1 -> latest v2");
+        expect(checked).toContain("craflet plugins update -- --local-plugin");
     });
 
     it("renders scalar, recursive, empty, and real lifecycle plan states", () => {

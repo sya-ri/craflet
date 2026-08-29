@@ -16,7 +16,7 @@ export function printResult(
             process.stdout.write(`${renderHumanResult(result, context)}\n`);
         } catch {
             process.stdout.write(
-                "The operation may have completed in whole or in part, but its result could not be displayed safely. Verify with a read-only command such as craflet status, craflet list, or craflet deploy plan before retrying.\n",
+                "The operation may have completed in whole or in part, but its result could not be displayed safely. Verify with a read-only command such as craflet status, craflet plugins, or craflet deploy plan before retrying.\n",
             );
         }
     }

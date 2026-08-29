@@ -92,6 +92,39 @@ describe("parseSource", () => {
     });
 
     it.each([
+        { provider: "file", path: "../build/Plugin.JAR" },
+        {
+            provider: "github",
+            owner: "user",
+            repo: "repo",
+            version: "v1",
+            asset: "Plugin.JAR",
+        },
+    ] as const)(
+        "accepts a case-insensitive structured JAR suffix",
+        (source) => {
+            expect(parseSource(source)).toEqual(source);
+        },
+    );
+
+    it.each([
+        "file:../build/Plugin.zip",
+        "github:user/repo@v1#Plugin.zip",
+        { provider: "file", path: "../build/Plugin.zip" },
+        {
+            provider: "github",
+            owner: "user",
+            repo: "repo",
+            version: "v1",
+            asset: "Plugin.zip",
+        },
+    ] as const)("rejects a non-JAR file or GitHub asset: %j", (source) => {
+        expect(() => parseSource(source)).toThrowError(
+            expect.objectContaining({ code: "INVALID_SOURCE" }),
+        );
+    });
+
+    it.each([
         "",
         "unknown",
         "https://example.com/p.jar",

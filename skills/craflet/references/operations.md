@@ -21,10 +21,9 @@ Create a new project:
 
 ```sh
 craflet init survival --name survival --type paper --version 26.2
-cd survival
-craflet install
-craflet doctor
-craflet start
+craflet -C survival install
+craflet -C survival doctor
+craflet -C survival start
 ```
 
 For Paper, `init` may request Minecraft EULA consent. Read the authorization rules in [safety-and-recovery.md](safety-and-recovery.md) before interacting with that prompt or adding `--yes`.
@@ -44,19 +43,22 @@ Inspect `craflet import --help`, confirm the source server is stopped, and keep 
 ## Resolve and stage artifacts
 
 ```sh
-craflet inspect ../build/MyPlugin.jar
-craflet add file:../build/MyPlugin.jar
-craflet list
+craflet plugins inspect ../build/MyPlugin.jar
+craflet plugins add file:../build/MyPlugin.jar
+craflet plugins
+craflet server
 craflet install
-craflet outdated
-craflet update MyPlugin
+craflet plugins check
+craflet server check
+craflet plugins update MyPlugin
 craflet deploy plan
 ```
 
-- `add` and `remove` update declarations and prepare pending. Removing a plugin leaves its data.
+- `plugins` and `server` show desired, locked, pending, and active artifact state without querying providers. Add `--latest` to either inventory when the latest provider version and update status are needed.
+- `plugins add` and `plugins remove` update declarations and prepare pending. Removing a plugin leaves its data.
 - `install` reproduces unchanged lock entries and resolves only changed declarations. `--frozen-lockfile` refuses missing or stale lock data.
-- `outdated` only reports.
-- `update` selects new versions, updates declaration/lock state, and prepares pending. Use its explicit server/all options only when requested.
+- `plugins check [names...]` and `server check` only report provider updates.
+- `plugins update [names...]` selects new plugin versions, updates declaration/lock state, and prepares pending; no names selects all declared plugins. `server update` does the same for the server artifact. Use `--to` only for an explicitly requested plugin version or server provider version/Paper build.
 - None of these commands replaces a running JAR.
 
 After reviewing pending, apply it with a managed start/restart or with stopped-only `deploy apply`:
@@ -78,7 +80,7 @@ craflet deploy apply
 | `restart` | Gracefully stop, optionally apply pending after backup, then start. |
 | `stop` | Gracefully stop and verify process exit; never apply pending. |
 | `run` | Start and follow logs; Ctrl-C requests graceful stop. |
-| `console` | Attach input; detaching does not stop the server. |
+| `console` | Open with recent logs and command input; PageUp or the mouse wheel loads older history, End returns to live output, and Ctrl-C detaches without stopping the server. |
 | `logs --follow` | Follow redacted logs; detaching does not stop the server. |
 | `command <text>` | Send one command through the authenticated runner. |
 | `status` | Report `running`, `stopped`, transitional state, or `unknown`. |
@@ -140,7 +142,7 @@ craflet backup apply /restore/survival
 
 `restore` extracts only into an empty separate directory. `apply` verifies it, stops the selected server group, takes a pre-restore backup, restores the snapshot's operating data and active installation, clears pending, and leaves Java stopped. The current desired YAML and shared lock remain unchanged. External roots and databases require explicit mappings/selections. After inspecting the restored state, use `craflet start --active` to launch that restored active installation; a later `install` may prepare the still-declared desired state again.
 
-After an update or restore, collect `status`, `list`, relevant logs, `config diff`, and the application's actual health signal. “Looks bad” remains an operator decision unless the user supplies a concrete, observable rollback condition; do not invent one.
+After an update or restore, collect `status`, `plugins`, `server`, relevant logs, `config diff`, and the application's actual health signal. “Looks bad” remains an operator decision unless the user supplies a concrete, observable rollback condition; do not invent one.
 
 Pruning is preview-only unless explicitly applied:
 
@@ -156,7 +158,7 @@ craflet cache prune --apply
 ```sh
 craflet workspace list
 craflet -r status
-craflet --filter survival outdated
+craflet --filter survival plugins check
 ```
 
 Workspace operations have deterministic selection. Use all group members for shared backup/database production actions. Declaration preparation may target a subset, but a partial runtime result must be reported project by project.
@@ -174,7 +176,7 @@ Use recovery only when Craflet reports an interrupted journal or lock. Inspect t
 ## Command groups
 
 - Project: `init`, `import`, `workspace init/list`, `validate`, `doctor`
-- Artifacts: `inspect`, `add`, `remove`, `list`, `install`, `outdated`, `update`
+- Artifacts: `install`, `plugins [--latest]`, `plugins inspect/add/remove/check/update`, `server [--latest]`, `server check/update`
 - Runtime: `start`, `restart`, `stop`, `status`, `command`, `logs`, `run`, `console`
 - Deployment: `deploy plan/apply/discard`, `recover`
 - Configuration: `config list/track/untrack/diff/capture/resolve`

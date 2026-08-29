@@ -13,6 +13,31 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
+    compatibility:
+        name: Node.js ${{ matrix.node }}
+        strategy:
+            fail-fast: false
+            matrix:
+                node: ["24.20.0", "25.9.0", "26.8.1"]
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        env:
+            CI: "true"
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version: ${{ matrix.node }}
+                  package-manager-cache: false
+            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+              with:
+                  version: 11.24.0
+                  cache: true
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm verify
+
     servers:
         name: Real servers (${{ matrix.os }})
         strategy:
@@ -46,7 +71,11 @@ jobs:
                   distribution: temurin
                   java-version: "25.0.3+9.0.LTS"
             - run: pnpm install --frozen-lockfile
-            - run: pnpm verify
+            - name: Cross-platform filesystem, process, and console integration tests
+              run: pnpm test:integration
+            - run: pnpm build
+            - name: Verify the distributable package
+              run: pnpm test:package
             - name: Build locked real server and plugin fixtures
               run: node tests/fixtures/build.mjs --with-servers --verify-reproducible
             - name: Real Paper and Velocity E2E using the verified tarball
@@ -118,13 +147,17 @@ jobs:
               run: pnpm exec vitest run --project integration tests/integration/backup-database-service.test.ts
 
     required:
-        name: All platforms and databases
+        name: All supported environments
         if: always()
-        needs: [servers, databases]
+        needs: [compatibility, servers, databases]
         runs-on: ubuntu-latest
         steps:
-            - name: Require every OS and database job to succeed
+            - name: Require every supported environment to succeed
               env:
+                  COMPATIBILITY: ${{ needs.compatibility.result }}
                   SERVERS: ${{ needs.servers.result }}
                   DATABASES: ${{ needs.databases.result }}
-              run: test "$SERVERS" = success && test "$DATABASES" = success
+              run: >-
+                  test "$COMPATIBILITY" = success &&
+                  test "$SERVERS" = success &&
+                  test "$DATABASES" = success

@@ -6,7 +6,7 @@ import {
     type LockFile,
     newProject,
     type ProjectManifest,
-    parseSource,
+    parseServerSource,
     type SourceInput,
     stableStringify,
     validateLock,
@@ -23,6 +23,8 @@ import {
 } from "./eula-consent.js";
 import { proposedEulaDocument } from "./eula-file.js";
 import { assertNoSymlinks, atomicWrite, exists } from "./io.js";
+
+export const MAX_YAML_BYTES = 2 * 1024 * 1024;
 
 export interface ProjectContext {
     dir: string;
@@ -86,13 +88,23 @@ function parseYamlContent(text: string, file: string): unknown {
 
 async function readYamlText(file: string): Promise<string> {
     await assertNoSymlinks(path.dirname(file), path.basename(file));
-    if ((await stat(file)).size > 2 * 1024 * 1024)
+    if ((await stat(file)).size > MAX_YAML_BYTES)
         throw new CrafletError(
             "YAML_SIZE",
             `${path.basename(file)} exceeds the 2 MiB limit.`,
             2,
         );
     return readFile(file, "utf8");
+}
+
+function boundedYamlText(file: string, text: string): string {
+    if (Buffer.byteLength(text) > MAX_YAML_BYTES)
+        throw new CrafletError(
+            "YAML_SIZE",
+            `${path.basename(file)} exceeds the 2 MiB limit.`,
+            2,
+        );
+    return text;
 }
 
 export async function yamlText(
@@ -106,7 +118,11 @@ export async function yamlText(
                 ? await readYamlText(file)
                 : null
             : snapshot;
-    if (original === null) return new Document(value).toString({ indent: 4 });
+    if (original === null)
+        return boundedYamlText(
+            file,
+            new Document(value).toString({ indent: 4 }),
+        );
     const doc = parseDocument(original, {
         uniqueKeys: true,
         prettyErrors: false,
@@ -118,7 +134,8 @@ export async function yamlText(
             2,
         );
     const previous: unknown = doc.toJS({ maxAliasCount: 50 });
-    if (stableStringify(previous) === stableStringify(value)) return original;
+    if (stableStringify(previous) === stableStringify(value))
+        return boundedYamlText(file, original);
     function update(keys: string[], before: unknown, after: unknown) {
         if (stableStringify(before) === stableStringify(after)) return;
         if (
@@ -138,7 +155,7 @@ export async function yamlText(
         } else doc.setIn(keys, after);
     }
     update([], previous, value);
-    return doc.toString();
+    return boundedYamlText(file, doc.toString());
 }
 
 export async function writeYaml(file: string, value: unknown): Promise<void> {
@@ -310,6 +327,18 @@ export async function initProject(
         };
     },
 ): Promise<ProjectManifest> {
+    const defaults = newProject(options.name, options.kind, options.version);
+    if (options.source !== undefined)
+        parseServerSource(options.source, options.kind);
+    const manifest = validateProject({
+        ...defaults,
+        id: randomUUID(),
+        server: {
+            ...defaults.server,
+            ...(options.build !== undefined ? { build: options.build } : {}),
+            ...(options.source !== undefined ? { source: options.source } : {}),
+        },
+    });
     const file = path.join(dir, "craflet.yaml");
     const assertAvailable = async () => {
         if (await exists(file))
@@ -330,17 +359,6 @@ export async function initProject(
                 3,
             );
     } else await assertAvailable();
-    const defaults = newProject(options.name, options.kind, options.version);
-    if (options.source !== undefined) parseSource(options.source);
-    const manifest = validateProject({
-        ...defaults,
-        id: randomUUID(),
-        server: {
-            ...defaults.server,
-            ...(options.build !== undefined ? { build: options.build } : {}),
-            ...(options.source !== undefined ? { source: options.source } : {}),
-        },
-    });
     if (options.kind === "paper" && options.eula)
         await ensureUserEulaConsent(
             options.eula.home,

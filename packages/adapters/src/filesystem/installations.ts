@@ -4,14 +4,18 @@ import path from "node:path";
 import {
     type ArtifactContext,
     type ArtifactStore,
+    type ConfigBundle,
     CrafletError,
     formatSource,
+    type PluginIdentity,
     type ProjectLock,
     type ProjectManifest,
+    parsePluginSource,
+    parseServerSource,
     parseSource,
-    portablePluginJarName,
     type SourceInput,
     stableStringify,
+    validatePluginIdentities,
     validatePluginSet,
 } from "@craflet/core";
 import { registerCacheProject } from "./cache.js";
@@ -26,6 +30,7 @@ import {
 import { ensurePrivateDirectory } from "./private.js";
 import {
     fingerprint,
+    MAX_YAML_BYTES,
     type ProjectContext,
     parseLockText,
     yamlText,
@@ -34,7 +39,6 @@ import {
     type Installation,
     type ProjectState,
     parseStateText,
-    readState,
 } from "./state.js";
 
 export interface InstallOptions {
@@ -105,6 +109,18 @@ async function assertDeploymentRecovered(project: ProjectContext) {
         );
 }
 
+async function assertManifestRecovered(root: string): Promise<string> {
+    const journal = path.join(root, ".craflet/manifest-transaction.json");
+    await assertNoSymlinks(root, ".craflet/manifest-transaction.json");
+    if (await exists(journal))
+        throw new CrafletError(
+            "RECOVERY_REQUIRED",
+            "An interrupted manifest transaction needs craflet recover.",
+            4,
+        );
+    return journal;
+}
+
 function assertKnownPluginUpdates(
     manifest: ProjectManifest,
     options: InstallOptions,
@@ -118,17 +134,122 @@ function assertKnownPluginUpdates(
             );
 }
 
+function exactSource(
+    input: SourceInput,
+    exactVersion: string,
+    target: "plugin" | "server",
+): SourceInput {
+    if (!exactVersion.trim())
+        throw new CrafletError(
+            "UPDATE_VERSION",
+            "--to requires a non-empty version.",
+            2,
+        );
+    const source = parseSource(input);
+    if (source.provider === "file")
+        throw new CrafletError(
+            "UPDATE_VERSION",
+            `--to cannot set a version for a local ${target} JAR. Replace the file, then run craflet ${target === "plugin" ? "plugins" : "server"} update.`,
+            2,
+        );
+    if (source.provider === "paper") source.build = exactVersion;
+    else source.version = exactVersion;
+    return parseSource(source);
+}
+
+export function validateInstallRequest(
+    projects: readonly ProjectContext[],
+    options: InstallOptions,
+): void {
+    assertManifestJournalLimits(0, projects.length * 2 + 1);
+    const selected = options.updatePlugins ?? [];
+    if (
+        options.frozen &&
+        (options.updateServer ||
+            options.updateAllPlugins ||
+            selected.length > 0)
+    )
+        throw new CrafletError(
+            "FROZEN_LOCK",
+            "A frozen install cannot select server or plugin updates.",
+            2,
+        );
+    if (options.to !== undefined && typeof options.to !== "string")
+        throw new CrafletError(
+            "UPDATE_VERSION",
+            "--to requires a version string.",
+            2,
+        );
+    if (options.updateAllPlugins && selected.length)
+        throw new CrafletError(
+            "UPDATE_OPTIONS",
+            "Choose named plugins or all plugins, not both.",
+            2,
+        );
+    if (options.to !== undefined) {
+        const exactTargets =
+            (options.updateServer ? 1 : 0) +
+            (options.updateAllPlugins ? 2 : selected.length);
+        if (exactTargets !== 1)
+            throw new CrafletError(
+                "UPDATE_VERSION",
+                "--to requires exactly one server or plugin update target.",
+                2,
+            );
+    }
+    for (const project of projects) {
+        parseServerSource(
+            serverSource(project.manifest),
+            project.manifest.server.type,
+        );
+        validatePluginIdentities(
+            [],
+            project.manifest.server.type,
+            Object.keys(project.manifest.plugins),
+        );
+        for (const source of Object.values(project.manifest.plugins))
+            parsePluginSource(source);
+        assertKnownPluginUpdates(project.manifest, options);
+        if (options.to === undefined) continue;
+        if (options.updateServer)
+            exactSource(serverSource(project.manifest), options.to, "server");
+        else {
+            const name = selected[0];
+            if (!name)
+                throw new CrafletError(
+                    "UPDATE_VERSION",
+                    "--to requires exactly one plugin update target.",
+                    2,
+                );
+            const source = project.manifest.plugins[name];
+            if (source !== undefined) exactSource(source, options.to, "plugin");
+        }
+    }
+}
+
+async function updateSource(
+    store: ArtifactStore,
+    input: SourceInput,
+    context: ArtifactContext,
+    exactVersion: string | undefined,
+    target: "plugin" | "server",
+): Promise<SourceInput> {
+    return exactVersion === undefined
+        ? (await store.latest(input, context)).source
+        : exactSource(input, exactVersion, target);
+}
+
 function assertFrozenPluginSet(
     manifest: ProjectManifest,
     old: ProjectLock | undefined,
     frozen: boolean | undefined,
 ): void {
-    if (
-        frozen &&
-        Object.keys(old?.plugins ?? {}).some(
-            (name) => !Object.hasOwn(manifest.plugins, name),
-        )
-    )
+    if (!frozen) return;
+    const locked = new Set([
+        ...Object.keys(old?.plugins ?? {}),
+        ...Object.keys(old?.requests.plugins ?? {}),
+    ]);
+    if ([...locked].some((name) => !Object.hasOwn(manifest.plugins, name)))
         throw new CrafletError(
             "FROZEN_LOCK",
             "Removed plugins require a lockfile update.",
@@ -136,61 +257,60 @@ function assertFrozenPluginSet(
         );
 }
 
-async function planInstallation(
+interface InstallationPreflight {
+    project: ProjectContext;
+    manifest: ProjectManifest;
+    old: ProjectLock | undefined;
+    previous: ProjectState;
+    reusable: ProjectLock["plugins"];
+    config: ConfigBundle;
+    serverRequest: string;
+    plugins: readonly {
+        name: string;
+        source: SourceInput;
+        request: string;
+    }[];
+}
+
+type ValidatedInstallation = Omit<InstallationPreflight, "config">;
+
+function validateInstallation(
     project: ProjectContext,
-    store: ArtifactStore,
     old: ProjectLock | undefined,
     options: InstallOptions,
     previous: ProjectState,
-): Promise<{
-    manifest: ProjectManifest;
-    lock: ProjectLock;
-    state: ProjectState;
-    changed: boolean;
-}> {
-    await assertDeploymentRecovered(project);
+): ValidatedInstallation {
+    options.signal?.throwIfAborted();
     const manifest = structuredClone(project.manifest);
-    const context = artifactContext(project, options);
-    const originalServer = serverSource(manifest);
-    const serverRequest = stableStringify(parseSource(originalServer));
+    if (options.frozen && old?.name !== manifest.name)
+        throw new CrafletError(
+            "FROZEN_LOCK",
+            "The project identity does not match the lockfile.",
+            2,
+        );
+    const serverRequest = stableStringify(
+        parseServerSource(serverSource(manifest), manifest.server.type),
+    );
     if (options.frozen && (!old || old.requests.server !== serverRequest))
         throw new CrafletError(
             "FROZEN_LOCK",
             "The server declaration does not match the lockfile.",
             2,
         );
-    let requestedServer = options.updateServer
-        ? (await store.latest(originalServer, context)).source
-        : originalServer;
-    if (options.updateServer && options.to) {
-        const parsed = parseSource(requestedServer);
-        if (parsed.provider === "paper") parsed.build = options.to;
-        else if (parsed.provider !== "file") parsed.version = options.to;
-        requestedServer = parsed;
-    }
-    const server =
-        !options.updateServer && old?.requests.server === serverRequest
-            ? old.server
-            : await store.resolve(requestedServer, context);
-    await store.ensure(server, context);
-    if (options.updateServer) {
-        if (server.source.provider === "paper" && !manifest.server.source)
-            manifest.server.build = server.source.build;
-        else manifest.server.source = formatSource(server.source);
-    }
-    const plugins: ProjectLock["plugins"] = {};
-    const requests: ProjectLock["requests"] = {
-        server: stableStringify(parseSource(serverSource(manifest))),
-        plugins: {},
-    };
-    assertKnownPluginUpdates(manifest, options);
+    if (!options.updateServer && old?.requests.server === serverRequest)
+        parseServerSource(old.server.source, manifest.server.type);
+    const plugins: ValidatedInstallation["plugins"][number][] = [];
+    const reusable: ProjectLock["plugins"] = {};
     for (const [name, input] of Object.entries(manifest.plugins)) {
-        portablePluginJarName(name);
-        options.signal?.throwIfAborted();
-        const request = stableStringify(parseSource(input));
+        const request = stableStringify(parsePluginSource(input));
+        plugins.push({ name, source: input, request });
         const update =
             options.updateAllPlugins ||
             (options.updatePlugins?.includes(name) ?? false);
+        const artifact =
+            !update && old?.requests.plugins[name] === request
+                ? old.plugins[name]
+                : undefined;
         if (
             options.frozen &&
             (!old?.plugins[name] || old.requests.plugins[name] !== request)
@@ -200,22 +320,154 @@ async function planInstallation(
                 `Plugin ${name} does not match the lockfile.`,
                 2,
             );
-        let source = update
-            ? (await store.latest(input, context)).source
+        if (!artifact) continue;
+        parsePluginSource(artifact.source);
+        if (!artifact.identity)
+            throw new CrafletError(
+                "NOT_PLUGIN",
+                `No supported plugin descriptor was found for ${name}.`,
+                2,
+            );
+        if (artifact.identity.id !== name)
+            throw new CrafletError(
+                "PLUGIN_IDENTITY",
+                `Plugin ${name} has an inconsistent locked identity.`,
+                3,
+            );
+        reusable[name] = artifact;
+    }
+    assertFrozenPluginSet(manifest, old, options.frozen);
+    const identities = Object.values(reusable).flatMap((artifact) =>
+        artifact.identity ? [artifact.identity] : [],
+    );
+    if (Object.keys(reusable).length === Object.keys(manifest.plugins).length)
+        validatePluginSet(identities, manifest.server.type);
+    else
+        validatePluginIdentities(
+            identities,
+            manifest.server.type,
+            plugins
+                .filter(({ name }) => !Object.hasOwn(reusable, name))
+                .map(({ name }) => name),
+        );
+    return {
+        project,
+        manifest,
+        old,
+        previous,
+        reusable,
+        serverRequest,
+        plugins,
+    };
+}
+
+async function preflightInstallations(
+    validated: readonly ValidatedInstallation[],
+    preparedConfigs?: ReadonlyMap<string, ConfigBundle>,
+): Promise<InstallationPreflight[]> {
+    for (const input of validated)
+        await assertDeploymentRecovered(input.project);
+    const result: InstallationPreflight[] = [];
+    for (const input of validated) {
+        const manager = new NodeConfigManager(
+            input.project.dir,
+            input.manifest.secrets,
+        );
+        const prepared = preparedConfigs?.get(input.project.dir);
+        const config = prepared ?? (await manager.prepare());
+        if (prepared) await manager.assertUnchanged(prepared);
+        result.push({ ...input, config });
+    }
+    return result;
+}
+
+function pluginNamespace(
+    input: Pick<InstallationPreflight, "plugins" | "reusable">,
+): {
+    identities: Map<string, PluginIdentity>;
+    reservedIds: Set<string>;
+} {
+    const identities = new Map<string, PluginIdentity>(
+        Object.entries(input.reusable).flatMap(([name, artifact]) =>
+            artifact.identity ? [[name, artifact.identity] as const] : [],
+        ),
+    );
+    return {
+        identities,
+        reservedIds: new Set(
+            input.plugins
+                .map(({ name }) => name)
+                .filter((name) => !identities.has(name)),
+        ),
+    };
+}
+
+async function planInstallation(
+    input: InstallationPreflight,
+    store: ArtifactStore,
+    options: InstallOptions,
+): Promise<{
+    manifest: ProjectManifest;
+    lock: ProjectLock;
+    state: ProjectState;
+    changed: boolean;
+}> {
+    const {
+        config,
+        manifest,
+        old,
+        plugins: pluginInputs,
+        previous,
+        project,
+        reusable,
+    } = input;
+    const context = artifactContext(project, options);
+    const originalServer = serverSource(manifest);
+    const serverRequest = input.serverRequest;
+    const requestedServer = options.updateServer
+        ? await updateSource(
+              store,
+              originalServer,
+              context,
+              options.to,
+              "server",
+          )
+        : originalServer;
+    const server =
+        !options.updateServer && old?.requests.server === serverRequest
+            ? old.server
+            : await store.resolve(requestedServer, context);
+    parseServerSource(server.source, manifest.server.type);
+    await store.ensure(server, context);
+    if (options.updateServer) {
+        if (server.source.provider === "paper" && !manifest.server.source)
+            manifest.server.build = server.source.build;
+        else manifest.server.source = formatSource(server.source);
+    }
+    const plugins: ProjectLock["plugins"] = {};
+    const { identities: knownIdentities, reservedIds: unresolvedIds } =
+        pluginNamespace({ plugins: pluginInputs, reusable });
+    const requests: ProjectLock["requests"] = {
+        server: stableStringify(
+            parseServerSource(serverSource(manifest), manifest.server.type),
+        ),
+        plugins: {},
+    };
+    for (const { name, source: input, request } of pluginInputs) {
+        options.signal?.throwIfAborted();
+        const update =
+            options.updateAllPlugins ||
+            (options.updatePlugins?.includes(name) ?? false);
+        const source = update
+            ? await updateSource(store, input, context, options.to, "plugin")
             : input;
-        if (update && options.to) {
-            const parsed = parseSource(source);
-            if (parsed.provider !== "file" && parsed.provider !== "paper")
-                parsed.version = options.to;
-            source = parsed;
-        }
         const artifact =
             !update &&
             old?.requests.plugins[name] === request &&
             old.plugins[name]
                 ? old.plugins[name]
                 : await store.resolve(source, context);
-        await store.ensure(artifact, context);
+        parsePluginSource(artifact.source);
         if (!artifact.identity)
             throw new CrafletError(
                 "NOT_PLUGIN",
@@ -228,13 +480,20 @@ async function planInstallation(
                 `Plugin ${name} resolves to ${artifact.identity.id}; identity changes require an explicit remove/add.`,
                 3,
             );
+        knownIdentities.set(name, artifact.identity);
+        unresolvedIds.delete(name);
+        validatePluginIdentities(
+            [...knownIdentities.values()],
+            manifest.server.type,
+            [...unresolvedIds],
+        );
+        await store.ensure(artifact, context);
         plugins[name] = artifact;
         if (update) manifest.plugins[name] = formatSource(artifact.source);
         requests.plugins[name] = stableStringify(
-            parseSource(manifest.plugins[name] ?? input),
+            parsePluginSource(manifest.plugins[name] ?? input),
         );
     }
-    assertFrozenPluginSet(manifest, old, options.frozen);
     validatePluginSet(
         Object.values(plugins).flatMap((item) =>
             item.identity ? [item.identity] : [],
@@ -247,10 +506,6 @@ async function planInstallation(
         server,
         plugins,
     };
-    const config = await new NodeConfigManager(
-        project.dir,
-        manifest.secrets,
-    ).prepare();
     const desired = { manifest, lock, config };
     const unchanged =
         previous.active &&
@@ -302,88 +557,44 @@ export function assertManifestJournalLimits(
 }
 
 async function previewInstallation(
-    project: ProjectContext,
-    old: ProjectLock | undefined,
+    input: InstallationPreflight,
     options: InstallOptions,
 ): Promise<InstallResult> {
     options.signal?.throwIfAborted();
-    await assertDeploymentRecovered(project);
-    const request = stableStringify(
-        parseSource(serverSource(project.manifest)),
-    );
-    if (options.frozen && (!old || old.requests.server !== request))
-        throw new CrafletError(
-            "FROZEN_LOCK",
-            "The server declaration does not match the lockfile.",
-            2,
-        );
+    const { config, manifest, old, plugins: pluginInputs, previous } = input;
     const unresolved: string[] = [];
-    if (!old || old.requests.server !== request || options.updateServer)
+    if (
+        !old ||
+        old.requests.server !== input.serverRequest ||
+        options.updateServer
+    )
         unresolved.push("server");
     const plugins: ProjectLock["plugins"] = {};
-    const requests: ProjectLock["requests"] = { server: request, plugins: {} };
-    assertKnownPluginUpdates(project.manifest, options);
-    for (const [name, source] of Object.entries(project.manifest.plugins)) {
-        portablePluginJarName(name);
-        const input = stableStringify(parseSource(source));
-        requests.plugins[name] = input;
+    const requests: ProjectLock["requests"] = {
+        server: input.serverRequest,
+        plugins: {},
+    };
+    for (const { name, request } of pluginInputs) {
+        requests.plugins[name] = request;
+        const update =
+            options.updateAllPlugins ||
+            (options.updatePlugins?.includes(name) ?? false);
         const artifact =
-            old?.requests.plugins[name] === input
+            !update && old?.requests.plugins[name] === request
                 ? old.plugins[name]
                 : undefined;
-        if (options.frozen && !artifact)
-            throw new CrafletError(
-                "FROZEN_LOCK",
-                `Plugin ${name} does not match the lockfile.`,
-                2,
-            );
-        if (
-            !artifact ||
-            options.updateAllPlugins ||
-            options.updatePlugins?.includes(name)
-        )
-            unresolved.push(name);
-        else {
-            if (!artifact.identity)
-                throw new CrafletError(
-                    "NOT_PLUGIN",
-                    `No supported plugin descriptor was found for ${name}.`,
-                    2,
-                );
-            if (artifact.identity.id !== name)
-                throw new CrafletError(
-                    "PLUGIN_IDENTITY",
-                    `Plugin ${name} has an inconsistent locked identity.`,
-                    3,
-                );
-            plugins[name] = artifact;
-        }
+        if (!artifact || update) unresolved.push(name);
+        else plugins[name] = artifact;
     }
-    assertFrozenPluginSet(project.manifest, old, options.frozen);
-    if (
-        Object.keys(plugins).length ===
-        Object.keys(project.manifest.plugins).length
-    )
-        validatePluginSet(
-            Object.values(plugins).flatMap((artifact) =>
-                artifact.identity ? [artifact.identity] : [],
-            ),
-            project.manifest.server.type,
-        );
-    const config = await new NodeConfigManager(
-        project.dir,
-        project.manifest.secrets,
-    ).prepare();
-    const state = await readState(project.dir);
     const changed =
         unresolved.length > 0 ||
-        !state.active ||
+        !previous.active ||
         !old ||
-        installationFingerprint(state.active) !==
+        installationFingerprint(previous.active) !==
             installationFingerprint({
-                manifest: project.manifest,
+                manifest,
                 lock: {
-                    name: project.manifest.name,
+                    name: manifest.name,
                     requests,
                     server: old.server,
                     plugins,
@@ -391,10 +602,10 @@ async function previewInstallation(
                 config,
             });
     return {
-        project: project.manifest.name,
+        project: manifest.name,
         changed,
-        ...(state.pending ? { pendingId: state.pending.id } : {}),
-        plugins: Object.keys(project.manifest.plugins),
+        ...(previous.pending ? { pendingId: previous.pending.id } : {}),
+        plugins: Object.keys(manifest.plugins),
         unresolved,
         warnings: unresolved.length
             ? [
@@ -412,6 +623,18 @@ export interface InstallInputSnapshot {
         manifestText: string;
         stateText: string | null;
     }[];
+}
+
+export interface InstallPreparation {
+    snapshot: InstallInputSnapshot;
+    configs: ReadonlyMap<string, ConfigBundle>;
+    pluginNamespaces: ReadonlyMap<
+        string,
+        {
+            identities: readonly PluginIdentity[];
+            reservedIds: readonly string[];
+        }
+    >;
 }
 
 function concurrentInput(): CrafletError {
@@ -453,6 +676,60 @@ async function inputText(
 export async function snapshotInstallInputs(
     projects: readonly ProjectContext[],
 ): Promise<InstallInputSnapshot> {
+    const root = installRoot(projects);
+    const lockText = await inputText(
+        path.join(root, "craflet-lock.yaml"),
+        MAX_YAML_BYTES,
+    );
+    parseLockText(lockText);
+    const entries: InstallInputSnapshot["projects"][number][] = [];
+    for (const project of projects) {
+        const manifestText = await inputText(
+            path.join(project.dir, "craflet.yaml"),
+            MAX_YAML_BYTES,
+        );
+        if (
+            manifestText === null ||
+            (project.manifestText !== undefined &&
+                manifestText !== project.manifestText)
+        )
+            throw concurrentInput();
+        const stateText = await inputText(
+            path.join(project.dir, ".craflet/state.json"),
+            32 * 1024 * 1024,
+        );
+        parseStateText(stateText);
+        entries.push({ dir: project.dir, manifestText, stateText });
+    }
+    return { root, lockText, projects: entries };
+}
+
+async function assertInstallInputs(
+    snapshot: InstallInputSnapshot,
+): Promise<void> {
+    if (
+        (await inputText(
+            path.join(snapshot.root, "craflet-lock.yaml"),
+            MAX_YAML_BYTES,
+        )) !== snapshot.lockText
+    )
+        throw concurrentInput();
+    for (const project of snapshot.projects) {
+        if (
+            (await inputText(
+                path.join(project.dir, "craflet.yaml"),
+                MAX_YAML_BYTES,
+            )) !== project.manifestText ||
+            (await inputText(
+                path.join(project.dir, ".craflet/state.json"),
+                32 * 1024 * 1024,
+            )) !== project.stateText
+        )
+            throw concurrentInput();
+    }
+}
+
+function installRoot(projects: readonly ProjectContext[]): string {
     const root = projects[0]?.lockRoot;
     if (
         !root ||
@@ -465,126 +742,157 @@ export async function snapshotInstallInputs(
             "Select distinct projects from one workspace.",
             2,
         );
-    const lockText = await inputText(
-        path.join(root, "craflet-lock.yaml"),
-        2 * 1024 * 1024,
-    );
-    const entries: InstallInputSnapshot["projects"][number][] = [];
-    for (const project of projects) {
-        const manifestText = await inputText(
-            path.join(project.dir, "craflet.yaml"),
-            2 * 1024 * 1024,
-        );
-        if (
-            manifestText === null ||
-            (project.manifestText !== undefined &&
-                manifestText !== project.manifestText)
-        )
-            throw concurrentInput();
-        const stateText = await inputText(
-            path.join(project.dir, ".craflet/state.json"),
-            32 * 1024 * 1024,
-        );
-        entries.push({ dir: project.dir, manifestText, stateText });
-    }
-    return { root, lockText, projects: entries };
+    return root;
 }
 
-async function assertInstallInputs(
+function assertSnapshotProjects(
+    projects: readonly ProjectContext[],
     snapshot: InstallInputSnapshot,
-): Promise<void> {
+    root: string,
+): void {
     if (
-        (await inputText(
-            path.join(snapshot.root, "craflet-lock.yaml"),
-            2 * 1024 * 1024,
-        )) !== snapshot.lockText
+        snapshot.root !== root ||
+        snapshot.projects.length !== projects.length ||
+        new Set(snapshot.projects.map((entry) => entry.dir.toLowerCase()))
+            .size !== snapshot.projects.length ||
+        projects.some(
+            (project) =>
+                !snapshot.projects.some(
+                    (entry) =>
+                        entry.dir === project.dir &&
+                        (project.manifestText === undefined ||
+                            project.manifestText === entry.manifestText),
+                ),
+        )
     )
         throw concurrentInput();
-    for (const project of snapshot.projects) {
-        if (
-            (await inputText(
-                path.join(project.dir, "craflet.yaml"),
-                2 * 1024 * 1024,
-            )) !== project.manifestText ||
-            (await inputText(
-                path.join(project.dir, ".craflet/state.json"),
-                32 * 1024 * 1024,
-            )) !== project.stateText
-        )
-            throw concurrentInput();
-    }
+}
+
+function assertSnapshotJournalCapacity(snapshot: InstallInputSnapshot): void {
+    const changes: FileChange[] = snapshot.projects.flatMap((entry) => [
+        {
+            relative: path
+                .relative(snapshot.root, path.join(entry.dir, "craflet.yaml"))
+                .replaceAll(path.sep, "/"),
+            before: entry.manifestText,
+            after: "",
+        },
+        {
+            relative: path
+                .relative(
+                    snapshot.root,
+                    path.join(entry.dir, ".craflet/state.json"),
+                )
+                .replaceAll(path.sep, "/"),
+            before: entry.stateText,
+            after: "",
+        },
+    ]);
+    changes.push({
+        relative: "craflet-lock.yaml",
+        before: snapshot.lockText,
+        after: "",
+    });
+    const minimumJournal = `${JSON.stringify({ schemaVersion: 1, phase: "writing", changes }, null, 4)}\n`;
+    assertManifestJournalLimits(
+        Buffer.byteLength(minimumJournal),
+        changes.length,
+    );
+}
+
+async function prepareInstallationRun(
+    projects: readonly ProjectContext[],
+    options: InstallOptions,
+    snapshot: InstallInputSnapshot,
+    preparedConfigs?: ReadonlyMap<string, ConfigBundle>,
+) {
+    const root = installRoot(projects);
+    assertSnapshotProjects(projects, snapshot, root);
+    assertSnapshotJournalCapacity(snapshot);
+    await assertInstallInputs(snapshot);
+    const lock = parseLockText(snapshot.lockText);
+    const captured = new Map(
+        snapshot.projects.map((entry) => [
+            entry.dir,
+            { ...entry, state: parseStateText(entry.stateText) },
+        ]),
+    );
+    const validated = projects.map((project) => {
+        const initial = captured.get(project.dir);
+        if (!initial) throw concurrentInput();
+        return validateInstallation(
+            project,
+            lock.projects[project.lockKey],
+            options,
+            initial.state,
+        );
+    });
+    const preflights = await preflightInstallations(validated, preparedConfigs);
+    await assertInstallInputs(snapshot);
+    return { captured, lock, preflights };
+}
+
+export async function prepareInstallProjects(
+    projects: readonly ProjectContext[],
+    options: InstallOptions = {},
+): Promise<InstallPreparation> {
+    const root = installRoot(projects);
+    validateInstallRequest(projects, options);
+    await assertManifestRecovered(root);
+    const snapshot = await snapshotInstallInputs(projects);
+    const { preflights } = await prepareInstallationRun(
+        projects,
+        options,
+        snapshot,
+    );
+    return {
+        snapshot,
+        configs: new Map(
+            preflights.map((input) => [input.project.dir, input.config]),
+        ),
+        pluginNamespaces: new Map(
+            preflights.map((input) => {
+                const namespace = pluginNamespace(input);
+                return [
+                    input.project.dir,
+                    {
+                        identities: [...namespace.identities.values()],
+                        reservedIds: [...namespace.reservedIds],
+                    },
+                ] as const;
+            }),
+        ),
+    };
 }
 
 export async function installProjects(
     projects: ProjectContext[],
     store: ArtifactStore,
     options: InstallOptions = {},
-    inputSnapshot?: InstallInputSnapshot,
+    preparation?: InstallPreparation,
 ): Promise<InstallResult[]> {
-    const root = projects[0]?.lockRoot;
-    if (
-        !root ||
-        projects.some((project) => project.lockRoot !== root) ||
-        new Set(projects.map((project) => project.dir.toLowerCase())).size !==
-            projects.length
-    )
-        throw new CrafletError(
-            "WORKSPACE_ROOT",
-            "Select projects from one workspace.",
-            2,
-        );
+    const root = installRoot(projects);
+    validateInstallRequest(projects, options);
     const perform = async () => {
         options.signal?.throwIfAborted();
-        const journalFile = path.join(
-            root,
-            ".craflet/manifest-transaction.json",
-        );
-        await assertNoSymlinks(root, ".craflet/manifest-transaction.json");
-        if (await exists(journalFile))
-            throw new CrafletError(
-                "RECOVERY_REQUIRED",
-                "An interrupted manifest transaction needs craflet recover.",
-                4,
-            );
+        const journalFile = await assertManifestRecovered(root);
         const snapshot =
-            inputSnapshot ?? (await snapshotInstallInputs(projects));
-        if (
-            snapshot.root !== root ||
-            snapshot.projects.length !== projects.length ||
-            new Set(snapshot.projects.map((entry) => entry.dir.toLowerCase()))
-                .size !== snapshot.projects.length ||
-            projects.some(
-                (project) =>
-                    !snapshot.projects.some(
-                        (entry) =>
-                            entry.dir === project.dir &&
-                            (project.manifestText === undefined ||
-                                project.manifestText === entry.manifestText),
-                    ),
-            )
-        )
-            throw concurrentInput();
-        await assertInstallInputs(snapshot);
-        const lock = parseLockText(snapshot.lockText);
-        const captured = new Map(
-            snapshot.projects.map((entry) => [
-                entry.dir,
-                { ...entry, state: parseStateText(entry.stateText) },
-            ]),
+            preparation?.snapshot ?? (await snapshotInstallInputs(projects));
+        const { captured, lock, preflights } = await prepareInstallationRun(
+            projects,
+            options,
+            snapshot,
+            preparation?.configs,
         );
         if (options.dryRun) {
             const previews: InstallResult[] = [];
-            for (const project of projects)
-                previews.push(
-                    await previewInstallation(
-                        project,
-                        lock.projects[project.lockKey],
-                        options,
-                    ),
-                );
+            for (const input of preflights)
+                previews.push(await previewInstallation(input, options));
             await assertInstallInputs(snapshot);
             return previews;
         }
+        for (const project of projects)
+            await registerCacheProject(project.home, project.dir);
         const changes: FileChange[] = [];
         const results: InstallResult[] = [];
         const committed: {
@@ -592,16 +900,11 @@ export async function installProjects(
             manifest: ProjectManifest;
             text: string;
         }[] = [];
-        for (const project of projects) {
+        for (const input of preflights) {
+            const { project } = input;
             const initial = captured.get(project.dir);
             if (!initial) throw concurrentInput();
-            const plan = await planInstallation(
-                project,
-                store,
-                lock.projects[project.lockKey],
-                options,
-                initial.state,
-            );
+            const plan = await planInstallation(input, store, options);
             lock.projects[project.lockKey] = plan.lock;
             const file = path.join(project.dir, "craflet.yaml");
             const text = await yamlText(
@@ -650,6 +953,13 @@ export async function installProjects(
         );
         // No network-derived result may turn a later manual edit into its baseline.
         await assertInstallInputs(snapshot);
+        for (const input of preflights) {
+            await assertDeploymentRecovered(input.project);
+            await new NodeConfigManager(
+                input.project.dir,
+                input.manifest.secrets,
+            ).assertUnchanged(input.config);
+        }
         for (const project of projects)
             await ensurePrivateDirectory(
                 await assertNoSymlinks(project.dir, ".craflet"),
@@ -667,7 +977,7 @@ export async function installProjects(
                         destination,
                         change.relative.endsWith("/state.json")
                             ? 32 * 1024 * 1024
-                            : 2 * 1024 * 1024,
+                            : MAX_YAML_BYTES,
                     )) !== change.before
                 )
                     throw concurrentInput();
@@ -689,8 +999,6 @@ export async function installProjects(
         return results;
     };
     if (options.dryRun) return perform();
-    for (const project of projects)
-        await registerCacheProject(project.home, project.dir);
     await ensurePrivateDirectory(await assertNoSymlinks(root, ".craflet"));
     return withMutex(path.join(root, ".craflet/operation.lock"), perform);
 }

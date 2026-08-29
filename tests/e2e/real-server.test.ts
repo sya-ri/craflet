@@ -149,6 +149,7 @@ describe("real servers through the packaged CLI", () => {
             for (const platform of project.platforms) {
                 const plugin = suite.fixtures.plugins[platform].v1;
                 const inspected = await cli<PluginIdentity>(suite, directory, [
+                    "plugins",
                     "inspect",
                     plugin.path,
                 ]);
@@ -158,7 +159,12 @@ describe("real servers through the packaged CLI", () => {
                     format: platform,
                 });
             }
-            await cli(suite, directory, ["--offline", "add", ...sources]);
+            await cli(suite, directory, [
+                "--offline",
+                "plugins",
+                "add",
+                ...sources,
+            ]);
             const prepared = await readState(directory);
             expect(prepared.active).toBeUndefined();
             expect(prepared.pending?.lock.server.sha256).toBe(
@@ -337,7 +343,7 @@ describe("real servers through the packaged CLI", () => {
                     ]?.sha256,
                 ).toBe(plugin.sha256);
             }
-            await cli(suite, directory, ["--offline", "update"]);
+            await cli(suite, directory, ["--offline", "plugins", "update"]);
             const staged = await readState(directory);
             expect(staged.active?.id).toBe(active.id);
             expect(staged.pending?.id).not.toBe(active.id);
@@ -768,7 +774,12 @@ describe("real servers through the packaged CLI", () => {
             const source = member.sources.velocity;
             if (!source)
                 throw new Error("Missing workspace local fixture source.");
-            await cli(suite, directory, ["--offline", "add", `file:${source}`]);
+            await cli(suite, directory, [
+                "--offline",
+                "plugins",
+                "add",
+                `file:${source}`,
+            ]);
             members.push({ ...member, name });
         }
         expect(
@@ -834,7 +845,7 @@ describe("real servers through the packaged CLI", () => {
             suite.fixtures.plugins.velocity.v2.path,
             first.sources.velocity,
         );
-        await cli(suite, first.dir, ["--offline", "update"]);
+        await cli(suite, first.dir, ["--offline", "plugins", "update"]);
         const pending = (await readState(first.dir)).pending;
         expect(pending?.lock.plugins.crafletvelocityfixture?.sha256).toBe(
             suite.fixtures.plugins.velocity.v2.sha256,
@@ -1221,11 +1232,16 @@ describe("real servers through the packaged CLI", () => {
         const source = project.sources.velocity;
         if (!source) throw new Error("Missing backup-failure fixture source.");
         const plugin = suite.fixtures.plugins.velocity.v1;
-        await cli(suite, directory, ["--offline", "add", `file:${source}`]);
+        await cli(suite, directory, [
+            "--offline",
+            "plugins",
+            "add",
+            `file:${source}`,
+        ]);
         await cli(suite, directory, ["start"]);
         await cli(suite, directory, ["config", "capture", "--initial"]);
         await copyFile(suite.fixtures.plugins.velocity.v2.path, source);
-        await cli(suite, directory, ["--offline", "update"]);
+        await cli(suite, directory, ["--offline", "plugins", "update"]);
         const before = await readState(directory);
         expect(before.active?.lock.plugins[plugin.id]?.sha256).toBe(
             plugin.sha256,
@@ -1332,7 +1348,12 @@ describe("real servers through the packaged CLI", () => {
             throw new Error("Missing interrupted-deployment fixture source.");
         const previous = suite.fixtures.plugins.velocity.v1;
         const next = suite.fixtures.plugins.velocity.v2;
-        await cli(suite, directory, ["--offline", "add", `file:${source}`]);
+        await cli(suite, directory, [
+            "--offline",
+            "plugins",
+            "add",
+            `file:${source}`,
+        ]);
         await cli(suite, directory, ["start"]);
         expect(
             await readFile(
@@ -1357,7 +1378,7 @@ describe("real servers through the packaged CLI", () => {
         expect(declared).toContain("Craflet interrupted deployment");
         await writeFile(baseConfig, declared, "utf8");
         await copyFile(next.path, source);
-        await cli(suite, directory, ["--offline", "update"]);
+        await cli(suite, directory, ["--offline", "plugins", "update"]);
         const before = await readState(directory);
         expect(before.active?.lock.plugins[previous.id]?.sha256).toBe(
             previous.sha256,
@@ -1485,13 +1506,18 @@ describe("real servers through the packaged CLI", () => {
         const source = project.sources.velocity;
         if (!source) throw new Error("Missing fault-test fixture source.");
         const plugin = suite.fixtures.plugins.velocity.v1;
-        await cli(suite, directory, ["--offline", "add", `file:${source}`]);
+        await cli(suite, directory, [
+            "--offline",
+            "plugins",
+            "add",
+            `file:${source}`,
+        ]);
         await cli(suite, directory, ["start"]);
         const active = (await readState(directory)).active;
         expect(active).toBeDefined();
         await cli(suite, directory, ["config", "capture", "--initial"]);
         await copyFile(suite.fixtures.plugins.velocity.v2.path, source);
-        await cli(suite, directory, ["--offline", "update"]);
+        await cli(suite, directory, ["--offline", "plugins", "update"]);
         const pending = (await readState(directory)).pending;
         expect(pending?.lock.plugins[plugin.id]?.sha256).toBe(
             suite.fixtures.plugins.velocity.v2.sha256,

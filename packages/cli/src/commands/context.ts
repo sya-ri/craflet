@@ -17,7 +17,6 @@ import {
 import { type BackupService, CrafletError } from "@craflet/core";
 import type { Command } from "commander";
 import { confirmEula } from "../presentation/eula.js";
-import type { HumanResultContext } from "../presentation/human.js";
 import { printError, printResult } from "../presentation/output.js";
 
 export interface Globals {
@@ -217,15 +216,9 @@ export class CommandContext {
             this.activeGlobals = globals;
             const positional = args.slice(0, -2);
             const commandPath = this.commandPath(current);
-            const artifactMutation = this.artifactMutation(
-                commandPath,
-                positional,
-                current,
-            );
             const presentation = {
                 command: commandPath,
                 dryRun: globals.dryRun ?? false,
-                ...(artifactMutation ? { artifactMutation } : {}),
             };
             try {
                 printResult(
@@ -247,27 +240,5 @@ export class CommandContext {
         )
             names.unshift(current.name());
         return names.join(" ");
-    }
-    private artifactMutation(
-        commandPath: string,
-        positional: unknown[],
-        command: Command,
-    ): NonNullable<HumanResultContext["artifactMutation"]> | undefined {
-        if (commandPath !== "update" && commandPath !== "remove")
-            return undefined;
-        const first = positional[0];
-        const plugins = Array.isArray(first)
-            ? first.filter(
-                  (value): value is string => typeof value === "string",
-              )
-            : typeof first === "string"
-              ? [first]
-              : [];
-        const options = command.opts<{ server?: boolean; all?: boolean }>();
-        return {
-            plugins,
-            server: commandPath === "update" && options.server === true,
-            all: commandPath === "update" && options.all === true,
-        };
     }
 }

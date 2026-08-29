@@ -14,7 +14,7 @@
         "THIRD_PARTY_NOTICES.md"
     ],
     "engines": {
-        "node": ">=24.20.0"
+        "node": ">=24.20.0 <27"
     },
     "repository": {
         "type": "git",
@@ -23,9 +23,10 @@
     },
     "license": "MIT",
     "dependencies": {
-        "@craflet/core": "workspace:*",
-        "@craflet/adapters": "workspace:*",
         "@clack/prompts": "1.7.0",
+        "@craflet/adapters": "workspace:*",
+        "@craflet/core": "workspace:*",
+        "@earendil-works/pi-tui": "0.84.3",
         "commander": "15.0.0"
     }
 }

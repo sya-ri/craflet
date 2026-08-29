@@ -33,8 +33,10 @@ Use the installed CLI's `--help` as the source of truth when its version differs
 - **Desired** is `craflet.yaml` plus `craflet-lock.yaml`.
 - **Pending** is a fully acquired and verified installation prepared for a future apply.
 - **Active** is the installation currently deployed in `runtime/`.
-- `add`, `remove`, `install`, and `update` prepare pending state; they do not replace a running JAR.
+- `plugins` and `server` show declared, locked, pending, and active artifacts without a provider lookup. Add `--latest` for provider status; use `plugins check` or `server check` for a nonmutating update report.
+- `plugins add`, `plugins remove`, `plugins update`, `server update`, and `install` prepare pending state; they do not replace a running JAR.
 - `start`, `run`, and `restart` may apply pending only after the required checks, stop, and backup. `--active` launches the current active installation.
+- `console` opens with recent logs. PageUp or the mouse wheel loads older history, End returns to live output, and Ctrl-C detaches without stopping the server.
 - Configuration templates under `config/` mirror paths under `runtime/`. Capture uses a three-way comparison and refuses unresolved conflicts.
 - Backups select operating data, not reproducible downloads. JARs, logs, crash reports, libraries, and caches are excluded by default.
 

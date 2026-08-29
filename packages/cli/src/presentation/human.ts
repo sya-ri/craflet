@@ -5,11 +5,6 @@ type ResultRecord = Record<string, unknown>;
 export interface HumanResultContext {
     command: string;
     dryRun: boolean;
-    artifactMutation?: {
-        plugins: readonly string[];
-        server: boolean;
-        all: boolean;
-    };
 }
 
 const ITEM_LIMIT = 20;
@@ -70,16 +65,6 @@ function formatBytes(value: unknown): string {
     return `${amount.toFixed(amount >= 10 ? 1 : 2)} ${unit}`;
 }
 
-function sourceVersion(value: unknown): string {
-    const source = record(value);
-    if (source) return text(source.version);
-    if (typeof value !== "string") return "unknown";
-    const at = value.lastIndexOf("@");
-    if (at < 0) return text(value);
-    const hash = value.indexOf("#", at);
-    return text(value.slice(at + 1, hash < 0 ? undefined : hash));
-}
-
 function requestedLabel(value: unknown, displayVersion?: unknown): string {
     const source = record(value);
     if (source) {
@@ -97,6 +82,16 @@ function requestedLabel(value: unknown, displayVersion?: unknown): string {
     const resolved = optionalText(displayVersion);
     if (resolved) return `${provider}@${resolved}`;
     return provider;
+}
+
+function requestedServerLabel(value: unknown): string {
+    const source = record(value);
+    if (!source) return requestedLabel(value);
+    const provider = text(source.provider, "declared source");
+    if (provider === "file") return "local file";
+    if (provider === "paper")
+        return `${text(source.project, "server")} ${text(source.version)} build ${text(source.build)}`;
+    return requestedLabel(source, source.version);
 }
 
 function boundedLines(
@@ -180,7 +175,6 @@ function renderInstall(
     result: unknown,
     command: string,
     dryRun: boolean,
-    context: HumanResultContext,
 ): string {
     const preview = record(result);
     if (preview?.action === "add") {
@@ -198,11 +192,11 @@ function renderInstall(
             : "No installation changes were needed.";
     const changed = items.filter((item) => item.changed === true);
     const verb =
-        command === "add"
+        command === "plugins add"
             ? "Added plugins and prepared"
-            : command === "remove"
+            : command === "plugins remove"
               ? "Removed plugin declarations and prepared"
-              : command === "update"
+              : command === "plugins update" || command === "server update"
                 ? "Resolved updates and prepared"
                 : "Prepared";
     const lines = [
@@ -212,21 +206,6 @@ function renderInstall(
               ? `${verb} ${changed.length} pending ${plural(changed.length, "installation")}.`
               : `All ${items.length} selected ${plural(items.length, "project")} are already up to date.`,
     ];
-    const mutation = context.artifactMutation;
-    if (mutation && command === "remove" && mutation.plugins.length)
-        lines.push(
-            `Requested removals: ${mutation.plugins.map((name) => text(name)).join(", ")}.`,
-        );
-    if (mutation && command === "update") {
-        const targets = mutation.all
-            ? "all declared plugins and the server"
-            : mutation.server
-              ? "the server"
-              : mutation.plugins.length
-                ? mutation.plugins.map((name) => text(name)).join(", ")
-                : "all declared plugins";
-        lines.push(`Requested updates: ${targets}.`);
-    }
     for (const item of items) {
         const plugins = list(item.plugins).map((plugin) => text(plugin));
         lines.push(
@@ -244,9 +223,17 @@ function renderInstall(
             "Apply the pending installation with craflet start or craflet restart.",
         );
     }
-    if (command === "remove")
+    if (command === "plugins remove")
         lines.push("Plugin data under runtime was left unchanged.");
     return lines.join("\n");
+}
+
+function latestLabel(value: ResultRecord): string {
+    const status = optionalText(value.status);
+    if (!status) return "";
+    if (status === "local") return " | latest local file";
+    if (status === "undeclared") return " | latest not declared";
+    return ` | latest ${text(value.latest)} (${status === "update-available" ? "update available" : status})`;
 }
 
 function renderPluginList(result: unknown): string {
@@ -256,13 +243,6 @@ function renderPluginList(result: unknown): string {
     for (const project of projects) {
         if (lines.length) lines.push("");
         lines.push(`Project: ${text(project.project)}`);
-        const server = record(project.server);
-        if (server) {
-            const declared = record(server.declared);
-            lines.push(
-                `Server: ${text(declared?.type, "unknown")} ${text(declared?.version)} | locked ${text(server.locked)} | active ${text(server.active)}`,
-            );
-        }
         const plugins = records(project.plugins);
         if (!plugins.length) {
             lines.push("Plugins: none declared.");
@@ -271,13 +251,31 @@ function renderPluginList(result: unknown): string {
         lines.push("Plugins:");
         for (const plugin of plugins)
             lines.push(
-                `  ${text(plugin.name)}: requested ${requestedLabel(plugin.requested, plugin.requestedVersion)} | active ${text(plugin.active)} | pending ${text(plugin.pending)} | locked ${text(plugin.locked)}`,
+                `  ${text(plugin.name)}: requested ${requestedLabel(plugin.requested, plugin.requestedVersion)} | active ${text(plugin.active)} | pending ${text(plugin.pending)} | locked ${text(plugin.locked)}${latestLabel(plugin)}`,
             );
     }
     return lines.join("\n");
 }
 
-function renderOutdated(result: unknown): string {
+function renderServerList(result: unknown): string {
+    const projects = records(result);
+    if (!projects.length) return "No projects were selected.";
+    const lines: string[] = [];
+    for (const project of projects) {
+        if (lines.length) lines.push("");
+        const server = record(project.server);
+        lines.push(`Project: ${text(project.project)}`);
+        lines.push(
+            `Server: requested ${requestedServerLabel(server?.requested)} | locked ${text(server?.locked)} | active ${text(server?.active)} | pending ${text(server?.pending)}${server ? latestLabel(server) : ""}`,
+        );
+    }
+    return lines.join("\n");
+}
+
+function renderUpdateCheck(
+    result: unknown,
+    target: "plugins" | "server",
+): string {
     const projects = records(result);
     const lines: string[] = [];
     let available = 0;
@@ -287,27 +285,33 @@ function renderOutdated(result: unknown): string {
         lines.push(`Project: ${text(project.project)}`);
         for (const update of updates) {
             const name = text(update.name);
-            if (update.status === "local") {
+            if (update.kind === "local") {
                 const updateCommand =
-                    name === "(server)"
-                        ? "craflet update --server"
-                        : `craflet update ${name}`;
+                    target === "server"
+                        ? "craflet server update"
+                        : `craflet plugins update -- ${name}`;
                 lines.push(
-                    `  ${name}: local JAR at ${text(update.currentVersion, text(update.current))}; run ${updateCommand} to reimport changed bytes.`,
+                    `  ${name}: local JAR locked at ${text(update.lockedVersion)}; run ${updateCommand} to reimport changed bytes.`,
                 );
-            } else if (update.changed === true) {
+            } else if (
+                update.kind === "provider" &&
+                update.updateAvailable === true
+            ) {
                 available += 1;
                 lines.push(
-                    `  ${name}: ${text(update.currentVersion, text(update.current))} -> ${text(update.availableVersion, sourceVersion(update.available))}`,
+                    `  ${name}: locked ${text(update.lockedVersion)} -> latest ${text(update.latestVersion)}`,
                 );
-            } else {
+            } else if (update.kind === "provider") {
                 lines.push(
-                    `  ${name}: up to date at ${text(update.currentVersion, text(update.current))}.`,
+                    `  ${name}: locked ${text(update.lockedVersion)} is the latest version.`,
                 );
             }
         }
     }
-    if (!lines.length) return "No plugins are declared for update checks.";
+    if (!lines.length)
+        return target === "server"
+            ? "No server update information is available."
+            : "No plugins are declared for update checks.";
     lines.unshift(
         available
             ? `${available} ${plural(available, "update")} available.`
@@ -1046,17 +1050,22 @@ export function renderHumanResult(
     switch (command) {
         case "init":
             return renderInit(result, dryRun);
-        case "inspect":
+        case "plugins inspect":
             return renderInspect(result);
-        case "add":
-        case "remove":
+        case "plugins add":
+        case "plugins remove":
+        case "plugins update":
+        case "server update":
         case "install":
-        case "update":
-            return renderInstall(result, command, dryRun, context);
-        case "list":
+            return renderInstall(result, command, dryRun);
+        case "plugins":
             return renderPluginList(result);
-        case "outdated":
-            return renderOutdated(result);
+        case "server":
+            return renderServerList(result);
+        case "plugins check":
+            return renderUpdateCheck(result, "plugins");
+        case "server check":
+            return renderUpdateCheck(result, "server");
         case "start":
         case "restart":
         case "stop":

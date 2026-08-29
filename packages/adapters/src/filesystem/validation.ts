@@ -1,10 +1,36 @@
 import path from "node:path";
-import { CrafletError, parseSource, validatePluginSet } from "@craflet/core";
+import {
+    CrafletError,
+    type ProjectLock,
+    parsePluginSource,
+    parseServerSource,
+    type ServerKind,
+    validatePluginIdentities,
+    validatePluginSet,
+} from "@craflet/core";
 import { NodeConfigManager } from "./config.js";
 import { serverSource } from "./installations.js";
 import { exists } from "./io.js";
 import { type ProjectContext, readLock } from "./projects.js";
 import { installationJars, readState } from "./state.js";
+
+export function validateManagedProjectLock(
+    lock: ProjectLock,
+    serverKind: ServerKind,
+): void {
+    parseServerSource(lock.server.source, serverKind);
+    const identities = Object.entries(lock.plugins).map(([name, artifact]) => {
+        parsePluginSource(artifact.source);
+        if (!artifact.identity || artifact.identity.id !== name)
+            throw new CrafletError(
+                "LOCK_IDENTITY",
+                `Lock plugin ${name} does not match its descriptor identity.`,
+                2,
+            );
+        return artifact.identity;
+    });
+    validatePluginSet(identities, serverKind);
+}
 
 export async function validateManagedProject(project: ProjectContext) {
     if (await exists(path.join(project.dir, ".craflet/import-incomplete.json")))
@@ -13,29 +39,22 @@ export async function validateManagedProject(project: ProjectContext) {
             "The imported destination is incomplete; it cannot be started safely.",
             4,
         );
-    parseSource(serverSource(project.manifest));
+    parseServerSource(
+        serverSource(project.manifest),
+        project.manifest.server.type,
+    );
+    validatePluginIdentities(
+        [],
+        project.manifest.server.type,
+        Object.keys(project.manifest.plugins),
+    );
     for (const source of Object.values(project.manifest.plugins))
-        parseSource(source);
+        parsePluginSource(source);
     const lock = (await readLock(project.lockRoot)).projects[project.lockKey];
     const state = await readState(project.dir);
     if (state.active) installationJars(state.active);
     if (state.pending) installationJars(state.pending);
-    if (lock) {
-        for (const [name, artifact] of Object.entries(lock.plugins)) {
-            if (artifact.identity?.id !== name)
-                throw new CrafletError(
-                    "LOCK_IDENTITY",
-                    `Lock plugin ${name} does not match its descriptor identity.`,
-                    2,
-                );
-        }
-        validatePluginSet(
-            Object.values(lock.plugins).flatMap((artifact) =>
-                artifact.identity ? [artifact.identity] : [],
-            ),
-            project.manifest.server.type,
-        );
-    }
+    if (lock) validateManagedProjectLock(lock, project.manifest.server.type);
     const configuration = await new NodeConfigManager(
         project.dir,
         project.manifest.secrets,

@@ -3,10 +3,13 @@ import {
     appendFile,
     mkdir,
     mkdtemp,
+    open,
     readFile,
     realpath,
     rm,
     stat,
+    symlink,
+    truncate,
     writeFile,
 } from "node:fs/promises";
 import net from "node:net";
@@ -22,7 +25,7 @@ import {
     readState,
     saveState,
 } from "@craflet/adapters";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NodeServerController } from "../../packages/adapters/src/runtime/controller.js";
 import {
     runServerDaemon,
@@ -30,8 +33,10 @@ import {
 } from "../../packages/adapters/src/runtime/daemon.js";
 import { javaExecutable } from "../../packages/adapters/src/runtime/java.js";
 import {
-    followServerLogs,
-    readServerLogs,
+    followServerLogsFrom,
+    readOlderServerLogs,
+    readRecentServerLogs,
+    serverLogGeneration,
 } from "../../packages/adapters/src/runtime/logs.js";
 import { consumeLogLines } from "../../packages/adapters/src/runtime/output.js";
 import {
@@ -81,6 +86,25 @@ async function listen(handler: (socket: net.Socket) => void): Promise<number> {
         server.listen(0, "127.0.0.1", resolve),
     );
     return (server.address() as net.AddressInfo).port;
+}
+
+async function shrinkAfterLogRead(file: string, readNumber: number) {
+    const handle = await open(file, "r");
+    const prototype = Object.getPrototypeOf(handle) as {
+        read: (...args: unknown[]) => Promise<unknown>;
+    };
+    await handle.close();
+    const original = prototype.read;
+    let reads = 0;
+    return vi.spyOn(prototype, "read").mockImplementation(async function (
+        this: unknown,
+        ...args: unknown[]
+    ) {
+        const result = await Reflect.apply(original, this, args);
+        reads++;
+        if (reads === readNumber) await truncate(file, 0);
+        return result;
+    });
 }
 function record(patch: Partial<RunnerRecord> = {}): RunnerRecord {
     return {
@@ -539,21 +563,355 @@ describe("Minecraft status framing and endpoint validation", () => {
 });
 
 describe("bounded logs and early daemon failures", () => {
+    const recentText = async (lines = 100) =>
+        (await readRecentServerLogs(project, lines)).text.trimEnd();
+
+    it("keeps file identities above Number.MAX_SAFE_INTEGER exact", () => {
+        const identity = { dev: 1n, birthtimeNs: 2n };
+        expect(
+            serverLogGeneration({
+                ...identity,
+                ino: 9_007_199_254_740_992n,
+            }),
+        ).not.toBe(
+            serverLogGeneration({
+                ...identity,
+                ino: 9_007_199_254_740_993n,
+            }),
+        );
+    });
+
+    it("paginates complete UTF-8 and CRLF lines without gaps", async () => {
+        const file = path.join(project, ".craflet/server.log");
+        const boundary = `${"x".repeat(64 * 1024 - 3)}日本語`;
+        await writeFile(file, `zero\r\n一\r\n\r\n${boundary}\r\nlast\n`);
+
+        const recent = await readRecentServerLogs(project, 2);
+        expect(recent.text).toBe(`${boundary}\nlast\n`);
+        expect(recent.lineCount).toBe(2);
+        expect(recent.older).not.toBeNull();
+        if (!recent.older) throw new Error("Expected an older log page.");
+
+        const middle = await readOlderServerLogs(project, recent.older, 2);
+        expect(middle).toMatchObject({
+            kind: "page",
+            text: "一\n\n",
+            lineCount: 2,
+        });
+        if (middle.kind !== "page" || !middle.older)
+            throw new Error("Expected another older log page.");
+        const oldest = await readOlderServerLogs(project, middle.older, 2);
+        expect(oldest).toEqual({
+            kind: "page",
+            text: "zero\n",
+            lineCount: 1,
+            older: null,
+        });
+        if (oldest.kind !== "page")
+            throw new Error("Expected the oldest log page.");
+        expect(oldest.text + middle.text + recent.text).toBe(
+            `zero\n一\n\n${boundary}\nlast\n`,
+        );
+    });
+    it("walks backward through one oversized line with bounded pages", async () => {
+        const file = path.join(project, ".craflet/server.log");
+        await writeFile(file, `old\n${"x".repeat(4 * 1024 * 1024)}`);
+
+        const recent = await readRecentServerLogs(project, 2);
+        expect(recent.text).toBe(
+            "[craflet] Oversized server log line omitted.\n",
+        );
+        let cursor = recent.older;
+        const pages: string[] = [];
+        for (let index = 0; cursor && index < 5; index++) {
+            const page = await readOlderServerLogs(project, cursor, 2);
+            expect(page.kind).toBe("page");
+            if (page.kind !== "page") break;
+            pages.unshift(page.text);
+            cursor = page.older;
+        }
+        expect(cursor).toBeNull();
+        expect(pages.join("") + recent.text).toBe(
+            "old\n[craflet] Oversized server log line omitted.\n",
+        );
+    });
+    it("marks an older page stale after a same-length rewrite", async () => {
+        const file = path.join(project, ".craflet/server.log");
+        await writeFile(file, "old1\nold2\nlast\n");
+        const recent = await readRecentServerLogs(project, 1);
+        if (!recent.older) throw new Error("Expected an older log page.");
+        const generation = serverLogGeneration(
+            await stat(file, { bigint: true }),
+        );
+
+        await writeFile(file, "new1\nnew2\nlast\n");
+        expect(serverLogGeneration(await stat(file, { bigint: true }))).toBe(
+            generation,
+        );
+
+        expect(await readOlderServerLogs(project, recent.older, 1)).toEqual({
+            kind: "stale",
+        });
+    });
+    it("hands off the snapshot offset without losing concurrent appends", async () => {
+        const file = path.join(project, ".craflet/server.log");
+        await writeFile(file, "before\n");
+        const recent = await readRecentServerLogs(project, 10);
+        await appendFile(file, "between\n");
+
+        const abort = new AbortController();
+        const iterator = followServerLogsFrom(
+            project,
+            recent.follow,
+            abort.signal,
+        );
+        expect(await iterator.next()).toEqual({
+            done: false,
+            value: {
+                kind: "append",
+                text: "between\n",
+                lineCount: 1,
+            },
+        });
+        abort.abort();
+        expect((await iterator.next()).done).toBe(true);
+    });
+    it("resets follow after an observed prefix is rewritten at the same length", async () => {
+        const file = path.join(project, ".craflet/server.log");
+        await writeFile(file, "ready\n");
+        const recent = await readRecentServerLogs(project, 1);
+        const abort = new AbortController();
+        const iterator = followServerLogsFrom(
+            project,
+            recent.follow,
+            abort.signal,
+        );
+
+        await appendFile(file, "first\n");
+        expect(await iterator.next()).toMatchObject({
+            done: false,
+            value: { kind: "append", text: "first\n" },
+        });
+        const generation = serverLogGeneration(
+            await stat(file, { bigint: true }),
+        );
+        await writeFile(file, "ready\nother\n");
+        expect(serverLogGeneration(await stat(file, { bigint: true }))).toBe(
+            generation,
+        );
+
+        expect(await iterator.next()).toEqual({
+            done: false,
+            value: { kind: "reset" },
+        });
+        expect((await iterator.next()).done).toBe(true);
+    });
+    it("retries a recent snapshot if the open log shrinks after its page is read", async () => {
+        const file = path.join(project, ".craflet/server.log");
+        await writeFile(file, "one\ntwo\n");
+        const fault = await shrinkAfterLogRead(file, 2);
+        try {
+            expect(await readRecentServerLogs(project, 10)).toMatchObject({
+                text: "",
+                lineCount: 0,
+            });
+        } finally {
+            fault.mockRestore();
+        }
+    });
+    it("marks an older page stale if the open log shrinks after reading", async () => {
+        const file = path.join(project, ".craflet/server.log");
+        await writeFile(file, "zero\none\ntwo\n");
+        const recent = await readRecentServerLogs(project, 1);
+        if (!recent.older) throw new Error("Expected an older log page.");
+        const fault = await shrinkAfterLogRead(file, 1);
+        try {
+            expect(await readOlderServerLogs(project, recent.older, 1)).toEqual(
+                { kind: "stale" },
+            );
+        } finally {
+            fault.mockRestore();
+        }
+    });
+    it("withholds an incomplete UTF-8 line until CRLF completes it", async () => {
+        const file = path.join(project, ".craflet/server.log");
+        const value = Buffer.from("日本語");
+        await writeFile(
+            file,
+            Buffer.concat([Buffer.from("before\r\n"), value.subarray(0, 2)]),
+        );
+        const recent = await readRecentServerLogs(project, 10);
+        expect(recent.text).toBe("before\n");
+
+        const abort = new AbortController();
+        const iterator = followServerLogsFrom(
+            project,
+            recent.follow,
+            abort.signal,
+        );
+        const next = iterator.next();
+        let settled = false;
+        void next.then(() => {
+            settled = true;
+        });
+        await appendFile(
+            file,
+            Buffer.concat([value.subarray(2), Buffer.from("\r")]),
+        );
+        await delay(200);
+        expect(settled).toBe(false);
+        await appendFile(file, "\n");
+        expect(await next).toEqual({
+            done: false,
+            value: {
+                kind: "append",
+                text: "日本語\n",
+                lineCount: 1,
+            },
+        });
+        abort.abort();
+        await iterator.next();
+    });
+    it("accepts a maximum-size line when CRLF crosses follow chunks", async () => {
+        const file = path.join(project, ".craflet/server.log");
+        await writeFile(file, "ready\n");
+        const recent = await readRecentServerLogs(project, 1);
+        const abort = new AbortController();
+        const iterator = followServerLogsFrom(
+            project,
+            recent.follow,
+            abort.signal,
+        );
+        const next = iterator.next();
+        await appendFile(file, `${"x".repeat(256 * 1024)}\r`);
+        await delay(200);
+        await appendFile(file, "\n");
+        const event = await next;
+        expect(event.done).toBe(false);
+        expect(event.value).toMatchObject({ kind: "append", lineCount: 1 });
+        if (event.value?.kind === "append") {
+            expect(event.value.text).toHaveLength(256 * 1024 + 1);
+            expect(event.value.text).not.toContain("Oversized");
+        }
+        abort.abort();
+        await iterator.next();
+    });
+    it("marks old cursors stale and closes follow after truncation", async () => {
+        const file = path.join(project, ".craflet/server.log");
+        await writeFile(file, "zero\none\ntwo\n");
+        const recent = await readRecentServerLogs(project, 1);
+        expect(recent.older).not.toBeNull();
+        if (!recent.older) throw new Error("Expected an older log page.");
+        await writeFile(file, "new\n");
+
+        expect(await readOlderServerLogs(project, recent.older, 1)).toEqual({
+            kind: "stale",
+        });
+        const iterator = followServerLogsFrom(
+            project,
+            recent.follow,
+            new AbortController().signal,
+        );
+        expect(await iterator.next()).toEqual({
+            done: false,
+            value: { kind: "reset" },
+        });
+        expect((await iterator.next()).done).toBe(true);
+    });
+    it("stops checkpoint following promptly on abort", async () => {
+        const file = path.join(project, ".craflet/server.log");
+        await writeFile(file, "ready\n");
+        const recent = await readRecentServerLogs(project);
+        const abort = new AbortController();
+        const iterator = followServerLogsFrom(
+            project,
+            recent.follow,
+            abort.signal,
+        );
+        const waiting = iterator.next();
+        abort.abort();
+        expect((await waiting).done).toBe(true);
+    });
+    it("refuses an ancestor link when reading a log page", async () => {
+        const linked = path.join(root, "linked-private");
+        await mkdir(linked);
+        await writeFile(path.join(linked, "server.log"), "outside\n");
+        await rm(path.join(project, ".craflet"), {
+            recursive: true,
+            force: true,
+        });
+        await symlink(
+            linked,
+            path.join(project, ".craflet"),
+            process.platform === "win32" ? "junction" : "dir",
+        );
+        await expect(readRecentServerLogs(project)).rejects.toMatchObject({
+            code: "SYMLINK_UNSAFE",
+        });
+    });
     it("reads only requested tail lines and never splits oversized first lines", async () => {
         const file = path.join(project, ".craflet/server.log");
-        expect(await readServerLogs(project)).toBe("");
+        expect(await recentText()).toBe("");
         await writeFile(
             file,
             `old\r\n${"x".repeat(4 * 1024 * 1024)}\r\nlast\r\n日本語\r\n`,
         );
-        expect(await readServerLogs(project, 2)).toBe("last\n日本語");
+        expect(await recentText(2)).toBe("last\n日本語");
         await writeFile(file, "x".repeat(4 * 1024 * 1024 + 1));
-        expect(await readServerLogs(project, 2)).toBe("");
+        expect(await recentText(2)).toBe(
+            "[craflet] Oversized server log line omitted.",
+        );
+        await writeFile(file, "x".repeat(256 * 1024 + 2));
+        expect(await recentText(2)).toBe(
+            "[craflet] Oversized server log line omitted.",
+        );
+    });
+    it("classifies incomplete lines exactly at the byte limit", async () => {
+        const file = path.join(project, ".craflet/server.log");
+        await writeFile(file, "x".repeat(256 * 1024 + 1));
+        expect(await recentText(1)).toBe(
+            "[craflet] Oversized server log line omitted.",
+        );
+
+        await writeFile(file, `${"x".repeat(256 * 1024)}\r`);
+        expect(await recentText(1)).toBe("");
+
+        await writeFile(file, `old\n${"x".repeat(256 * 1024 + 1)}`);
+        const recent = await readRecentServerLogs(project, 1);
+        expect(recent.text).toBe(
+            "[craflet] Oversized server log line omitted.\n",
+        );
+        expect(recent.older).not.toBeNull();
+    });
+    it("includes a bounded sentinel when an oversized line precedes the tail", async () => {
+        const file = path.join(project, ".craflet/server.log");
+        await writeFile(file, `${"x".repeat(2 * 1024 * 1024)}\nlast\n`);
+
+        const recent = await readRecentServerLogs(project, 2);
+        expect(recent).toMatchObject({
+            text: "[craflet] Oversized server log line omitted.\nlast\n",
+            lineCount: 2,
+        });
+        expect(recent.older).not.toBeNull();
+        let cursor = recent.older;
+        let pages = 0;
+        while (cursor) {
+            const page = await readOlderServerLogs(project, cursor, 2);
+            expect(page).toMatchObject({
+                kind: "page",
+                text: "",
+                lineCount: 0,
+            });
+            if (page.kind !== "page") break;
+            cursor = page.older;
+            pages++;
+        }
+        expect(pages).toBe(2);
     });
     it.each([0, 10001, -1, 1.5, Number.NaN])(
         "rejects unbounded log request %s",
         async (lines) => {
-            await expect(readServerLogs(project, lines)).rejects.toMatchObject({
+            await expect(recentText(lines)).rejects.toMatchObject({
                 code: "LOG_LINES",
             });
         },
@@ -563,8 +921,24 @@ describe("bounded logs and early daemon failures", () => {
         const abort = new AbortController();
         const found: string[] = [];
         const reading = (async () => {
-            for await (const value of followServerLogs(project, abort.signal))
-                found.push(value);
+            let snapshot = await readRecentServerLogs(project, 1);
+            while (!abort.signal.aborted) {
+                let reset = false;
+                for await (const event of followServerLogsFrom(
+                    project,
+                    snapshot.follow,
+                    abort.signal,
+                )) {
+                    if (event.kind === "append") found.push(event.text);
+                    else {
+                        reset = true;
+                        break;
+                    }
+                }
+                if (!reset || abort.signal.aborted) return;
+                snapshot = await readRecentServerLogs(project, 1);
+                found.push(snapshot.text);
+            }
         })();
         await delay(25);
         const japanese = Buffer.from("日本語\n");

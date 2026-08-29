@@ -2,11 +2,12 @@
 """Generate the animated terminal demo embedded in the user README.
 
 The transcript demonstrates the normal human-facing CLI workflow: create a
-Paper project, resolve its server JAR, add a Modrinth plugin, start the server,
-attach an interactive console, register a backup repository, prepare an update
-while the old version remains active, and apply the pending version on restart.
-It assumes BACKUP_PASSWORD is already set and /backup is an empty local backup
-destination.
+Paper project, target it with -C instead of changing directories, resolve its
+server JAR, add a Modrinth plugin, start the server, open recent console logs,
+load older history with PageUp, send a command, detach without stopping Java,
+register a backup repository, prepare an update while the old version remains
+active, and apply the pending version on restart. It assumes BACKUP_PASSWORD is
+already set and /backup is an empty local backup destination.
 
 Version provenance, verified from primary APIs on 2026-08-29:
 - https://fill.papermc.io/v3/projects/paper/versions/26.2/builds returned
@@ -67,7 +68,7 @@ INSTALLATION_ID = "177af4a4-f3d8-4be7-903e-e4b143dbb97d"
 NEXT_INSTALLATION_ID = "83cd83c0-ea08-49de-a1e1-86c7eb52d1d8"
 
 INIT_COMMAND = (
-    "craflet init --name survival --type paper "
+    "craflet init survival --name survival --type paper "
     "--version 26.2 --build 120 --yes"
 )
 INIT_RESULT = [
@@ -75,14 +76,17 @@ INIT_RESULT = [
     "Server version: 26.2 (build 120)",
     "Next: Review craflet.yaml, then run craflet install and craflet doctor.",
 ]
-INSTALL_COMMAND = "craflet install"
+INSTALL_COMMAND = "craflet -C survival install"
 INSTALL_RESULT = [
     "Prepared 1 pending installation.",
     "survival: pending ready; no declared plugins",
     "Running JARs were not replaced.",
     "Apply the pending installation with craflet start or craflet restart.",
 ]
-ADD_COMMAND = "craflet add modrinth:luckperms@v5.5.53-bukkit"
+ADD_COMMAND = (
+    "craflet -C survival plugins add "
+    "modrinth:luckperms@v5.5.53-bukkit"
+)
 ADD_RESULT = [
     "Added plugins and prepared 1 pending installation.",
     "survival: pending ready; declared plugins: LuckPerms",
@@ -96,8 +100,28 @@ START_RESULT = [
     "  Process: runner 5360, Java 2968",
     "  Last shutdown: clean",
 ]
-CONSOLE_RESULT = [
-    "[12:34:56 INFO]: There are 0 of a max of 20 players online:",
+CONSOLE_RECENT_RESULT = [
+    '[12:34:49 INFO]: Starting minecraft server version 26.2',
+    '[12:34:54 INFO]: [LuckPerms] Enabling LuckPerms v5.5.53',
+    '[12:34:56 INFO]: Done (7.214s)! For help, type "help"',
+    "Live | PageUp or mouse wheel: history | Ctrl-C: detach",
+    "",
+]
+CONSOLE_HISTORY_RESULT = [
+    "[12:34:41 INFO]: Loading libraries, please wait...",
+    "[12:34:44 INFO]: Preparing level \"world\"",
+    "[12:34:49 INFO]: Starting minecraft server version 26.2",
+    '[12:34:54 INFO]: [LuckPerms] Enabling LuckPerms v5.5.53',
+    '[12:34:56 INFO]: Done (7.214s)! For help, type "help"',
+    "0 new lines; End returns to live | PageUp or mouse wheel: history | Ctrl-C: detach",
+    "",
+]
+CONSOLE_COMMAND_RESULT = [
+    "[12:35:04 INFO]: There are 0 of a max of 20 players online:",
+    "Live | PageUp or mouse wheel: history | Ctrl-C: detach",
+    "",
+]
+CONSOLE_DETACH_RESULT = [
     "^C",
     "Detached from the server console; the server was not stopped.",
 ]
@@ -107,25 +131,24 @@ STATUS_RESULT = [
     "  Process: runner 5360, Java 2968",
 ]
 BACKUP_COMMAND = (
-    "craflet backup setup --path /backup --password-env BACKUP_PASSWORD "
+    "craflet -C survival backup setup --path /backup "
+    "--password-env BACKUP_PASSWORD "
     "--init --yes"
 )
 BACKUP_RESULT = ['Configured backup repository "main" at /backup.']
-OUTDATED_RESULT = [
+CHECK_RESULT = [
     "1 update available.",
     "Project: survival",
-    "  LuckPerms: v5.5.53-bukkit -> v5.5.71-bukkit",
+    "  LuckPerms: locked v5.5.53-bukkit -> latest v5.5.71-bukkit",
 ]
 UPDATE_RESULT = [
     "Resolved updates and prepared 1 pending installation.",
-    "Requested updates: LuckPerms.",
     "survival: pending ready; declared plugins: LuckPerms",
     "Running JARs were not replaced.",
     "Apply the pending installation with craflet start or craflet restart.",
 ]
 LIST_PENDING_RESULT = [
     "Project: survival",
-    "Server: paper 26.2 | locked 26.2 | active 26.2",
     "Plugins:",
     "  LuckPerms: requested modrinth@v5.5.71-bukkit | active v5.5.53-bukkit | pending v5.5.71-bukkit | locked v5.5.71-bukkit",
 ]
@@ -138,7 +161,6 @@ RESTART_RESULT = [
 ]
 LIST_FINAL_RESULT = [
     "Project: survival",
-    "Server: paper 26.2 | locked 26.2 | active 26.2",
     "Plugins:",
     "  LuckPerms: requested modrinth@v5.5.71-bukkit | active v5.5.71-bukkit | pending - | locked v5.5.71-bukkit",
 ]
@@ -186,6 +208,8 @@ def line_color(line: str) -> str:
             "Apply the pending",
             "Next:",
             "Detached from",
+            "Live |",
+            "0 new lines;",
             "^C",
         )
     ):
@@ -402,7 +426,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         font,
         "craflet - Start the prepared installation",
-        "craflet start",
+        "craflet -C survival start",
         step=3,
     )
     add_frame(
@@ -411,7 +435,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         render(
             font,
             "craflet - Start the prepared installation",
-            ["$ craflet start", *START_RESULT],
+            ["$ craflet -C survival start", *START_RESULT],
         ),
         1650,
     )
@@ -420,16 +444,38 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         font,
         "craflet - Attach the interactive console",
-        "craflet console",
+        "craflet -C survival console",
         step=3,
+    )
+    add_frame(
+        frames,
+        durations,
+        render(
+            font,
+            "craflet console - Recent logs on attach",
+            CONSOLE_RECENT_RESULT,
+            cursor=True,
+        ),
+        1800,
+    )
+    add_frame(
+        frames,
+        durations,
+        render(
+            font,
+            "craflet console - PageUp loads older history",
+            CONSOLE_HISTORY_RESULT,
+            cursor=True,
+        ),
+        1900,
     )
     add_typing(
         frames,
         durations,
         font,
-        "craflet - Attach the interactive console",
+        "craflet console - End returns live; send a command",
         "list",
-        prefix=["$ craflet console"],
+        prefix=CONSOLE_RECENT_RESULT[:-1],
         prompt="",
         step=1,
     )
@@ -438,16 +484,26 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         render(
             font,
-            "craflet - Detach without stopping the server",
+            "craflet console - Command output stays live",
+            [*CONSOLE_RECENT_RESULT[:-2], *CONSOLE_COMMAND_RESULT],
+            cursor=True,
+        ),
+        1750,
+    )
+    add_frame(
+        frames,
+        durations,
+        render(
+            font,
+            "craflet - Ctrl-C detaches without stopping Java",
             [
-                "$ craflet console",
-                "list",
-                *CONSOLE_RESULT,
-                "$ craflet status",
+                "$ craflet -C survival console",
+                *CONSOLE_DETACH_RESULT,
+                "$ craflet -C survival status",
                 *STATUS_RESULT,
             ],
         ),
-        2600,
+        2200,
     )
     add_typing(
         frames,
@@ -472,7 +528,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         font,
         "craflet - Check plugin updates",
-        "craflet outdated LuckPerms",
+        "craflet -C survival plugins check LuckPerms",
         step=4,
     )
     add_frame(
@@ -481,7 +537,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         render(
             font,
             "craflet - Check plugin updates",
-            ["$ craflet outdated LuckPerms", *OUTDATED_RESULT],
+            ["$ craflet -C survival plugins check LuckPerms", *CHECK_RESULT],
         ),
         1500,
     )
@@ -490,7 +546,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         font,
         "craflet - Prepare the update",
-        "craflet update LuckPerms",
+        "craflet -C survival plugins update LuckPerms",
         step=4,
     )
     add_frame(
@@ -499,7 +555,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         render(
             font,
             "craflet - Prepare the update",
-            ["$ craflet update LuckPerms", *UPDATE_RESULT],
+            ["$ craflet -C survival plugins update LuckPerms", *UPDATE_RESULT],
         ),
         1650,
     )
@@ -509,7 +565,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         render(
             font,
             "craflet - Active stays unchanged",
-            ["$ craflet list", *LIST_PENDING_RESULT],
+            ["$ craflet -C survival plugins", *LIST_PENDING_RESULT],
         ),
         1650,
     )
@@ -518,7 +574,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         font,
         "craflet - Apply pending on restart",
-        "craflet restart",
+        "craflet -C survival restart",
         step=3,
     )
     add_frame(
@@ -528,9 +584,9 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
             font,
             "craflet - Apply pending on restart",
             [
-                "$ craflet restart",
+                "$ craflet -C survival restart",
                 *RESTART_RESULT,
-                "$ craflet list",
+                "$ craflet -C survival plugins",
                 *LIST_FINAL_RESULT,
             ],
         ),

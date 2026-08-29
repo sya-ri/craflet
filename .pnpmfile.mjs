@@ -6,6 +6,7 @@ export const hooks = {
             "@craflet/core",
             "@craflet/adapters",
             "@clack/prompts",
+            "@earendil-works/pi-tui",
             "commander",
         ]);
         const dependencies = Object.fromEntries(

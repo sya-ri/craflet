@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import type { SourceInput, SourceSpec } from "./artifacts.js";
+import type { ServerKind, SourceInput, SourceSpec } from "./artifacts.js";
 import { CrafletError } from "./errors.js";
 
 const sourceSchema = type({ provider: "'file'", path: "string > 0" })
@@ -51,6 +51,11 @@ function versioned(value: string): [string, string] {
     return [component(name), component(version)];
 }
 
+function jarName(value: string): string {
+    if (!/\.jar$/iu.test(value)) return invalidSource();
+    return value;
+}
+
 /** Opaque upstream versions are never interpreted as SemVer ranges. */
 export function parseSource(input: SourceInput): SourceSpec {
     if (typeof input !== "string") {
@@ -60,6 +65,10 @@ export function parseSource(input: SourceInput): SourceSpec {
             if (typeof value === "string" && /\p{Cc}/u.test(value))
                 return invalidSource();
         }
+        if (result.provider === "file")
+            return { ...result, path: jarName(result.path) };
+        if (result.provider === "github")
+            return { ...result, asset: jarName(result.asset) };
         return { ...result };
     }
     if (!input || /\p{Cc}/u.test(input)) return invalidSource();
@@ -68,15 +77,14 @@ export function parseSource(input: SourceInput): SourceSpec {
         input.startsWith("\\\\") ||
         !input.includes(":")
     ) {
-        if (!/\.jar$/iu.test(input)) return invalidSource();
-        return { provider: "file", path: input };
+        return { provider: "file", path: jarName(input) };
     }
     const separator = input.indexOf(":");
     const provider = input.slice(0, separator);
     const reference = input.slice(separator + 1);
     if (provider === "file") {
         if (!reference) return invalidSource();
-        return { provider, path: reference };
+        return { provider, path: jarName(reference) };
     }
     if (provider === "github") {
         const [repositoryAndVersion, asset, ...rest] = reference.split("#");
@@ -85,7 +93,13 @@ export function parseSource(input: SourceInput): SourceSpec {
         const [repository, version] = versioned(repositoryAndVersion);
         const [owner, repo, ...extra] = repository.split("/");
         if (!owner || !repo || extra.length) return invalidSource();
-        return { provider, owner, repo, version, asset: component(asset) };
+        return {
+            provider,
+            owner,
+            repo,
+            version,
+            asset: jarName(component(asset)),
+        };
     }
     const [project, version] = versioned(reference);
     if (provider === "modrinth" || provider === "hangar")
@@ -101,6 +115,33 @@ export function parseSource(input: SourceInput): SourceSpec {
         };
     }
     return invalidSource();
+}
+
+export function parsePluginSource(
+    input: SourceInput,
+): Exclude<SourceSpec, { provider: "paper" }> {
+    const source = parseSource(input);
+    if (source.provider === "paper")
+        throw new CrafletError(
+            "NOT_PLUGIN",
+            "A Paper or Velocity server source cannot be declared as a plugin.",
+            2,
+        );
+    return source;
+}
+
+export function parseServerSource(
+    input: SourceInput,
+    serverKind: ServerKind,
+): SourceSpec {
+    const source = parseSource(input);
+    if (source.provider === "paper" && source.project !== serverKind)
+        throw new CrafletError(
+            "SERVER_PLATFORM",
+            `The server source provides ${source.project}, not ${serverKind}.`,
+            2,
+        );
+    return source;
 }
 
 /** Keep everyday manifests readable without inventing an escaping language. */

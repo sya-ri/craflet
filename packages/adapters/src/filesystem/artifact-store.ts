@@ -19,7 +19,7 @@ import {
     CrafletError,
     type LockedArtifact,
     type PluginIdentity,
-    parseSource,
+    parseServerSource,
     type SourceInput,
     type SourceSpec,
 } from "@craflet/core";
@@ -398,7 +398,7 @@ export class NodeArtifactStore implements ArtifactStore {
         context: ArtifactContext,
     ): Promise<LockedArtifact> {
         context.signal?.throwIfAborted();
-        const source = parseSource(input);
+        const source = parseServerSource(input, context.serverKind);
         if (source.provider === "file") {
             const local = await this.localFile(source.path, context);
             const bytes = await this.storeBytes(
@@ -436,9 +436,15 @@ export class NodeArtifactStore implements ArtifactStore {
         artifact: LockedArtifact,
         context: ArtifactContext,
     ): Promise<string> {
+        const source = parseServerSource(artifact.source, context.serverKind);
+        if (artifact.size > this.maximum)
+            throw new CrafletError(
+                "ARTIFACT_TOO_LARGE",
+                "The artifact exceeds the configured size limit.",
+                3,
+            );
         const cached = await this.cached(artifact, context);
         if (cached) return cached;
-        const source = parseSource(artifact.source);
         if (source.provider === "file") {
             const file = await this.localFile(source.path, context);
             const bytes = await this.storeBytes(
@@ -483,7 +489,7 @@ export class NodeArtifactStore implements ArtifactStore {
         input: SourceInput,
         context: ArtifactContext,
     ): Promise<{ source: SourceSpec; version: string }> {
-        const source = parseSource(input);
+        const source = parseServerSource(input, context.serverKind);
         if (source.provider === "file") return { source, version: "local" };
         const requested =
             source.provider === "paper"

@@ -20,11 +20,13 @@ import {
     NodeServerController,
     readLock,
     readState,
+    saveState,
     writeYaml,
 } from "@craflet/adapters";
 import {
     type BackupMetadata,
     CrafletError,
+    type LockedArtifact,
     parseSource,
     stableStringify,
 } from "@craflet/core";
@@ -182,6 +184,46 @@ describe("CLI usage and package-style project management", () => {
         );
         expect((await command(["--version"])).reply.help).toBe("0.1.0");
     });
+
+    it.each([
+        {
+            kind: "paper",
+            version: "1.21.11",
+            source: "velocity:3.4.0@20",
+        },
+        {
+            kind: "velocity",
+            version: "3.4.0",
+            source: "paper:1.21.11@200",
+        },
+    ] as const)(
+        "rejects a mismatched explicit source for $kind init without project or EULA files",
+        async ({ kind, version, source }) => {
+            const target = path.join(root, `mismatched-${kind}`);
+            const execution = await command([
+                "init",
+                target,
+                "--name",
+                `mismatched-${kind}`,
+                "--type",
+                kind,
+                "--version",
+                version,
+                "--source",
+                source,
+                "--yes",
+            ]);
+
+            expect(execution.reply.error?.code).toBe("SERVER_PLATFORM");
+            await expect(
+                stat(path.join(target, "craflet.yaml")),
+            ).rejects.toMatchObject({ code: "ENOENT" });
+            await expect(
+                stat(path.join(home, "eula.json")),
+            ).rejects.toMatchObject({ code: "ENOENT" });
+        },
+    );
+
     it("remembers explicit Paper EULA consent for this host user during init", async () => {
         const rejected = path.join(root, "paper-rejected");
         const failure = await command([
@@ -302,7 +344,8 @@ describe("CLI usage and package-style project management", () => {
             ["tools"],
             ["init"],
             ["import"],
-            ["update"],
+            ["plugins"],
+            ["server"],
             ["start"],
             ["backup", "apply"],
             ["config", "resolve"],
@@ -321,17 +364,28 @@ describe("CLI usage and package-style project management", () => {
     it.each(
         [
             ["not-a-command"],
-            ["add"],
+            ["inspect", "Example.jar"],
+            ["add", "file:Example.jar"],
+            ["remove", "Example"],
+            ["list"],
+            ["outdated"],
+            ["update"],
+            ["plugins", "list"],
+            ["plugins", "outdated"],
+            ["plugins", "add"],
             ["init", "--type", "fabric"],
             ["config", "resolve", "x.yml"],
-            ["update", "--to", "2"],
-            ["update", "A", "B", "--to", "2"],
-            ["update", "A", "--server", "--to", "2"],
+            ["plugins", "update", "--to", "2"],
+            ["plugins", "update", "A", "B", "--to", "2"],
+            ["plugins", "update", "A", "--to", ""],
+            ["server", "update", "A", "--to", "2"],
+            ["server", "update", "--to", ""],
         ].map((args) => ({ args })),
     )("returns a usage error for $args", async ({ args }) => {
         const execution = await command(args);
         expect(execution.code).toBe(2);
         expect(execution.reply.ok).toBe(false);
+        expect(execution.reply.error?.code).toBe("CLI_USAGE");
     });
     it.each([true, false])(
         "never echoes invalid secret-shaped option values (json=%s)",
@@ -362,7 +416,7 @@ describe("CLI usage and package-style project management", () => {
             }),
         ]);
         expect(await result(["status"])).toEqual({ status: "stopped" });
-        expect(await result(["list"])).toEqual([
+        expect(await result(["plugins"])).toEqual([
             expect.objectContaining({ project: "example", plugins: [] }),
         ]);
     });
@@ -416,7 +470,7 @@ describe("CLI usage and package-style project management", () => {
     it("explains plugin pending and update state without raw JSON", async () => {
         const plugin = path.join(root, "Example.jar");
         const added = await command(
-            ["add", `file:${plugin}`, "--offline"],
+            ["plugins", "add", `file:${plugin}`, "--offline"],
             project,
             false,
         );
@@ -425,7 +479,7 @@ describe("CLI usage and package-style project management", () => {
         );
         expect(added.output).toContain("Running JARs were not replaced.");
 
-        const before = await command(["list"], project, false);
+        const before = await command(["plugins"], project, false);
         expect(before.output).toContain(
             "Example: requested local file | active - | pending 1.0 | locked 1.0",
         );
@@ -433,34 +487,56 @@ describe("CLI usage and package-style project management", () => {
 
         await writeFile(plugin, artifactJar("Example", "2.0"));
         const checked = await command(
-            ["outdated", "Example", "--offline"],
+            ["plugins", "check", "Example", "--offline"],
             project,
             false,
         );
-        expect(checked.output).toContain("local JAR at 1.0");
+        expect(checked.output).toContain("local JAR locked at 1.0");
         const updated = await command(
-            ["update", "Example", "--offline"],
+            ["plugins", "update", "Example", "--offline"],
             project,
             false,
         );
         expect(updated.output).toContain(
             "Resolved updates and prepared 1 pending installation.",
         );
-        expect(updated.output).toContain("Requested updates: Example.");
         expect(updated.output).toContain("declared plugins: Example");
-        const after = await command(["list"], project, false);
+        const after = await command(["plugins"], project, false);
         expect(after.output).toContain(
             "Example: requested local file | active - | pending 2.0 | locked 2.0",
         );
     });
 
+    it("rejects global plugin declaration key collisions before grouped latest checks", async () => {
+        const configured = await loadProject(project, home);
+        await writeYaml(path.join(project, "craflet.yaml"), {
+            ...configured.manifest,
+            plugins: {
+                Foo: "modrinth:foo@1.0",
+                foo: "modrinth:foo@1.0",
+            },
+        });
+        const latest = vi
+            .spyOn(NodeArtifactStore.prototype, "latest")
+            .mockRejectedValue(new Error("Provider should not run."));
+
+        for (const args of [
+            ["plugins", "--latest"],
+            ["plugins", "check", "Foo"],
+        ]) {
+            const execution = await command(args);
+            expect(execution.reply.error?.code).toBe("DUPLICATE_PLUGIN");
+        }
+        expect(latest).not.toHaveBeenCalled();
+    });
+
     it("sanitizes human log tails without changing JSON string results", async () => {
         await mkdir(path.join(project, ".craflet"), { recursive: true });
-        const log = "line\tvalue\n\u001b]52;c;payload\u0007\rend\n";
+        const log = "line\tvalue\n\u001b]52;c;payload\u0007\rend   \n\n";
         await writeFile(path.join(project, ".craflet/server.log"), log);
 
         const human = await command(["logs"], project, false);
-        expect(human.output).toBe("line\tvalue\n?]52;c;payload??end\n");
+        expect(human.output).toBe("line\tvalue\n?]52;c;payload??end   \n\n");
         expect(human.output).not.toContain("\u001b");
 
         const json = await command(["logs"], project, true);
@@ -472,8 +548,9 @@ describe("CLI usage and package-style project management", () => {
 });
 
 describe("CLI artifact and pending contracts", () => {
-    it("preserves locked versions while adding provider display labels to outdated JSON", async () => {
+    it("preserves locked versions while adding provider display labels to update-check JSON", async () => {
         await result([
+            "plugins",
             "add",
             `file:${path.join(root, "Example.jar")}`,
             "--offline",
@@ -510,8 +587,25 @@ describe("CLI artifact and pending contracts", () => {
             path.join(configured.lockRoot, "craflet-lock.yaml"),
             lock,
         );
+        const state = await readState(project);
+        if (!state.pending)
+            throw new Error("Expected the pending installation state");
+        const active = structuredClone(state.pending);
+        active.manifest.plugins = {};
+        active.lock.plugins = {};
+        active.lock.requests.plugins = {};
+        active.lock.server = {
+            ...locked.server,
+            source: { ...serverSource, build: "119" },
+        };
+        const pending = structuredClone(state.pending);
+        pending.lock.server = {
+            ...locked.server,
+            source: { ...serverSource, build: "121" },
+        };
+        await saveState(project, { schemaVersion: 1, active, pending });
 
-        const matchingList = await command(["list"], project, false);
+        const matchingList = await command(["plugins"], project, false);
         expect(matchingList.output).toContain(
             "Example: requested modrinth@Example release 1.0 | active - | pending 1.0 | locked Example release 1.0",
         );
@@ -528,13 +622,24 @@ describe("CLI artifact and pending contracts", () => {
                 },
             },
         });
-        const staleList = await command(["list"], project, false);
+        const staleList = await command(["plugins"], project, false);
         expect(staleList.output).toContain(
             "Example: requested modrinth | active - | pending 1.0 | locked Example release 1.0",
         );
         expect(staleList.output).not.toContain("opaque-stale-request");
         expect(staleList.output).not.toContain("opaque-current-id");
         expect(staleList.output).not.toContain(root);
+
+        await writeYaml(path.join(project, "craflet.yaml"), {
+            ...configured.manifest,
+            server: { ...configured.manifest.server, source: serverSource },
+            plugins: {},
+        });
+        const pendingOnlyList = await command(["plugins"], project, false);
+        expect(pendingOnlyList.output).toContain(
+            "Example: requested not declared | active - | pending 1.0 | locked Example release 1.0",
+        );
+        expect(pendingOnlyList.output).not.toContain("none declared");
 
         await writeYaml(path.join(project, "craflet.yaml"), {
             ...configured.manifest,
@@ -559,22 +664,85 @@ describe("CLI artifact and pending contracts", () => {
             },
         );
 
+        expect(await result(["plugins", "--latest"])).toEqual([
+            expect.objectContaining({
+                project: "example",
+                plugins: [
+                    expect.objectContaining({
+                        name: "Example",
+                        latest: "Example release 2.0",
+                        status: "update-available",
+                    }),
+                ],
+            }),
+        ]);
+        const pluginInventory = await command(
+            ["plugins", "--latest"],
+            project,
+            false,
+        );
+        expect(pluginInventory.output).toContain(
+            "latest Example release 2.0 (update available)",
+        );
+        expect(pluginInventory.output).not.toContain("opaque-next-id");
+
+        expect(await result(["server", "--latest"])).toEqual([
+            expect.objectContaining({
+                project: "example",
+                server: expect.objectContaining({
+                    locked: "120",
+                    active: "119",
+                    pending: "121",
+                    latest: "121",
+                    status: "update-available",
+                }),
+            }),
+        ]);
+        const serverInventory = await command(
+            ["server", "--latest"],
+            project,
+            false,
+        );
+        expect(serverInventory.output).toContain(
+            "Server: requested paper 1.21.11 build 120",
+        );
+        expect(serverInventory.output).toContain(
+            "locked 120 | active 119 | pending 121",
+        );
+        expect(serverInventory.output).toContain(
+            "latest 121 (update available)",
+        );
+
+        await writeYaml(path.join(project, "craflet.yaml"), {
+            ...configured.manifest,
+            server: {
+                type: "paper",
+                version: "1.21.11",
+                build: "121",
+            },
+            plugins: { Example: pluginSource },
+        });
+        const staleServer = await command(["server"], project, false);
+        expect(staleServer.output).toContain(
+            "Server: requested paper 1.21.11 build 121 | locked 120",
+        );
+
         const pluginExpected = [
             {
                 project: "example",
                 updates: [
                     {
+                        kind: "provider",
                         name: "Example",
-                        current: "Example release 1.0",
-                        currentVersion: "Example release 1.0",
-                        available: "modrinth:example@opaque-next-id",
-                        availableVersion: "Example release 2.0",
-                        changed: true,
+                        lockedVersion: "Example release 1.0",
+                        latestSource: "modrinth:example@opaque-next-id",
+                        latestVersion: "Example release 2.0",
+                        updateAvailable: true,
                     },
                 ],
             },
         ];
-        const pluginResult = await command(["outdated", "Example"]);
+        const pluginResult = await command(["plugins", "check", "Example"]);
         expect(pluginResult.reply.result).toEqual(pluginExpected);
         expect(pluginResult.output).toBe(
             `${JSON.stringify({ ok: true, result: pluginExpected })}\n`,
@@ -585,17 +753,17 @@ describe("CLI artifact and pending contracts", () => {
                 project: "example",
                 updates: [
                     {
-                        name: "(server)",
-                        current: "1.21.11",
-                        currentVersion: "120",
-                        available: "paper:1.21.11@121",
-                        availableVersion: "121",
-                        changed: true,
+                        kind: "provider",
+                        name: "server",
+                        lockedVersion: "120",
+                        latestSource: "paper:1.21.11@121",
+                        latestVersion: "121",
+                        updateAvailable: true,
                     },
                 ],
             },
         ];
-        const serverResult = await command(["outdated", "--server"]);
+        const serverResult = await command(["server", "check"]);
         expect(serverResult.reply.result).toEqual(serverExpected);
         expect(serverResult.output).toBe(
             `${JSON.stringify({ ok: true, result: serverExpected })}\n`,
@@ -604,11 +772,11 @@ describe("CLI artifact and pending contracts", () => {
 
     it("inspects, adds, locks, updates, removes and discards without touching runtime JARs", async () => {
         const plugin = path.join(root, "Example.jar");
-        expect(await result(["inspect", plugin])).toMatchObject({
+        expect(await result(["plugins", "inspect", plugin])).toMatchObject({
             id: "Example",
             format: "bukkit",
         });
-        await result(["add", `file:${plugin}`, "--offline"]);
+        await result(["plugins", "add", `file:${plugin}`, "--offline"]);
         const before = await readState(project);
         expect(before.pending?.lock.plugins.Example?.version).toBe("1.0");
         await expect(
@@ -619,12 +787,14 @@ describe("CLI artifact and pending contracts", () => {
         expect(
             (await readState(project)).pending?.lock.plugins.Example?.version,
         ).toBe("1.0");
-        expect(await result(["outdated", "Example", "--offline"])).toEqual([
+        expect(
+            await result(["plugins", "check", "Example", "--offline"]),
+        ).toEqual([
             expect.objectContaining({
-                updates: [expect.objectContaining({ status: "local" })],
+                updates: [expect.objectContaining({ kind: "local" })],
             }),
         ]);
-        await result(["update", "Example", "--offline"]);
+        await result(["plugins", "update", "Example", "--offline"]);
         expect(
             (await readState(project)).pending?.lock.plugins.Example?.version,
         ).toBe("2.0");
@@ -635,7 +805,7 @@ describe("CLI artifact and pending contracts", () => {
             path.join(project, "runtime/plugins/Example/data.yml"),
             "count: 42\n",
         );
-        await result(["remove", "Example", "--offline"]);
+        await result(["plugins", "remove", "Example", "--offline"]);
         expect((await loadProject(project, home)).manifest.plugins).toEqual({});
         expect(
             await readFile(
@@ -655,14 +825,15 @@ describe("CLI artifact and pending contracts", () => {
     });
     it("reports absent names, duplicate declarations and frozen mismatches", async () => {
         expect(
-            (await command(["remove", "Missing", "--offline"])).reply.error
-                ?.code,
+            (await command(["plugins", "remove", "Missing", "--offline"])).reply
+                .error?.code,
         ).toBe("PLUGIN_UNKNOWN");
         expect(
             (await command(["install", "--frozen-lockfile", "--offline"])).reply
                 .error?.code,
         ).toBe("FROZEN_LOCK");
         await result([
+            "plugins",
             "add",
             `file:${path.join(root, "Example.jar")}`,
             "--offline",
@@ -670,6 +841,7 @@ describe("CLI artifact and pending contracts", () => {
         expect(
             (
                 await command([
+                    "plugins",
                     "add",
                     `file:${path.join(root, "Example.jar")}`,
                     "--offline",
@@ -677,15 +849,15 @@ describe("CLI artifact and pending contracts", () => {
             ).reply.error?.code,
         ).toBe("PLUGIN_EXISTS");
         expect(
-            (await command(["outdated", "Missing", "--offline"])).reply.error
-                ?.code,
+            (await command(["plugins", "check", "Missing", "--offline"])).reply
+                .error?.code,
         ).toBe("PLUGIN_UNKNOWN");
     });
     it.each(
         [
             ["install"],
-            ["add", "modrinth:example@latest"],
-            ["update", "--all"],
+            ["plugins", "add", "modrinth:example@latest"],
+            ["plugins", "update"],
             ["start"],
             ["restart"],
             ["run"],
@@ -865,6 +1037,9 @@ describe("CLI configuration, backup and maintenance", () => {
     });
     it("reads logs and previews commands and tool preparation without launching processes", async () => {
         expect(await result(["logs"])).toBe("");
+        expect(await result(["console", "--dry-run"])).toEqual({
+            status: "stopped",
+        });
         expect(await result(["command", "say hello", "--dry-run"])).toEqual({
             sent: false,
         });
@@ -902,7 +1077,7 @@ describe("workspace selection through the CLI", () => {
         await result(["-r", "install", "--offline"], root);
         const locked = await readLock(root);
         await result(
-            ["--filter", "alpha", "update", "--server", "--offline"],
+            ["--filter", "alpha", "server", "update", "--offline"],
             root,
         );
         expect((await readLock(root)).projects["servers/beta"]).toEqual(
@@ -914,13 +1089,227 @@ describe("workspace selection through the CLI", () => {
         );
         expect(statuses).toHaveLength(2);
         expect(
-            (await command(["--filter", "missing", "list"], root)).reply.error
-                ?.code,
+            (await command(["--filter", "missing", "plugins"], root)).reply
+                .error?.code,
         ).toBe("EMPTY_SELECTION");
         expect(await result(["-r", "stop", "--dry-run"], root)).toHaveLength(2);
         expect(
             (await command(["-r", "config", "list"], root)).reply.error?.code,
         ).toBe("SINGLE_PROJECT");
+    });
+    it("preflights recursive artifact checks before provider requests", async () => {
+        await result(["workspace", "init", "servers/*"], root);
+        const alphaDir = path.join(root, "servers", "alpha");
+        const betaDir = path.join(root, "servers", "beta");
+        const alpha = await initProject(alphaDir, {
+            name: "alpha",
+            kind: "velocity",
+            version: "4.1.1",
+        });
+        const beta = await initProject(betaDir, {
+            name: "beta",
+            kind: "velocity",
+            version: "4.1.1",
+        });
+        alpha.plugins.Example = "modrinth:example@1";
+        await writeYaml(path.join(alphaDir, "craflet.yaml"), alpha);
+        await writeYaml(path.join(betaDir, "craflet.yaml"), beta);
+        const latest = vi
+            .spyOn(NodeArtifactStore.prototype, "latest")
+            .mockRejectedValue(new Error("Provider preflight failed."));
+
+        expect(
+            (await command(["-r", "plugins", "check", "Example"], root)).reply
+                .error?.code,
+        ).toBe("PLUGIN_UNKNOWN");
+        expect(latest).not.toHaveBeenCalled();
+
+        beta.plugins.Broken = "not-a-source";
+        await writeYaml(path.join(betaDir, "craflet.yaml"), beta);
+        expect(
+            (await command(["-r", "plugins", "--latest"], root)).reply.error
+                ?.code,
+        ).toBe("INVALID_SOURCE");
+        expect(latest).not.toHaveBeenCalled();
+
+        beta.server.source = "not-a-source";
+        await writeYaml(path.join(betaDir, "craflet.yaml"), beta);
+        for (const args of [
+            ["-r", "server", "check"],
+            ["-r", "server", "--latest"],
+        ]) {
+            expect((await command(args, root)).reply.error?.code).toBe(
+                "INVALID_SOURCE",
+            );
+            expect(latest).not.toHaveBeenCalled();
+        }
+
+        delete beta.plugins.Broken;
+        delete beta.server.source;
+        await writeYaml(path.join(betaDir, "craflet.yaml"), beta);
+        await mkdir(path.join(betaDir, ".craflet"), { recursive: true });
+        await writeFile(path.join(betaDir, ".craflet/state.json"), "not-json");
+        for (const args of [
+            ["-r", "plugins", "--latest"],
+            ["-r", "server", "--latest"],
+        ]) {
+            expect((await command(args, root)).reply.error?.code).toBe(
+                "STATE_INVALID",
+            );
+            expect(latest).not.toHaveBeenCalled();
+        }
+    });
+    it("validates every contextual lock invariant before provider update checks", async () => {
+        await result(["workspace", "init", "servers/*"], root);
+        for (const name of ["alpha", "beta"]) {
+            const directory = path.join(root, "servers", name);
+            const manifest = await initProject(directory, {
+                name,
+                kind: "velocity",
+                version: "4.1.1",
+                source: `file:${path.join(root, "server.jar")}`,
+            });
+            manifest.plugins =
+                name === "alpha"
+                    ? { Alpha: "modrinth:alpha@1" }
+                    : {
+                          Broken: "modrinth:broken@1",
+                          Partner: "modrinth:partner@1",
+                      };
+            await writeYaml(path.join(directory, "craflet.yaml"), manifest);
+        }
+        const server = {
+            source: parseSource(`file:${path.join(root, "server.jar")}`),
+            version: "fixture",
+            sha256: "0".repeat(64),
+            size: 1,
+        };
+        const plugin = (id: string): LockedArtifact => ({
+            source: parseSource(`modrinth:${id.toLowerCase()}@1`),
+            version: "1",
+            sha256: "1".repeat(64),
+            size: 1,
+            identity: {
+                id,
+                version: "1",
+                format: "velocity" as const,
+                dependencies: [] as string[],
+                optionalDependencies: [] as string[],
+                provides: [] as string[],
+            },
+        });
+        const baseLock = {
+            lockVersion: 1 as const,
+            projects: {
+                "servers/alpha": {
+                    name: "alpha",
+                    requests: {
+                        server: "fixture",
+                        plugins: { Alpha: "fixture" },
+                    },
+                    server: structuredClone(server),
+                    plugins: { Alpha: plugin("Alpha") },
+                },
+                "servers/beta": {
+                    name: "beta",
+                    requests: {
+                        server: "fixture",
+                        plugins: {
+                            Broken: "fixture",
+                            Partner: "fixture",
+                        },
+                    },
+                    server: structuredClone(server),
+                    plugins: {
+                        Broken: plugin("Broken"),
+                        Partner: plugin("Partner"),
+                    },
+                },
+            },
+        };
+        const brokenIdentity = (lock: typeof baseLock) => {
+            const identity =
+                lock.projects["servers/beta"].plugins.Broken.identity;
+            if (!identity) throw new Error("Expected the fixture identity.");
+            return identity;
+        };
+        const corruptions: Array<{
+            name: string;
+            code: string;
+            mutate(lock: typeof baseLock): void;
+        }> = [
+            {
+                name: "missing identity",
+                code: "LOCK_IDENTITY",
+                mutate(lock) {
+                    Reflect.deleteProperty(
+                        lock.projects["servers/beta"].plugins.Broken,
+                        "identity",
+                    );
+                },
+            },
+            {
+                name: "identity key mismatch",
+                code: "LOCK_IDENTITY",
+                mutate(lock) {
+                    brokenIdentity(lock).id = "Renamed";
+                },
+            },
+            {
+                name: "wrong plugin platform",
+                code: "PLUGIN_PLATFORM",
+                mutate(lock) {
+                    brokenIdentity(lock).format = "bukkit";
+                },
+            },
+            {
+                name: "case-insensitive provides collision",
+                code: "DUPLICATE_PLUGIN",
+                mutate(lock) {
+                    brokenIdentity(lock).provides = ["partner"];
+                },
+            },
+            {
+                name: "missing required dependency",
+                code: "MISSING_PLUGIN_DEPENDENCY",
+                mutate(lock) {
+                    brokenIdentity(lock).dependencies = ["Required"];
+                },
+            },
+            {
+                name: "wrong server source target",
+                code: "SERVER_PLATFORM",
+                mutate(lock) {
+                    lock.projects["servers/beta"].server.source =
+                        parseSource("paper:1.21.11@1");
+                },
+            },
+            {
+                name: "server source used as a plugin",
+                code: "NOT_PLUGIN",
+                mutate(lock) {
+                    lock.projects["servers/beta"].plugins.Broken.source =
+                        parseSource("velocity:4.1.1@1");
+                },
+            },
+        ];
+        const latest = vi
+            .spyOn(NodeArtifactStore.prototype, "latest")
+            .mockRejectedValue(new Error("Provider should not run."));
+
+        for (const corruption of corruptions) {
+            const lock = structuredClone(baseLock);
+            corruption.mutate(lock);
+            await writeYaml(path.join(root, "craflet-lock.yaml"), lock);
+            latest.mockClear();
+
+            const execution = await command(["-r", "plugins", "check"], root);
+
+            expect(execution.reply.error?.code, corruption.name).toBe(
+                corruption.code,
+            );
+            expect(latest, corruption.name).not.toHaveBeenCalled();
+        }
     });
     it("refuses partial shared-data recovery groups before stopping anything", async () => {
         await result(["workspace", "init", "servers/*"], root);

@@ -112,100 +112,31 @@ describe("interactive CLI boundaries", () => {
 });
 
 describe("safe structured presentation", () => {
-    async function presentedContext(
-        syntax: string,
-        argv: string[],
-        configure?: (command: Command) => void,
-    ) {
+    it("passes only the nested command path and dry-run state to presentation", async () => {
         const program = new Command().name("craflet").exitOverride();
-        const child = program.command(syntax);
-        configure?.(child);
+        const child = program
+            .command("plugins")
+            .command("update [plugins...]")
+            .option("--to <version>");
         context.action(child, async () => ({ completed: true }));
         const result = vi
             .spyOn(presentationOutput, "printResult")
             .mockImplementation(() => undefined);
 
-        await program.parseAsync(argv, { from: "user" });
-
-        return result.mock.calls.at(-1)?.[2];
-    }
-
-    it.each([
-        {
-            name: "explicit plugin names",
-            argv: ["update", "LuckPerms", "spark"],
-            expected: {
-                plugins: ["LuckPerms", "spark"],
-                server: false,
-                all: false,
-            },
-        },
-        {
-            name: "the server selector",
-            argv: ["update", "--server"],
-            expected: { plugins: [], server: true, all: false },
-        },
-        {
-            name: "the all selector",
-            argv: ["update", "--all"],
-            expected: { plugins: [], server: false, all: true },
-        },
-    ])("passes safe artifact mutation metadata for $name", async (fixture) => {
-        const presented = await presentedContext(
-            "update [plugins...]",
-            fixture.argv,
-            (child) =>
-                child
-                    .option("--server")
-                    .option("--all")
-                    .option("--to <version>"),
+        await program.parseAsync(
+            ["plugins", "update", "LuckPerms", "--to", "private-version-value"],
+            { from: "user" },
         );
 
+        const presented = result.mock.calls.at(-1)?.[2];
         expect(presented).toEqual({
-            command: "update",
+            command: "plugins update",
             dryRun: false,
-            artifactMutation: fixture.expected,
         });
-    });
-
-    it("passes remove targets without retaining version, source, or path arguments", async () => {
-        const update = await presentedContext(
-            "update [plugins...]",
-            ["update", "LuckPerms", "--to", "private-version-value"],
-            (child) => child.option("--to <version>"),
+        expect(JSON.stringify(presented)).not.toContain("LuckPerms");
+        expect(JSON.stringify(presented)).not.toContain(
+            "private-version-value",
         );
-        expect(update).toEqual({
-            command: "update",
-            dryRun: false,
-            artifactMutation: {
-                plugins: ["LuckPerms"],
-                server: false,
-                all: false,
-            },
-        });
-        expect(JSON.stringify(update)).not.toContain("private-version-value");
-
-        const remove = await presentedContext("remove <plugins...>", [
-            "remove",
-            "LuckPerms",
-            "spark",
-        ]);
-        expect(remove).toEqual({
-            command: "remove",
-            dryRun: false,
-            artifactMutation: {
-                plugins: ["LuckPerms", "spark"],
-                server: false,
-                all: false,
-            },
-        });
-
-        const add = await presentedContext("add <sources...>", [
-            "add",
-            "file:C:/private/build/Example.jar",
-        ]);
-        expect(add).toEqual({ command: "add", dryRun: false });
-        expect(JSON.stringify(add)).not.toContain("Example.jar");
     });
 
     it.each([true, false])(

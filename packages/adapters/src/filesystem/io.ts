@@ -128,14 +128,17 @@ export async function assertNoSymlinks(
         .split(path.sep)
         .filter(Boolean)) {
         current = path.join(current, segment);
-        if (!(await exists(current))) continue;
-        if ((await lstat(current)).isSymbolicLink()) {
-            throw new CrafletError(
-                "SYMLINK_UNSAFE",
-                `Refusing managed path through a symbolic link: ${current}`,
-                3,
-            );
+        try {
+            if (!(await lstat(current)).isSymbolicLink()) continue;
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+            throw error;
         }
+        throw new CrafletError(
+            "SYMLINK_UNSAFE",
+            `Refusing managed path through a symbolic link: ${current}`,
+            3,
+        );
     }
     return target;
 }

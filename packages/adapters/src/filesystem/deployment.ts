@@ -142,8 +142,10 @@ export class NodeDeploymentManager {
             recoveryRequired: await exists(this.journalFile),
         };
     }
-    private async needsBackup(): Promise<boolean> {
-        if ((await readState(this.context.dir)).active) return true;
+    private async needsBackup(
+        active: Installation | undefined,
+    ): Promise<boolean> {
+        if (active) return true;
         return (await listFiles(path.join(this.context.dir, "runtime"))).some(
             (file) => file !== "eula.txt",
         );
@@ -212,16 +214,7 @@ export class NodeDeploymentManager {
                 "Java is unavailable or incompatible. Run craflet doctor.",
                 3,
             );
-        const context = artifactContext(
-            { ...this.context, manifest: candidate.manifest },
-            this.options,
-        );
-        for (const artifact of [
-            candidate.lock.server,
-            ...Object.values(candidate.lock.plugins),
-        ])
-            await this.artifacts.ensure(artifact, context);
-        if (applyPending && (await this.needsBackup())) {
+        if (applyPending && (await this.needsBackup(state.active))) {
             if (!this.backupService)
                 throw new CrafletError(
                     "BACKUP_REQUIRED",
@@ -234,10 +227,20 @@ export class NodeDeploymentManager {
                 this.options.signal ? { signal: this.options.signal } : {},
             );
         }
+        const context = artifactContext(
+            { ...this.context, manifest: candidate.manifest },
+            this.options,
+        );
+        for (const artifact of [
+            candidate.lock.server,
+            ...Object.values(candidate.lock.plugins),
+        ])
+            await this.artifacts.ensure(artifact, context);
         if (launch) await this.prepareEula(candidate, applyPending, false);
     }
     async backupActive(): Promise<unknown> {
-        if (!(await this.needsBackup())) return undefined;
+        const state = await readState(this.context.dir);
+        if (!(await this.needsBackup(state.active))) return undefined;
         assertStopped((await this.controller.status()).status);
         if (!this.backupService)
             throw new CrafletError(
@@ -245,7 +248,6 @@ export class NodeDeploymentManager {
                 "A backup repository is required.",
                 3,
             );
-        const state = await readState(this.context.dir);
         return this.backupService.create(
             { installation: state.active ?? null },
             this.options.signal ? { signal: this.options.signal } : {},

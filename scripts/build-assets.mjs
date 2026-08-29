@@ -12,6 +12,12 @@ import path from "node:path";
 
 const root = process.cwd();
 const cli = path.join(root, "packages/cli");
+const licenseFallbacks = new Map([
+    [
+        "@earendil-works/pi-tui@0.84.3",
+        path.join(root, "scripts/licenses/earendil-works-pi-tui-0.84.3.txt"),
+    ],
+]);
 await mkdir(path.join(cli, "dist"), { recursive: true });
 execFileSync(
     process.execPath,
@@ -78,6 +84,9 @@ async function collect(directory) {
                 /* License directories are not regular files. */
             }
         }
+        const fallback = licenseFallbacks.get(identity);
+        if (!texts.length && fallback)
+            texts.push(await readFile(fallback, "utf8"));
         if (!texts.length)
             throw new Error(
                 `Bundled dependency has no license text: ${identity}`,

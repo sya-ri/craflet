@@ -25,8 +25,10 @@ import {
     type BackupService,
     CrafletError,
     type LockedArtifact,
+    newProject,
     parseSource,
     type SourceInput,
+    stableStringify,
 } from "@craflet/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NodeArtifactStore } from "../../packages/adapters/src/filesystem/artifact-store.js";
@@ -48,6 +50,7 @@ import {
     assertManifestJournalLimits,
     installProjects,
     recoverManifests,
+    validateInstallRequest,
 } from "../../packages/adapters/src/filesystem/installations.js";
 import * as io from "../../packages/adapters/src/filesystem/io.js";
 import { addPlugins } from "../../packages/adapters/src/filesystem/plugin-commands.js";
@@ -59,6 +62,8 @@ import {
     initProject,
     initWorkspace,
     loadProject,
+    MAX_YAML_BYTES,
+    type ProjectContext,
     readLock,
     readYaml,
     selectProjects,
@@ -241,6 +246,43 @@ function artifactStore(root: string) {
         })),
     } satisfies ArtifactStore;
     return { store, files };
+}
+
+type FixtureArtifactStore = ReturnType<typeof artifactStore>["store"];
+
+function clearArtifactCalls(store: FixtureArtifactStore): void {
+    store.latest.mockClear();
+    store.resolve.mockClear();
+    store.ensure.mockClear();
+}
+
+function expectNoArtifactCalls(store: FixtureArtifactStore): void {
+    expect(store.latest).not.toHaveBeenCalled();
+    expect(store.resolve).not.toHaveBeenCalled();
+    expect(store.ensure).not.toHaveBeenCalled();
+}
+
+async function workspaceProjectPair() {
+    const root = await directory();
+    await initWorkspace(root, ["servers/*"]);
+    for (const name of ["alpha", "beta"])
+        await initProject(path.join(root, "servers", name), {
+            name,
+            kind: "paper",
+            version: "26.1",
+        });
+    const selected = await selectProjects(root, path.join(root, "home"), {
+        recursive: true,
+    });
+    const alpha = selected.find((project) => project.manifest.name === "alpha");
+    const beta = selected.find((project) => project.manifest.name === "beta");
+    if (!alpha || !beta) throw new Error("Expected both workspace projects.");
+    return {
+        root,
+        projects: [alpha, beta],
+        beta,
+        ...artifactStore(root),
+    };
 }
 
 async function project(
@@ -533,6 +575,23 @@ describe("safe import of an existing server", () => {
             expect(await contents(target, "owned.txt")).toBe("owned");
         else if (kind !== "ancestor")
             expect(await io.exists(target)).toBe(false);
+        expect(await io.exists(fixture.home)).toBe(false);
+    });
+
+    it("rejects a non-JAR import selection before inspecting an occupied destination", async () => {
+        const fixture = await importFixture();
+        await put(fixture.target, "owned.txt", "owned");
+
+        await expect(
+            importProject(
+                fixture.source,
+                fixture.target,
+                fixture.home,
+                { ...fixture.options, serverJar: "server.properties" },
+                fixture.store,
+            ),
+        ).rejects.toMatchObject({ code: "IMPORT_SERVER" });
+        expect(await contents(fixture.target, "owned.txt")).toBe("owned");
         expect(await io.exists(fixture.home)).toBe(false);
     });
 
@@ -1269,6 +1328,19 @@ describe("project initialization and workspaces", () => {
                 version: "26.1",
             }),
         ).rejects.toMatchObject({ code: "PROJECT_NAME" });
+        const occupied = path.join(root, "occupied");
+        await put(occupied, "craflet.yaml", "owned\n");
+        for (const dryRun of [false, true])
+            await expect(
+                initProject(occupied, {
+                    name: "alpha",
+                    kind: "paper",
+                    version: "26.1",
+                    source: "file:server.zip",
+                    dryRun,
+                }),
+            ).rejects.toMatchObject({ code: "INVALID_SOURCE" });
+        expect(await contents(occupied, "craflet.yaml")).toBe("owned\n");
         const preview = await initProject(target, {
             name: "alpha",
             kind: "velocity",
@@ -1278,6 +1350,41 @@ describe("project initialization and workspaces", () => {
         expect(preview.server.type).toBe("velocity");
         expect(await io.exists(target)).toBe(false);
     });
+
+    it.each([
+        {
+            kind: "paper",
+            version: "1.21.11",
+            source: "velocity:3.4.0@20",
+        },
+        {
+            kind: "velocity",
+            version: "3.4.0",
+            source: "paper:1.21.11@200",
+        },
+    ] as const)(
+        "rejects a $kind project backed by the other Paper project before files or EULA consent",
+        async ({ kind, version, source }) => {
+            const root = await directory();
+            const target = path.join(root, kind);
+            const home = path.join(root, "home");
+            const requestConsent = vi.fn(async () => undefined);
+
+            await expect(
+                initProject(target, {
+                    name: kind,
+                    kind,
+                    version,
+                    source,
+                    eula: { home, requestConsent },
+                }),
+            ).rejects.toMatchObject({ code: "SERVER_PLATFORM" });
+
+            expect(requestConsent).not.toHaveBeenCalled();
+            expect(await io.exists(target)).toBe(false);
+            expect(await io.exists(path.join(home, "eula.json"))).toBe(false);
+        },
+    );
 
     it.each([
         ["servers/*", "!servers/retired"],
@@ -1443,6 +1550,96 @@ describe("installation and shared manifest transactions", () => {
         expect(() => assertManifestJournalLimits(1, 4097)).toThrow(
             expect.objectContaining({ code: "MANIFEST_TOO_LARGE" }),
         );
+    });
+
+    it("rejects a 2,048-project manifest transaction for apply and dry-run", () => {
+        const manifest = newProject("template", "paper", "26.1");
+        const projects = Array.from(
+            { length: 2_048 },
+            (_, index): ProjectContext => ({
+                dir: `project-${index}`,
+                manifest: { ...manifest, name: `server-${index}` },
+                lockRoot: "workspace",
+                lockKey: `server-${index}`,
+                home: "home",
+            }),
+        );
+
+        for (const dryRun of [false, true])
+            expect(() =>
+                validateInstallRequest(projects, { dryRun }),
+            ).toThrowError(
+                expect.objectContaining({ code: "MANIFEST_TOO_LARGE" }),
+            );
+    });
+
+    it("rejects a schema-valid state whose minimum recovery journal exceeds the byte limit", async () => {
+        const fixture = await project({ installed: false });
+        for (let index = 0; index < 8; index++)
+            await put(fixture.dir, `config/large-${index}.txt`, "initial\n");
+        await installProjects([fixture.context], fixture.store);
+        const state = await readState(fixture.dir);
+        const files = state.pending?.config.files;
+        if (files?.length !== 8)
+            throw new Error("Expected eight pending configuration files.");
+        for (const file of files) file.content = "";
+        const empty = `${JSON.stringify(state)}\n`;
+        const targetBytes = 32 * 1024 * 1024 - 1;
+        let remaining = targetBytes - Buffer.byteLength(empty);
+        for (const file of files) {
+            const bytes = Math.min(4 * 1024 * 1024, remaining);
+            file.content = "x".repeat(bytes);
+            remaining -= bytes;
+        }
+        expect(remaining).toBe(0);
+        const stateText = `${JSON.stringify(state)}\n`;
+        expect(Buffer.byteLength(stateText)).toBe(targetBytes);
+        await writeFile(
+            path.join(fixture.dir, ".craflet/state.json"),
+            stateText,
+        );
+        clearArtifactCalls(fixture.store);
+
+        for (const dryRun of [false, true]) {
+            await expect(
+                installProjects([fixture.context], fixture.store, { dryRun }),
+            ).rejects.toMatchObject({ code: "MANIFEST_TOO_LARGE" });
+            expectNoArtifactCalls(fixture.store);
+        }
+    });
+
+    it("rejects oversized generated shared-lock YAML without changing any input", async () => {
+        const fixture = await workspaceProjectPair();
+        await installProjects(fixture.projects, fixture.store);
+        const inputFiles = [
+            path.join(fixture.root, "craflet-lock.yaml"),
+            ...fixture.projects.flatMap((project) => [
+                path.join(project.dir, "craflet.yaml"),
+                path.join(project.dir, ".craflet/state.json"),
+            ]),
+        ];
+        const readInputs = () =>
+            Promise.all(inputFiles.map((file) => readFile(file, "utf8")));
+        const before = await readInputs();
+        const resolve = fixture.store.resolve.getMockImplementation();
+        if (!resolve) throw new Error("Expected the fixture resolver.");
+        fixture.store.resolve.mockImplementation(async (input, context) => ({
+            ...(await resolve(input, context)),
+            url: `https://example.test/${"x".repeat(MAX_YAML_BYTES)}`,
+        }));
+
+        await expect(
+            installProjects(fixture.projects, fixture.store, {
+                updateServer: true,
+            }),
+        ).rejects.toMatchObject({ code: "YAML_SIZE" });
+
+        expect(await readInputs()).toEqual(before);
+        expect(
+            await io.exists(
+                path.join(fixture.root, ".craflet/manifest-transaction.json"),
+            ),
+        ).toBe(false);
     });
 
     it("rejects a stale loaded declaration before any artifact lookup", async () => {
@@ -1695,6 +1892,308 @@ describe("installation and shared manifest transactions", () => {
         },
     );
 
+    it.each([
+        { update: "server", options: { frozen: true, updateServer: true } },
+        {
+            update: "all plugins",
+            options: { frozen: true, updateAllPlugins: true },
+        },
+        {
+            update: "named plugins",
+            options: { frozen: true, updatePlugins: ["Example"] },
+        },
+    ])(
+        "rejects frozen with $update updates before artifact I/O",
+        async ({ options }) => {
+            const fixture = await project();
+            clearArtifactCalls(fixture.store);
+
+            expect(() =>
+                validateInstallRequest([fixture.context], options),
+            ).toThrowError(expect.objectContaining({ code: "FROZEN_LOCK" }));
+            await expect(
+                installProjects([fixture.context], fixture.store, options),
+            ).rejects.toMatchObject({ code: "FROZEN_LOCK" });
+            expectNoArtifactCalls(fixture.store);
+        },
+    );
+
+    it.each(["stale request", "project name"] as const)(
+        "rejects a frozen lock with a mismatched $violation before artifact I/O",
+        async (violation) => {
+            const fixture = await project();
+            const lock = await readLock(fixture.context.lockRoot);
+            const entry = lock.projects[fixture.context.lockKey];
+            if (!entry) throw new Error("Expected the fixture lock entry.");
+            if (violation === "stale request")
+                entry.requests.plugins.Stale = stableStringify(
+                    parseSource("modrinth:stale@1.0.0"),
+                );
+            else entry.name = "renamed";
+            await writeYaml(
+                path.join(fixture.context.lockRoot, "craflet-lock.yaml"),
+                lock,
+            );
+            clearArtifactCalls(fixture.store);
+
+            await expect(
+                installProjects([fixture.context], fixture.store, {
+                    frozen: true,
+                }),
+            ).rejects.toMatchObject({ code: "FROZEN_LOCK" });
+            expectNoArtifactCalls(fixture.store);
+        },
+    );
+
+    it.each([
+        {
+            violation: "wrong platform",
+            code: "PLUGIN_PLATFORM",
+            mutate: (plugins: Record<string, LockedArtifact>) => {
+                const identity = plugins.Example?.identity;
+                if (!identity) throw new Error("Expected Example identity.");
+                identity.format = "velocity";
+            },
+        },
+        {
+            violation: "duplicate id/provides namespace",
+            code: "DUPLICATE_PLUGIN",
+            mutate: (plugins: Record<string, LockedArtifact>) => {
+                const identity = plugins.Example?.identity;
+                if (!identity) throw new Error("Expected Example identity.");
+                identity.provides = ["RENAMED"];
+            },
+        },
+    ])(
+        "rejects reusable lock identities with a $violation before resolving an update",
+        async ({ code, mutate }) => {
+            const fixture = await project({ installed: false });
+            fixture.context.manifest.plugins.Renamed = "modrinth:renamed@1.0.0";
+            await installProjects([fixture.context], fixture.store);
+            const lock = await readLock(fixture.context.lockRoot);
+            const entry = lock.projects[fixture.context.lockKey];
+            const example = entry?.plugins.Example;
+            if (!entry || !example?.identity)
+                throw new Error("Expected reusable fixture locks.");
+            const source = "modrinth:future@1.0.0";
+            const future = structuredClone(example);
+            future.source = parseSource(source);
+            future.identity = { ...example.identity, id: "Future" };
+            entry.plugins.Future = future;
+            entry.requests.plugins.Future = stableStringify(
+                parseSource(source),
+            );
+            mutate(entry.plugins);
+            await writeYaml(
+                path.join(fixture.context.lockRoot, "craflet-lock.yaml"),
+                lock,
+            );
+            fixture.context.manifest.plugins.Future = source;
+            clearArtifactCalls(fixture.store);
+
+            await expect(
+                installProjects([fixture.context], fixture.store, {
+                    updatePlugins: ["Future"],
+                }),
+            ).rejects.toMatchObject({ code });
+            expectNoArtifactCalls(fixture.store);
+        },
+    );
+
+    it("rejects an unresolved declaration that claims a reusable plugin alias before artifact I/O", async () => {
+        const fixture = await project();
+        const lock = await readLock(fixture.context.lockRoot);
+        const entry = lock.projects[fixture.context.lockKey];
+        const identity = entry?.plugins.Example?.identity;
+        if (!entry || !identity) throw new Error("Expected Example lock data.");
+        identity.provides = ["B"];
+        await writeYaml(
+            path.join(fixture.context.lockRoot, "craflet-lock.yaml"),
+            lock,
+        );
+        fixture.context.manifest.plugins.B = "modrinth:b@1.0.0";
+        clearArtifactCalls(fixture.store);
+
+        await expect(
+            installProjects([fixture.context], fixture.store),
+        ).rejects.toMatchObject({ code: "DUPLICATE_PLUGIN" });
+        expectNoArtifactCalls(fixture.store);
+    });
+
+    it("validates each resolved plugin before caching it or resolving the next plugin", async () => {
+        const fixture = await project({ plugin: false, installed: false });
+        fixture.context.manifest.plugins.Example = "modrinth:example@1.0.0";
+        fixture.context.manifest.plugins.Renamed = "modrinth:renamed@1.0.0";
+        const resolve = fixture.store.resolve.getMockImplementation();
+        if (!resolve) throw new Error("Expected the fixture resolver.");
+        fixture.store.resolve.mockImplementation(async (input, context) => {
+            const artifact = await resolve(input, context);
+            const source = parseSource(input);
+            if (
+                source.provider === "modrinth" &&
+                source.project === "example" &&
+                artifact.identity
+            )
+                artifact.identity.format = "velocity";
+            return artifact;
+        });
+
+        await expect(
+            installProjects([fixture.context], fixture.store),
+        ).rejects.toMatchObject({ code: "PLUGIN_PLATFORM" });
+        expect(fixture.store.ensure).toHaveBeenCalledTimes(1);
+        expect(
+            fixture.store.resolve.mock.calls.some(([input]) => {
+                const source = parseSource(input);
+                return (
+                    source.provider === "modrinth" &&
+                    source.project === "renamed"
+                );
+            }),
+        ).toBe(false);
+    });
+
+    it("checks a resolved plugin against reusable aliases before caching it", async () => {
+        const fixture = await project({ installed: false });
+        fixture.context.manifest.plugins.Renamed = "modrinth:renamed@1.0.0";
+        await installProjects([fixture.context], fixture.store);
+        const lock = await readLock(fixture.context.lockRoot);
+        const renamed = lock.projects[fixture.context.lockKey]?.plugins.Renamed;
+        if (!renamed?.identity)
+            throw new Error("Expected the reusable plugin identity.");
+        renamed.identity.provides = ["shared-alias"];
+        await writeYaml(
+            path.join(fixture.context.lockRoot, "craflet-lock.yaml"),
+            lock,
+        );
+        const resolve = fixture.store.resolve.getMockImplementation();
+        if (!resolve) throw new Error("Expected the fixture resolver.");
+        fixture.store.resolve.mockImplementation(async (input, context) => {
+            const artifact = await resolve(input, context);
+            const source = parseSource(input);
+            if (
+                source.provider === "modrinth" &&
+                source.project === "example" &&
+                artifact.identity
+            )
+                artifact.identity.provides = ["SHARED-ALIAS"];
+            return artifact;
+        });
+        clearArtifactCalls(fixture.store);
+
+        await expect(
+            installProjects([fixture.context], fixture.store, {
+                updatePlugins: ["Example"],
+            }),
+        ).rejects.toMatchObject({ code: "DUPLICATE_PLUGIN" });
+        expect(fixture.store.latest).toHaveBeenCalledTimes(1);
+        expect(fixture.store.resolve).toHaveBeenCalledTimes(1);
+        expect(fixture.store.ensure).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+        {
+            violation: "wrong platform",
+            code: "PLUGIN_PLATFORM",
+            mutate: (artifact: LockedArtifact) => {
+                if (!artifact.identity)
+                    throw new Error("Expected a plugin identity.");
+                artifact.identity.format = "velocity";
+            },
+        },
+        {
+            violation: "case-insensitive identifier collision",
+            code: "DUPLICATE_PLUGIN",
+            mutate: (artifact: LockedArtifact) => {
+                if (!artifact.identity)
+                    throw new Error("Expected a plugin identity.");
+                artifact.identity.id = "example";
+            },
+        },
+        {
+            violation: "provided alias collision",
+            code: "DUPLICATE_PLUGIN",
+            mutate: (artifact: LockedArtifact) => {
+                if (!artifact.identity)
+                    throw new Error("Expected a plugin identity.");
+                artifact.identity.provides = ["EXAMPLE"];
+            },
+        },
+    ])(
+        "validates an added plugin with a $violation before resolving another source",
+        async ({ code, mutate }) => {
+            const fixture = await project();
+            const resolve = fixture.store.resolve.getMockImplementation();
+            if (!resolve) throw new Error("Expected the fixture resolver.");
+            fixture.store.resolve.mockImplementation(async (input, context) => {
+                const artifact = await resolve(input, context);
+                mutate(artifact);
+                return artifact;
+            });
+            clearArtifactCalls(fixture.store);
+
+            await expect(
+                addPlugins([fixture.context], fixture.store, [
+                    "modrinth:renamed@1.0.0",
+                    "modrinth:future@1.0.0",
+                ]),
+            ).rejects.toMatchObject({ code });
+            expect(fixture.store.resolve).toHaveBeenCalledTimes(1);
+            expect(fixture.store.latest).not.toHaveBeenCalled();
+            expect(fixture.store.ensure).not.toHaveBeenCalled();
+        },
+    );
+
+    it.each(["declaration", "add"] as const)(
+        "rejects a Paper server source in a plugin $operation before artifact I/O",
+        async (operation) => {
+            const fixture = await project({
+                plugin: false,
+                installed: false,
+            });
+            const source = "paper:1.21.4@200";
+            if (operation === "declaration")
+                fixture.context.manifest.plugins.Example = source;
+            clearArtifactCalls(fixture.store);
+
+            const result =
+                operation === "declaration"
+                    ? installProjects([fixture.context], fixture.store)
+                    : addPlugins([fixture.context], fixture.store, [source]);
+            await expect(result).rejects.toMatchObject({ code: "NOT_PLUGIN" });
+            expectNoArtifactCalls(fixture.store);
+        },
+    );
+
+    it.each([
+        {
+            kind: "paper",
+            version: "1.21.4",
+            source: "velocity:3.4.0@20",
+        },
+        {
+            kind: "velocity",
+            version: "3.4.0",
+            source: "paper:1.21.4@200",
+        },
+    ] as const)(
+        "rejects $kind server declarations backed by the other Paper project before artifact I/O",
+        async ({ kind, source, version }) => {
+            const root = await directory();
+            const dir = path.join(root, "project");
+            await initProject(dir, { name: "alpha", kind, version });
+            const context = await loadProject(dir, path.join(root, "home"));
+            context.manifest.server.source = source;
+            const { store } = artifactStore(root);
+            clearArtifactCalls(store);
+
+            await expect(
+                installProjects([context], store),
+            ).rejects.toMatchObject({ code: "SERVER_PLATFORM" });
+            expectNoArtifactCalls(store);
+        },
+    );
+
     it("updates only the selected plugin and keeps server game version unchanged", async () => {
         const fixture = await project();
         const before = await pending(fixture.dir);
@@ -1707,8 +2206,115 @@ describe("installation and shared manifest transactions", () => {
         expect(after.manifest.plugins.Example).toBe("modrinth:example@2.7.1");
         expect(after.lock.server).toEqual(before.lock.server);
         expect(after.manifest.server.version).toBe("26.1");
-        expect(fixture.store.latest).toHaveBeenCalledOnce();
+        expect(fixture.store.latest).not.toHaveBeenCalled();
     });
+
+    it("resolves an exact server build without querying latest", async () => {
+        const fixture = await project();
+        fixture.store.latest.mockClear();
+        await installProjects([fixture.context], fixture.store, {
+            updateServer: true,
+            to: "7",
+        });
+        const after = await pending(fixture.dir);
+        expect(after.manifest.server).toMatchObject({
+            type: "paper",
+            version: "26.1",
+            build: "7",
+        });
+        expect(after.lock.server.source).toMatchObject({
+            provider: "paper",
+            build: "7",
+        });
+        expect(fixture.store.latest).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        { dryRun: false, target: "plugin" },
+        { dryRun: true, target: "plugin" },
+        { dryRun: false, target: "server" },
+        { dryRun: true, target: "server" },
+    ] as const)(
+        "rejects --to for a local $target JAR during dryRun=$dryRun without writing metadata",
+        async ({ dryRun, target }) => {
+            const fixture = await project();
+            fixture.store.resolve.mockClear();
+            fixture.store.ensure.mockClear();
+            fixture.store.latest.mockClear();
+            if (target === "plugin")
+                fixture.context.manifest.plugins.Example =
+                    "file:../build/Example.jar";
+            else
+                fixture.context.manifest.server.source =
+                    "file:../build/server.jar";
+            const before = await metadata(fixture.dir);
+            await expect(
+                installProjects([fixture.context], fixture.store, {
+                    ...(target === "plugin"
+                        ? { updatePlugins: ["Example"] }
+                        : { updateServer: true }),
+                    to: "2",
+                    dryRun,
+                }),
+            ).rejects.toMatchObject({ code: "UPDATE_VERSION" });
+            expect(await metadata(fixture.dir)).toEqual(before);
+            expect(fixture.store.resolve).not.toHaveBeenCalled();
+            expect(fixture.store.ensure).not.toHaveBeenCalled();
+            expect(fixture.store.latest).not.toHaveBeenCalled();
+        },
+    );
+
+    it.each(["plugin", "server"] as const)(
+        "rejects an empty exact $target version without writing metadata",
+        async (target) => {
+            const fixture = await project();
+            fixture.store.resolve.mockClear();
+            fixture.store.ensure.mockClear();
+            fixture.store.latest.mockClear();
+            const before = await metadata(fixture.dir);
+            await expect(
+                installProjects([fixture.context], fixture.store, {
+                    ...(target === "plugin"
+                        ? { updatePlugins: ["Example"] }
+                        : { updateServer: true }),
+                    to: "   ",
+                }),
+            ).rejects.toMatchObject({ code: "UPDATE_VERSION" });
+            expect(await metadata(fixture.dir)).toEqual(before);
+            expect(fixture.store.resolve).not.toHaveBeenCalled();
+            expect(fixture.store.ensure).not.toHaveBeenCalled();
+            expect(fixture.store.latest).not.toHaveBeenCalled();
+        },
+    );
+
+    it.each([
+        { dryRun: false, target: "plugin" },
+        { dryRun: true, target: "plugin" },
+        { dryRun: false, target: "server" },
+        { dryRun: true, target: "server" },
+    ] as const)(
+        "validates exact $target versions during dryRun=$dryRun before writing metadata",
+        async ({ dryRun, target }) => {
+            const fixture = await project();
+            fixture.store.resolve.mockClear();
+            fixture.store.ensure.mockClear();
+            fixture.store.latest.mockClear();
+            const before = await metadata(fixture.dir);
+            await expect(
+                installProjects([fixture.context], fixture.store, {
+                    ...(target === "plugin"
+                        ? { updatePlugins: ["Example"] }
+                        : { updateServer: true }),
+                    to: "2\ninvalid",
+                    dryRun,
+                }),
+            ).rejects.toMatchObject({ code: "INVALID_SOURCE" });
+            expect(await metadata(fixture.dir)).toEqual(before);
+            expect(fixture.store.resolve).not.toHaveBeenCalled();
+            expect(fixture.store.ensure).not.toHaveBeenCalled();
+            expect(fixture.store.latest).not.toHaveBeenCalled();
+        },
+    );
 
     it("updates the server build while preserving plugin locks and declared game version", async () => {
         const fixture = await project();
@@ -1728,18 +2334,348 @@ describe("installation and shared manifest transactions", () => {
 
     it("rejects unknown selectors and identity changes before committing metadata", async () => {
         const fixture = await project();
+        fixture.store.resolve.mockClear();
+        fixture.store.ensure.mockClear();
+        fixture.store.latest.mockClear();
         const before = await metadata(fixture.dir);
         await expect(
             installProjects([fixture.context], fixture.store, {
                 updatePlugins: ["Missing"],
             }),
         ).rejects.toMatchObject({ code: "PLUGIN_UNKNOWN" });
+        expect(fixture.store.resolve).not.toHaveBeenCalled();
+        expect(fixture.store.ensure).not.toHaveBeenCalled();
+        expect(fixture.store.latest).not.toHaveBeenCalled();
         fixture.context.manifest.plugins.Example = "modrinth:renamed@2.0.0";
         await expect(
             installProjects([fixture.context], fixture.store),
         ).rejects.toMatchObject({ code: "PLUGIN_IDENTITY" });
         expect(await metadata(fixture.dir)).toEqual(before);
     });
+
+    it.each(["install", "add"] as const)(
+        "rejects case-insensitive unresolved declaration keys before $operation artifact I/O",
+        async (operation) => {
+            const fixture = await project({
+                plugin: false,
+                installed: false,
+            });
+            fixture.context.manifest.plugins.Foo = "modrinth:foo@1.0.0";
+            fixture.context.manifest.plugins.foo = "modrinth:foo@1.0.0";
+            clearArtifactCalls(fixture.store);
+
+            const result =
+                operation === "install"
+                    ? installProjects([fixture.context], fixture.store)
+                    : addPlugins([fixture.context], fixture.store, [
+                          "modrinth:renamed@1.0.0",
+                      ]);
+            await expect(result).rejects.toMatchObject({
+                code: "DUPLICATE_PLUGIN",
+            });
+            expectNoArtifactCalls(fixture.store);
+        },
+    );
+
+    it.each([
+        {
+            options: { updateAllPlugins: true, to: "2" },
+            code: "UPDATE_VERSION",
+        },
+        {
+            options: {
+                updateAllPlugins: true,
+                updatePlugins: ["Example"],
+            },
+            code: "UPDATE_OPTIONS",
+        },
+    ])(
+        "rejects invalid update option combinations with $code",
+        async ({ options, code }) => {
+            const fixture = await project();
+            fixture.store.resolve.mockClear();
+            fixture.store.ensure.mockClear();
+            fixture.store.latest.mockClear();
+            const before = await metadata(fixture.dir);
+
+            await expect(
+                installProjects([fixture.context], fixture.store, options),
+            ).rejects.toMatchObject({ code });
+
+            expect(await metadata(fixture.dir)).toEqual(before);
+            expect(fixture.store.resolve).not.toHaveBeenCalled();
+            expect(fixture.store.ensure).not.toHaveBeenCalled();
+            expect(fixture.store.latest).not.toHaveBeenCalled();
+        },
+    );
+
+    it("validates selectors across a workspace before artifact I/O", async () => {
+        const root = await directory();
+        await initWorkspace(root, ["servers/*"]);
+        const alphaDir = path.join(root, "servers", "alpha");
+        const alpha = await initProject(alphaDir, {
+            name: "alpha",
+            kind: "paper",
+            version: "26.1",
+        });
+        alpha.plugins.Example = "modrinth:example@1.0.0";
+        await writeYaml(path.join(alphaDir, "craflet.yaml"), alpha);
+        await initProject(path.join(root, "servers", "beta"), {
+            name: "beta",
+            kind: "paper",
+            version: "26.1",
+        });
+        const projects = await selectProjects(root, path.join(root, "home"), {
+            recursive: true,
+        });
+        const { store } = artifactStore(root);
+        await installProjects(projects, store);
+        store.resolve.mockClear();
+        store.ensure.mockClear();
+        store.latest.mockClear();
+
+        await expect(
+            installProjects(projects, store, {
+                updatePlugins: ["Example"],
+            }),
+        ).rejects.toMatchObject({ code: "PLUGIN_UNKNOWN" });
+
+        expect(store.resolve).not.toHaveBeenCalled();
+        expect(store.ensure).not.toHaveBeenCalled();
+        expect(store.latest).not.toHaveBeenCalled();
+    });
+
+    it("preflights every workspace declaration before artifact I/O", async () => {
+        const root = await directory();
+        await initWorkspace(root, ["servers/*"]);
+        for (const name of ["alpha", "beta"])
+            await initProject(path.join(root, "servers", name), {
+                name,
+                kind: "paper",
+                version: "26.1",
+            });
+        const projects = await selectProjects(root, path.join(root, "home"), {
+            recursive: true,
+        });
+        const invalid = projects.find(
+            (project) => project.manifest.name === "beta",
+        );
+        if (!invalid) throw new Error("Expected the beta workspace project.");
+        invalid.manifest.plugins.Example = "not-a-source";
+        const { store } = artifactStore(root);
+
+        await expect(
+            addPlugins(projects, store, ["modrinth:new-plugin@1"]),
+        ).rejects.toMatchObject({ code: "INVALID_SOURCE" });
+        expect(store.resolve).not.toHaveBeenCalled();
+        expect(store.ensure).not.toHaveBeenCalled();
+        expect(store.latest).not.toHaveBeenCalled();
+
+        await expect(installProjects(projects, store)).rejects.toMatchObject({
+            code: "INVALID_SOURCE",
+        });
+
+        expect(store.resolve).not.toHaveBeenCalled();
+        expect(store.ensure).not.toHaveBeenCalled();
+        expect(store.latest).not.toHaveBeenCalled();
+
+        delete invalid.manifest.plugins.Example;
+        await put(invalid.dir, ".craflet/state.json", "not-json");
+        await expect(
+            addPlugins(projects, store, ["modrinth:new-plugin@1"]),
+        ).rejects.toMatchObject({ code: "STATE_INVALID" });
+        expect(store.resolve).not.toHaveBeenCalled();
+        expect(store.ensure).not.toHaveBeenCalled();
+        expect(store.latest).not.toHaveBeenCalled();
+    });
+
+    it("rejects a later workspace project's non-JAR source before artifact I/O", async () => {
+        const fixture = await workspaceProjectPair();
+        fixture.beta.manifest.plugins.Example =
+            "github:owner/repo@v1#Example.zip";
+        clearArtifactCalls(fixture.store);
+
+        await expect(
+            installProjects(fixture.projects, fixture.store),
+        ).rejects.toMatchObject({ code: "INVALID_SOURCE" });
+        expectNoArtifactCalls(fixture.store);
+        expect(await io.exists(path.join(fixture.root, "artifacts"))).toBe(
+            false,
+        );
+    });
+
+    it("rejects an unsafe locked plugin size before any artifact I/O", async () => {
+        const fixture = await project();
+        const lock = await readLock(fixture.context.lockRoot);
+        const plugin = lock.projects[fixture.context.lockKey]?.plugins.Example;
+        if (!plugin) throw new Error("Expected the plugin lock entry");
+        plugin.size = Number.MAX_SAFE_INTEGER + 1;
+        await writeYaml(
+            path.join(fixture.context.lockRoot, "craflet-lock.yaml"),
+            lock,
+        );
+        clearArtifactCalls(fixture.store);
+
+        await expect(
+            installProjects([fixture.context], fixture.store),
+        ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+        expectNoArtifactCalls(fixture.store);
+    });
+
+    it.each([
+        { operation: "install", dryRun: false },
+        { operation: "install", dryRun: true },
+        { operation: "add", dryRun: false },
+        { operation: "add", dryRun: true },
+    ] as const)(
+        "rejects later-project deployment recovery before $operation artifact I/O during dryRun=$dryRun",
+        async ({ operation, dryRun }) => {
+            const fixture = await workspaceProjectPair();
+            await installProjects(fixture.projects, fixture.store);
+            await put(fixture.beta.dir, ".craflet/deploy.json", "{}");
+            clearArtifactCalls(fixture.store);
+
+            const result =
+                operation === "install"
+                    ? installProjects(fixture.projects, fixture.store, {
+                          dryRun,
+                      })
+                    : addPlugins(
+                          fixture.projects,
+                          fixture.store,
+                          ["modrinth:renamed@1.0.0"],
+                          { dryRun },
+                      );
+
+            await expect(result).rejects.toMatchObject({
+                code: "RECOVERY_REQUIRED",
+            });
+            expectNoArtifactCalls(fixture.store);
+        },
+    );
+
+    it.each([false, true])(
+        "rejects shared manifest recovery before add-plugin identity resolution during dryRun=%s",
+        async (dryRun) => {
+            const fixture = await workspaceProjectPair();
+            await put(fixture.root, ".craflet/manifest-transaction.json", "{}");
+            clearArtifactCalls(fixture.store);
+
+            await expect(
+                addPlugins(
+                    fixture.projects,
+                    fixture.store,
+                    ["modrinth:renamed@1.0.0"],
+                    { dryRun },
+                ),
+            ).rejects.toMatchObject({ code: "RECOVERY_REQUIRED" });
+            expectNoArtifactCalls(fixture.store);
+        },
+    );
+
+    it.each([false, true])(
+        "rejects a later-project frozen server mismatch before workspace artifact I/O during dryRun=%s",
+        async (dryRun) => {
+            const fixture = await workspaceProjectPair();
+            await installProjects(fixture.projects, fixture.store);
+            fixture.beta.manifest.server.build = "99";
+            clearArtifactCalls(fixture.store);
+
+            await expect(
+                installProjects(fixture.projects, fixture.store, {
+                    frozen: true,
+                    dryRun,
+                }),
+            ).rejects.toMatchObject({ code: "FROZEN_LOCK" });
+            expectNoArtifactCalls(fixture.store);
+        },
+    );
+
+    it.each([false, true])(
+        "rejects a same-project frozen plugin mismatch before ensuring the server during dryRun=%s",
+        async (dryRun) => {
+            const fixture = await project();
+            fixture.context.manifest.plugins.Example = "modrinth:example@9.0.0";
+            clearArtifactCalls(fixture.store);
+
+            await expect(
+                installProjects([fixture.context], fixture.store, {
+                    frozen: true,
+                    dryRun,
+                }),
+            ).rejects.toMatchObject({ code: "FROZEN_LOCK" });
+            expectNoArtifactCalls(fixture.store);
+        },
+    );
+
+    it.each([false, true])(
+        "rejects frozen plugin additions before resolving identities during dryRun=%s",
+        async (dryRun) => {
+            const fixture = await workspaceProjectPair();
+            await installProjects(fixture.projects, fixture.store);
+            clearArtifactCalls(fixture.store);
+
+            await expect(
+                addPlugins(
+                    fixture.projects,
+                    fixture.store,
+                    ["modrinth:renamed@1.0.0"],
+                    { frozen: true, dryRun },
+                ),
+            ).rejects.toMatchObject({ code: "FROZEN_LOCK" });
+            expectNoArtifactCalls(fixture.store);
+        },
+    );
+
+    it.each([
+        { operation: "install", dryRun: false },
+        { operation: "install", dryRun: true },
+        { operation: "add", dryRun: false },
+        { operation: "add", dryRun: true },
+    ] as const)(
+        "rejects a later-project configuration conflict before $operation artifact I/O during dryRun=$dryRun",
+        async ({ operation, dryRun }) => {
+            const fixture = await workspaceProjectPair();
+            await put(
+                fixture.beta.dir,
+                "config/server.properties",
+                "motd=first\n",
+            );
+            await installProjects(fixture.projects, fixture.store);
+            await new NodeDeploymentManager(
+                fixture.beta,
+                fixture.store,
+            ).applyPrepared();
+            await put(
+                fixture.beta.dir,
+                "config/server.properties",
+                "motd=base-edit\n",
+            );
+            await put(
+                fixture.beta.dir,
+                "runtime/server.properties",
+                "motd=runtime-edit\n",
+            );
+            clearArtifactCalls(fixture.store);
+
+            const result =
+                operation === "install"
+                    ? installProjects(fixture.projects, fixture.store, {
+                          dryRun,
+                      })
+                    : addPlugins(
+                          fixture.projects,
+                          fixture.store,
+                          ["modrinth:renamed@1.0.0"],
+                          { dryRun },
+                      );
+
+            await expect(result).rejects.toMatchObject({
+                code: "CONFIG_CONFLICT",
+            });
+            expectNoArtifactCalls(fixture.store);
+        },
+    );
 
     it("updates shared lock entries only for selected projects and validates all plans before writing", async () => {
         const root = await directory();
@@ -2018,6 +2954,22 @@ describe("deployment ownership and rollback", () => {
         expect(
             await io.exists(path.join(fixture.dir, "runtime/server.jar")),
         ).toBe(false);
+    });
+
+    it("requires a backup before ensuring pending artifacts over existing data", async () => {
+        const fixture = await project();
+        await put(fixture.dir, "runtime/world/level.dat", "existing world");
+        vi.spyOn(java, "inspectJava").mockResolvedValue({
+            executable: "fixture-java",
+            major: 25,
+            diagnostics: [],
+        });
+        fixture.store.ensure.mockClear();
+
+        await expect(
+            fixture.manager.preflight(true, false),
+        ).rejects.toMatchObject({ code: "BACKUP_REQUIRED" });
+        expect(fixture.store.ensure).not.toHaveBeenCalled();
     });
 
     it.each(["server.jar", "plugins/Example.jar"])(

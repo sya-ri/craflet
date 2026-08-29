@@ -9,7 +9,7 @@ import {
     validateManagedProject,
     workspaceProjects,
 } from "@craflet/adapters";
-import { CrafletError, diagnosticsFailed, parseSource } from "@craflet/core";
+import { CrafletError, diagnosticsFailed } from "@craflet/core";
 import { type Command, Option } from "commander";
 import type { CommandContext } from "./context.js";
 
@@ -54,7 +54,6 @@ export function registerProjectCommands(
             options.version,
             "Server version (--version) is required.",
         );
-        if (options.source) parseSource(options.source);
         const manifest = await initProject(dir, {
             name: options.name ?? path.basename(dir),
             kind: options.type,

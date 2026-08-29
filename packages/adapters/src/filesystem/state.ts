@@ -6,6 +6,8 @@ import {
     type LockedArtifact,
     type ProjectLock,
     type ProjectManifest,
+    parsePluginSource,
+    parseServerSource,
     portablePluginJarName,
     validateConfigBundle,
     validatePluginSet,
@@ -33,12 +35,17 @@ export function installationJars(
     installation: Installation | null,
 ): Map<string, LockedArtifact> {
     if (!installation) return new Map();
+    parseServerSource(
+        installation.lock.server.source,
+        installation.manifest.server.type,
+    );
     const result = new Map<string, LockedArtifact>([
         ["server.jar", installation.lock.server],
     ]);
     const identities = [];
     for (const [name, artifact] of Object.entries(installation.lock.plugins)) {
         const jarName = portablePluginJarName(name);
+        parsePluginSource(artifact.source);
         if (artifact.identity?.id !== name)
             throw new CrafletError(
                 "JAR_PATH",
@@ -86,12 +93,14 @@ export function validateInstallation(input: unknown): Installation {
             4,
         );
     }
-    return {
+    const installation = {
         ...result,
         manifest,
         lock,
         config: validateConfigBundle(result.config),
     };
+    installationJars(installation);
+    return installation;
 }
 
 export async function readState(projectDir: string): Promise<ProjectState> {

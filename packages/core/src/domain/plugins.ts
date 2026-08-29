@@ -20,12 +20,26 @@ export function portablePluginJarName(id: string): string {
     return `${id}.jar`;
 }
 
-/** Names and provides aliases share a namespace, including on case-insensitive hosts. */
-export function validatePluginSet(
+function pluginIdentifiers(
     plugins: readonly PluginIdentity[],
     serverKind: ServerKind,
-): void {
+    reservedIds: readonly string[] = [],
+): Set<string> {
     const names = new Set<string>();
+    const claim = (value: string) => {
+        const name = value.toLowerCase();
+        if (names.has(name))
+            throw new CrafletError(
+                "DUPLICATE_PLUGIN",
+                `Multiple plugins claim the identifier ${name}.`,
+                3,
+            );
+        names.add(name);
+    };
+    for (const id of reservedIds) {
+        portablePluginJarName(id);
+        claim(id);
+    }
     for (const plugin of plugins) {
         portablePluginJarName(plugin.id);
         const velocityPlugin = plugin.format === "velocity";
@@ -40,17 +54,27 @@ export function validatePluginSet(
             [plugin.id, ...(plugin.provides ?? [])].map((value) =>
                 value.toLowerCase(),
             ),
-        )) {
-            if (names.has(name)) {
-                throw new CrafletError(
-                    "DUPLICATE_PLUGIN",
-                    `Multiple plugins claim the identifier ${name}.`,
-                    3,
-                );
-            }
-            names.add(name);
-        }
+        ))
+            claim(name);
     }
+    return names;
+}
+
+/** Validate properties that do not depend on the complete managed plugin set. */
+export function validatePluginIdentities(
+    plugins: readonly PluginIdentity[],
+    serverKind: ServerKind,
+    reservedIds: readonly string[] = [],
+): void {
+    pluginIdentifiers(plugins, serverKind, reservedIds);
+}
+
+/** Validate the shared identifier namespace and required dependencies. */
+export function validatePluginSet(
+    plugins: readonly PluginIdentity[],
+    serverKind: ServerKind,
+): void {
+    const names = pluginIdentifiers(plugins, serverKind);
     const missing: string[] = [];
     for (const plugin of plugins) {
         for (const dependency of plugin.dependencies) {

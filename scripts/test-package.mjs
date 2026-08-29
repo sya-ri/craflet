@@ -94,6 +94,7 @@ try {
         await readFile(path.join(installed, "package.json"), "utf8"),
     );
     assert.equal(published.name, "craflet");
+    assert.equal(published.engines?.node, ">=24.20.0 <27");
     assert.equal(
         Object.keys(published.dependencies ?? {}).length,
         0,
@@ -118,10 +119,14 @@ try {
             installedEntries.includes(name),
             `Missing required package file: ${name}`,
         );
-    assert.match(
-        await readFile(path.join(installed, "THIRD_PARTY_NOTICES.md"), "utf8"),
-        /arktype@2\.2\.3/,
+    const notices = await readFile(
+        path.join(installed, "THIRD_PARTY_NOTICES.md"),
+        "utf8",
     );
+    assert.match(notices, /arktype@2\.2\.3/);
+    assert.match(notices, /@earendil-works\/pi-tui@0\.84\.3/);
+    assert.match(notices, /get-east-asian-width@1\.6\.0/);
+    assert.match(notices, /marked@18\.0\.5/);
     assert.equal(
         await readFile(path.join(installed, "README.md"), "utf8"),
         await readFile(path.join(root, "README.md"), "utf8"),

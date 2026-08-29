@@ -35,6 +35,19 @@ export async function importProject(
 ): Promise<unknown> {
     const source = path.resolve(sourceDir);
     const target = path.resolve(targetDir);
+    if (
+        path.isAbsolute(options.serverJar) ||
+        path.win32.isAbsolute(options.serverJar) ||
+        !options.serverJar.toLowerCase().endsWith(".jar")
+    )
+        throw new CrafletError(
+            "IMPORT_SERVER",
+            "The selected server JAR must be a relative .jar path within the source directory.",
+            2,
+        );
+    const serverRelative = path
+        .relative(source, containedPath(source, options.serverJar))
+        .replaceAll(path.sep, "/");
     if (pathContains(source, target) || pathContains(target, source))
         throw new CrafletError(
             "IMPORT_OVERLAP",
@@ -55,23 +68,8 @@ export async function importProject(
             "Do not import an already managed server; use its project or a verified backup restore.",
             3,
         );
-    if (
-        path.isAbsolute(options.serverJar) ||
-        path.win32.isAbsolute(options.serverJar)
-    )
-        throw new CrafletError(
-            "IMPORT_SERVER",
-            "The selected server JAR must be relative to the source directory.",
-            2,
-        );
-    const serverRelative = path
-        .relative(source, containedPath(source, options.serverJar))
-        .replaceAll(path.sep, "/");
     const serverJar = await assertNoSymlinks(source, serverRelative);
-    if (
-        !(await lstat(serverJar)).isFile() ||
-        !serverJar.toLowerCase().endsWith(".jar")
-    )
+    if (!(await lstat(serverJar)).isFile())
         throw new CrafletError(
             "IMPORT_SERVER",
             "The selected server JAR must be an existing regular .jar file.",

@@ -46,7 +46,7 @@ backup:
         - "!runtime/versions/**"
 ```
 
-Project names contain only letters, digits, dot, underscore, and dash. Server type is `paper` or `velocity`. Use the Minecraft version for Paper and the proxy version for Velocity. Routine `update` does not silently change this declared version.
+Project names contain only letters, digits, dot, underscore, and dash. Server type is `paper` or `velocity`. Use the Minecraft version for Paper and the proxy version for Velocity. Routine `server update` does not silently change this declared version.
 
 `java.command` may be an executable on `PATH` or an absolute path. Craflet diagnoses Java but does not install it.
 
@@ -63,7 +63,7 @@ file:../build/MyPlugin.jar
 file:../build/MyPlugin-*.jar
 ```
 
-A local glob must match exactly one JAR. `update` imports changed local bytes. External providers may use non-SemVer identifiers; do not compare every version as SemVer.
+A local glob must match exactly one JAR. `plugins update` imports changed local bytes. External providers may use non-SemVer identifiers; do not compare every version as SemVer.
 
 Structured forms are available when compact syntax is ambiguous:
 
@@ -105,7 +105,7 @@ Plugin map keys are identities read from the JAR, not arbitrary labels:
 - Paper: `name` from `paper-plugin.yml`
 - Velocity: `id` from `velocity-plugin.json`
 
-Use `craflet inspect <jar>` or `craflet add <source>` to discover the identity. Craflet rejects duplicate or incompatible identities, missing required dependencies, and silent identity changes. It inspects descriptors without executing JAR code.
+Use `craflet plugins inspect <jar>` or `craflet plugins add <source>` to discover the identity. Craflet rejects duplicate or incompatible identities, missing required dependencies, and silent identity changes. It inspects descriptors without executing JAR code.
 
 ## Configuration and secrets
 

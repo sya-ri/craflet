@@ -114,7 +114,7 @@ export const ArtifactSchema = type({
     source: SourceSchema.exclude("string"),
     version: Nonempty,
     sha256: /^[a-f0-9]{64}$/,
-    size: "number.integer >= 0",
+    size: "number.integer >= 0 & number <= 9007199254740991",
     "url?": Nonempty,
     "upstreamId?": Nonempty,
     "identity?": PluginIdentitySchema,

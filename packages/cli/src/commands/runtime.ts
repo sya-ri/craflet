@@ -1,7 +1,7 @@
-import { createInterface } from "node:readline";
 import {
-    followServerLogs,
-    readServerLogs,
+    followServerLogsFrom,
+    readOlderServerLogs,
+    readRecentServerLogs,
     recoverBackupRestore,
     recoverGroupBackupRestore,
     recoverManifests,
@@ -9,12 +9,14 @@ import {
 } from "@craflet/adapters";
 import { CrafletError } from "@craflet/core";
 import type { Command } from "commander";
-import {
-    formatRuntimeLogChunk,
-    sanitizeTerminalOutput,
-} from "../presentation/terminal.js";
+import { openInteractiveConsole } from "../presentation/console.js";
+import { formatRuntimeLogChunk } from "../presentation/terminal.js";
 import type { CommandContext } from "./context.js";
 import { isCancellation, partialFailure } from "./failures.js";
+
+function withoutFinalLogTerminator(text: string): string {
+    return text.endsWith("\n") ? text.slice(0, -1) : text;
+}
 
 export function registerRuntimeCommands(
     program: Command,
@@ -208,11 +210,26 @@ export function registerRuntimeCommands(
               }, 500)
             : undefined;
         try {
-            output(
-                await readServerLogs(dir, Number(command.opts().lines ?? 100)),
-            );
-            for await (const text of followServerLogs(dir, abort.signal))
-                output(text);
+            const lines = Number(command.opts().lines ?? 100);
+            let snapshot = await readRecentServerLogs(dir, lines);
+            output(snapshot.text);
+            while (!abort.signal.aborted) {
+                let reset = false;
+                for await (const event of followServerLogsFrom(
+                    dir,
+                    snapshot.follow,
+                    abort.signal,
+                )) {
+                    if (event.kind === "append") output(event.text);
+                    else {
+                        reset = true;
+                        break;
+                    }
+                }
+                if (!reset || abort.signal.aborted) break;
+                snapshot = await readRecentServerLogs(dir, lines);
+                output(snapshot.text);
+            }
         } finally {
             if (poll) clearInterval(poll);
             context.abort.signal.removeEventListener("abort", onAbort);
@@ -235,13 +252,15 @@ export function registerRuntimeCommands(
             )
             .option("-n, --lines <number>", "number of tail lines", "100")
             .option("-f, --follow", "continue following the log"),
-        async (_, command) =>
-            command.opts().follow && !context.globals(command).dryRun
-                ? streamLogs(command)
-                : readServerLogs(
-                      await context.runtimeDir(command),
-                      Number(command.opts().lines),
-                  ),
+        async (_, command) => {
+            if (command.opts().follow && !context.globals(command).dryRun)
+                return streamLogs(command);
+            const snapshot = await readRecentServerLogs(
+                await context.runtimeDir(command),
+                Number(command.opts().lines),
+            );
+            return withoutFinalLogTerminator(snapshot.text);
+        },
     );
     context.action(
         program
@@ -280,53 +299,36 @@ export function registerRuntimeCommands(
         program
             .command("console")
             .description(
-                "Attach interactive console input; EOF or Ctrl-C only detaches.",
+                "Open recent logs and interactive input; scroll up for history, Ctrl-C detaches.",
             ),
         async (_, command) => {
-            if (context.globals(command).json || !process.stdin.isTTY)
+            const controller = await context.controller(command);
+            if (context.globals(command).dryRun) return controller.status();
+            if (
+                context.globals(command).json ||
+                !process.stdin.isTTY ||
+                !process.stdout.isTTY
+            )
                 throw new CrafletError(
                     "CONSOLE_TTY",
                     "console requires a terminal. Use command <text> for scripts.",
                     2,
                 );
-            const controller = await context.controller(command);
-            if (context.globals(command).dryRun) return controller.status();
             if ((await controller.status()).status !== "running")
                 throw new CrafletError(
                     "SERVER_NOT_RUNNING",
                     "Start the server before attaching its console.",
                     3,
                 );
-            const input = createInterface({
-                input: process.stdin,
-                output: process.stdout,
-                terminal: true,
+            const dir = await context.runtimeDir(command);
+            await openInteractiveConsole({
+                loadRecent: () => readRecentServerLogs(dir),
+                loadOlder: (cursor) => readOlderServerLogs(dir, cursor),
+                follow: (checkpoint, signal) =>
+                    followServerLogsFrom(dir, checkpoint, signal),
+                sendCommand: (text) => controller.command(text),
+                signal: context.abort.signal,
             });
-            const abort = new AbortController();
-            const onInterrupt = () => {
-                input.close();
-            };
-            input.once("SIGINT", onInterrupt);
-            context.abort.signal.addEventListener("abort", onInterrupt, {
-                once: true,
-            });
-            input.once("close", () => abort.abort());
-            const logs = (async () => {
-                for await (const text of followServerLogs(
-                    await context.runtimeDir(command),
-                    abort.signal,
-                ))
-                    process.stdout.write(sanitizeTerminalOutput(text));
-            })();
-            try {
-                for await (const line of input)
-                    if (line.trim()) await controller.command(line);
-            } finally {
-                context.abort.signal.removeEventListener("abort", onInterrupt);
-                input.close();
-                abort.abort();
-                await logs;
-            }
             return { detached: true, serverStopped: false };
         },
     );

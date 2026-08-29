@@ -144,13 +144,13 @@ describe("artifact resolution and immutable cache", () => {
         ).rejects.toMatchObject({ code: "LOCAL_SOURCE_MISSING" });
         await expect(
             store.resolve("file:build/*.zip", context),
-        ).rejects.toMatchObject({ code: "LOCAL_SOURCE_MISSING" });
+        ).rejects.toMatchObject({ code: "INVALID_SOURCE" });
         await expect(
             store.resolve("file:missing.jar", context),
         ).rejects.toMatchObject({ code: "LOCAL_SOURCE_MISSING" });
         await expect(
             store.resolve("file:build", context),
-        ).rejects.toMatchObject({ code: "LOCAL_SOURCE_MISSING" });
+        ).rejects.toMatchObject({ code: "INVALID_SOURCE" });
         await expect(
             new NodeArtifactStore(home, { maxGlobEntries: 0 }).resolve(
                 "file:build/*.jar",
@@ -258,6 +258,94 @@ describe("artifact resolution and immutable cache", () => {
         expect(fetcher).toHaveBeenCalledTimes(1);
         expect(fetcher.mock.calls[0]?.[0]).toBe(locked(bytes).url);
     });
+
+    it("enforces the configured size limit before returning an exact cache hit", async () => {
+        const bytes = artifactJar();
+        const artifact = locked(bytes);
+        const populate = new NodeArtifactStore(home, {
+            fetch: vi.fn<typeof fetch>().mockResolvedValue(new Response(bytes)),
+        });
+        await populate.ensure(artifact, context);
+        const fetcher = vi.fn<typeof fetch>();
+        const constrained = new NodeArtifactStore(home, {
+            fetch: fetcher,
+            maxArtifactBytes: bytes.length - 1,
+        });
+
+        await expect(
+            constrained.ensure(artifact, context),
+        ).rejects.toMatchObject({ code: "ARTIFACT_TOO_LARGE" });
+        expect(fetcher).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        {
+            cache: "cached",
+            serverKind: "paper",
+            matchingProject: "paper",
+            mismatchedProject: "velocity",
+            version: "1.21.4",
+        },
+        {
+            cache: "uncached",
+            serverKind: "velocity",
+            matchingProject: "velocity",
+            mismatchedProject: "paper",
+            version: "3.4.0",
+        },
+    ] as const)(
+        "rejects a $cache Paper-provider platform mismatch before returning or downloading",
+        async ({
+            cache,
+            matchingProject,
+            mismatchedProject,
+            serverKind,
+            version,
+        }) => {
+            const bytes = artifactZip([
+                { name: "Main.class", content: "server fixture" },
+            ]);
+            const fetcher = vi.fn<typeof fetch>(
+                async () => new Response(bytes),
+            );
+            const store = new NodeArtifactStore(home, { fetch: fetcher });
+            const serverContext: ArtifactContext = {
+                projectDir: directory,
+                serverKind,
+                ...(serverKind === "paper"
+                    ? { minecraftVersion: version }
+                    : {}),
+            };
+            const artifact: LockedArtifact = {
+                ...locked(bytes),
+                source: {
+                    provider: "paper",
+                    project: matchingProject,
+                    version,
+                    build: "1",
+                },
+            };
+            if (cache === "cached") await store.ensure(artifact, serverContext);
+            const calls = fetcher.mock.calls.length;
+
+            await expect(
+                store.ensure(
+                    {
+                        ...artifact,
+                        source: {
+                            provider: "paper",
+                            project: mismatchedProject,
+                            version,
+                            build: "1",
+                        },
+                    },
+                    serverContext,
+                ),
+            ).rejects.toMatchObject({ code: "SERVER_PLATFORM" });
+            expect(fetcher).toHaveBeenCalledTimes(calls);
+            await noTemps(store);
+        },
+    );
 
     it("never requests the network offline, and never silently invents a missing lock URL", async () => {
         const fetcher = vi.fn<typeof fetch>();

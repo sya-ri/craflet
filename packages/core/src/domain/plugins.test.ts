@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { PluginIdentity } from "./artifacts.js";
-import { portablePluginJarName, validatePluginSet } from "./plugins.js";
+import {
+    portablePluginJarName,
+    validatePluginIdentities,
+    validatePluginSet,
+} from "./plugins.js";
 
 describe("portable plugin JAR filenames", () => {
     it.each(["Example", "server", "vault-2", "plugin_name", "a.b"])(
@@ -48,6 +52,32 @@ function plugin(
         ...extra,
     };
 }
+
+describe("validatePluginIdentities", () => {
+    it("checks reusable identities without requiring the complete dependency set", () => {
+        expect(() =>
+            validatePluginIdentities(
+                [plugin("Consumer", { dependencies: ["Missing"] })],
+                "paper",
+            ),
+        ).not.toThrow();
+    });
+
+    it.each([
+        {
+            plugins: [plugin("ProxyOnly", { format: "velocity" })],
+            code: "PLUGIN_PLATFORM",
+        },
+        {
+            plugins: [plugin("One", { provides: ["TWO"] }), plugin("Two")],
+            code: "DUPLICATE_PLUGIN",
+        },
+    ])("rejects incomplete identity sets with $code", ({ plugins, code }) => {
+        expect(() => validatePluginIdentities(plugins, "paper")).toThrowError(
+            expect.objectContaining({ code }),
+        );
+    });
+});
 
 describe("validatePluginSet", () => {
     it("resolves required aliases case-insensitively and ignores missing optional dependencies", () => {

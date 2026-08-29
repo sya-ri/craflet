@@ -6,13 +6,13 @@ Craflet runs on the server host and targets Linux, Windows, and macOS. For remot
 
 ## See setup, console control, and plugin updates in action
 
-![Craflet terminal demo showing Paper initialization, server and plugin installation, interactive console control, backup setup, a pending plugin update, and restart-time deployment](docs/assets/craflet-demo.gif)
+![Craflet terminal demo showing Paper initialization, server and plugin installation, recent console logs and history, backup setup, a pending plugin update, and restart-time deployment](docs/assets/craflet-demo.gif)
 
-The demo follows a first install, runs `list` through the interactive console, detaches while Paper keeps running, then stages and applies a LuckPerms update during restart.
+The demo follows a first install, opens the interactive console with recent logs, loads older history, runs `list`, and detaches while Paper keeps running. It then stages and applies a LuckPerms update during restart.
 
 ## Installation
 
-You need **Node.js 24.20.0 or later** and the Java version required by your server. Make Java available on `PATH`, or set an absolute `java.command` in `craflet.yaml`. Craflet does not install Java, establish SSH connections, or register OS services.
+You need **Node.js 24.20.0 through Node.js 26** and the Java version required by your server. Make Java available on `PATH`, or set an absolute `java.command` in `craflet.yaml`. Craflet does not install Java, establish SSH connections, or register OS services.
 
 > The first npm release is pending; the npm/npx commands below will be available after publication.
 
@@ -33,14 +33,15 @@ Create a Paper project, resolve its server JAR, add a plugin, and start the mana
 craflet init my-server --name survival --type paper --version 26.2 --yes
 cd my-server
 craflet install
-craflet add modrinth:luckperms
-craflet list
+craflet plugins add modrinth:luckperms
+craflet server
+craflet plugins
 craflet doctor
 craflet start
 craflet status
 ```
 
-`init` creates the project without starting Java. `install` resolves the declared server build into `craflet-lock.yaml` and the shared cache. `add` downloads the plugin, reads its identity from the JAR descriptor, records the source, and prepares a pending installation. `start` copies the complete pending installation into the runtime before it launches Java. Commands print concise, human-readable summaries by default; add `--json` when a script needs structured output.
+`init` creates the project without starting Java. `install` resolves the declared server and plugin artifacts into `craflet-lock.yaml` and the shared cache. `plugins add` downloads the plugin, reads its identity from the JAR descriptor, records the source, and prepares a pending installation. `server` and `plugins` show declared, locked, pending, and active artifact state without querying providers. `start` copies the complete pending installation into the runtime before it launches Java. Commands print concise, human-readable summaries by default; add `--json` when a script needs structured output.
 
 Paper requires acceptance of the [Minecraft EULA](https://www.minecraft.net/eula); after reading it, pass `--yes` to `init`, `start`, `run`, or `restart` to record consent. In a plain interactive terminal outside CI, omit `--yes` and avoid `--json` and `--dry-run` to see the proposed `eula.txt` and agreement link, then choose Agree or Decline; CI, non-interactive, and JSON runs require `--yes`, while `--dry-run` never records consent. Consent is remembered for the current OS user and Craflet home; Velocity does not use this flow.
 
@@ -53,17 +54,30 @@ Already have a server? Stop it first. `craflet import --help` explains how to co
 After [setting up backups](#backups), check for a new plugin release and prepare it while the current JAR keeps running:
 
 ```sh
-craflet outdated LuckPerms
-craflet update LuckPerms
-craflet list
+craflet plugins check LuckPerms
+craflet plugins update LuckPerms
+craflet plugins
 craflet deploy plan
 craflet restart
-craflet list
+craflet plugins
 ```
 
-`outdated` only checks upstream releases. `update` changes the declaration and lock, downloads and verifies the new JAR, and records it as pending. It does not replace the JAR under `runtime/plugins` or change the version currently loaded by the server. `list` shows the requested source alongside locked, pending, and active versions so you can review the transition.
+`plugins check` only reports upstream releases. `plugins update` changes the declaration and lock, downloads and verifies the new JAR, and records it as pending. It does not replace the JAR under `runtime/plugins` or change the version currently loaded by the server. `plugins` shows the requested source alongside locked, pending, and active versions so you can review the transition.
 
-On `restart`, Craflet verifies prerequisites, gracefully stops the server, takes a cold backup, applies the pending installation, and starts the new active version. Use `update --all` to update plugins and the server build together, or `restart --active` to restart without applying pending changes.
+Artifact inventory and provider lookup are separate so a normal status view does not require network access:
+
+| Command | Purpose |
+| --- | --- |
+| `craflet plugins` | Show declared, locked, pending, and active plugin versions. |
+| `craflet plugins --latest` | Add each provider's latest eligible version and update status to the plugin inventory. |
+| `craflet plugins check [names...]` | Report provider updates for named plugins, or all declared plugins when no names are given. |
+| `craflet plugins update [names...]` | Select and prepare updates for named plugins, or all declared plugins when no names are given; `--to` requires one name. |
+| `craflet server` | Show the declared, locked, pending, and active server artifact. |
+| `craflet server --latest` | Add the provider's latest eligible version and update status to the server inventory. |
+| `craflet server check` | Report the latest server artifact without changing declarations or runtime files. |
+| `craflet server update` | Select and prepare the latest server artifact; use `--to` for an explicit provider version or Paper build. |
+
+On `restart`, Craflet verifies prerequisites, gracefully stops the server, takes a cold backup, applies the pending installation, and starts the new active version. Run `plugins update` and `server update` separately when you want both kinds of update, or use `restart --active` to restart without applying pending changes.
 
 ### Everyday commands
 
@@ -71,12 +85,12 @@ On `restart`, Craflet verifies prerequisites, gracefully stops the server, takes
 | --- | --- |
 | `craflet status` | Check the managed process. |
 | `craflet logs --follow` | Follow its logs. |
-| `craflet console` | Open an interactive console. |
+| `craflet console` | Open a full-screen interactive console with recent log history and command input. |
 | `craflet stop` | Request shutdown and verify that Java exits. |
 | `craflet restart` | Restart, applying prepared changes when present. |
 | `craflet run` | Start and stay attached to the logs. |
 
-Ctrl-C in `run` requests a graceful shutdown. Disconnecting `console` or interrupting `logs --follow` does not stop the server. Timeouts do not automatically force termination; an unidentifiable process is reported as `unknown`.
+Ctrl-C in `run` requests a graceful shutdown. `console` starts at the latest output, with recent logs already visible; PageUp or the mouse wheel scrolls back and lazily loads older history, and End returns to live output. Ctrl-C detaches from `console` without stopping the server. Interrupting `logs --follow` also leaves it running. Timeouts do not automatically force termination; an unidentifiable process is reported as `unknown`.
 
 ## Project files
 
@@ -92,7 +106,7 @@ Keep the declarations, lock, and reviewed base configuration in Git. Keep runtim
 
 ## Choose plugin sources
 
-`add` reads the plugin's name from `plugin.yml` or `paper-plugin.yml`, or its ID from `velocity-plugin.json`. It does not execute the JAR. Use `craflet inspect ../build/MyPlugin.jar` to inspect a local JAR first; `craflet list` shows the names to use in later commands.
+`plugins add` reads the plugin's name from `plugin.yml` or `paper-plugin.yml`, or its ID from `velocity-plugin.json`. It does not execute the JAR. Use `craflet plugins inspect ../build/MyPlugin.jar` to inspect a local JAR first; `craflet plugins` shows the names to use in later commands.
 
 Supported source forms:
 
@@ -109,11 +123,11 @@ Omit `@<version>` for a provider when you want its latest eligible release, as i
 
 A local glob must match exactly one file. Relative paths are based on the directory containing `craflet.yaml`. Structured YAML such as `{ provider: file, path: ../build/MyPlugin.jar }` is also supported. If a provider requires unsupported authentication, an external download, or restricted distribution, Craflet explains the limitation and directs you to `file:`.
 
-`install` reproduces existing lock entries; `install --frozen-lockfile` refuses missing or outdated entries. `update` selects new versions and also imports changed local JARs. Use `update --server` for server builds or `update --all` for plugins and the server. Routine updates do not change the declared Minecraft version. A plugin identity change is rejected rather than silently renamed.
+`install` reproduces existing server and plugin lock entries; `install --frozen-lockfile` refuses missing or outdated entries. `plugins update` selects new plugin versions and also imports changed local JARs. `server update` selects a new server provider version or Paper build. Routine server updates do not change the declared Minecraft version. A plugin identity change is rejected rather than silently renamed.
 
 ### Pending and active installations
 
-**Active** is the deployed installation. **Pending** is the prepared set of JARs and configuration for a later deployment. `add`, `remove`, `install`, and `update` prepare pending changes without replacing running JARs.
+**Active** is the deployed installation. **Pending** is the prepared set of JARs and configuration for a later deployment. `plugins add`, `plugins remove`, `plugins update`, `server update`, and `install` prepare pending changes without replacing running JARs.
 
 `start`, `run`, and `restart` apply pending changes by copying files after confirming shutdown, rechecking configuration, and taking the required backup. `--active` uses the current active installation without applying pending changes. `deploy apply` requires a stopped server and leaves it stopped; `deploy discard` discards pending changes. Removing a plugin does not delete its stored data.
 
@@ -209,12 +223,12 @@ Each server has its own `craflet.yaml` and versions, with one shared workspace l
 ```sh
 craflet workspace list
 craflet -r status
-craflet --filter survival outdated
+craflet --filter survival plugins check
 ```
 
 If servers share a database, assign the same `backup.group` to every writer in the workspace. Matching database, repository, and retention settings are required. The group stops all members before taking one snapshot; shared data and databases are restored only once.
 
-Select every group member for `start`, `restart`, `deploy apply`, `backup create`, and `backup apply`, and configure the group's backup repository before its first start. `install` and `update` may prepare only a subset. Restoring into a separate directory does not alter the live servers. Partial runtime failures are reported per server rather than hidden.
+Select every group member for `start`, `restart`, `deploy apply`, `backup create`, and `backup apply`, and configure the group's backup repository before its first start. `install`, `plugins update`, and `server update` may prepare only a subset. Restoring into a separate directory does not alter the live servers. Partial runtime failures are reported per server rather than hidden.
 
 ## Troubleshooting and recovery
 
