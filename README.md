@@ -4,9 +4,11 @@ Manage Paper and Velocity server JARs, plugins, configuration, and backups. Keep
 
 Craflet runs on the server host and targets Linux, Windows, and macOS. For remote servers, install it on that host and connect with your usual SSH client.
 
-## See server setup and plugin updates in action
+## See setup, console control, and plugin updates in action
 
-![Craflet terminal demo showing Paper initialization, plugin installation, backup setup, a pending plugin update, and restart-time deployment](docs/assets/craflet-demo.gif)
+![Craflet terminal demo showing Paper initialization, server and plugin installation, interactive console control, backup setup, a pending plugin update, and restart-time deployment](docs/assets/craflet-demo.gif)
+
+The demo follows a first install, runs `list` through the interactive console, detaches while Paper keeps running, then stages and applies a LuckPerms update during restart.
 
 ## Installation
 

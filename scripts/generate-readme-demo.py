@@ -2,10 +2,11 @@
 """Generate the animated terminal demo embedded in the user README.
 
 The transcript demonstrates the normal human-facing CLI workflow: create a
-Paper project, resolve its JARs, add a Modrinth plugin, register a backup
-repository, prepare an update while the old version remains active, and apply
-the pending version on restart. It assumes BACKUP_PASSWORD is already set and
-/backup is an empty local backup destination.
+Paper project, resolve its server JAR, add a Modrinth plugin, start the server,
+attach an interactive console, register a backup repository, prepare an update
+while the old version remains active, and apply the pending version on restart.
+It assumes BACKUP_PASSWORD is already set and /backup is an empty local backup
+destination.
 
 Version provenance, verified from primary APIs on 2026-08-29:
 - https://fill.papermc.io/v3/projects/paper/versions/26.2/builds returned
@@ -15,8 +16,12 @@ Version provenance, verified from primary APIs on 2026-08-29:
   returned release MBSY8toc for Bukkit/Paper and game version 26.2. The
   /v2/project/luckperms/version list, filtered to Paper/Bukkit/Spigot and 26.2,
   returned release b0mk8uS6 (v5.5.71-bukkit) as the latest eligible version.
+- The `list` console command is present in the official Minecraft 26.2 server
+  command report. Its displayed response was captured from the pinned Paper
+  26.2 build above on 2026-08-30.
 
-Environment-specific paths and process IDs are normalized.
+Environment-specific paths, process IDs, timestamps, and terminal escape
+sequences are normalized.
 
 This script installs nothing. It requires Pillow to be available in the Python
 environment used to regenerate the checked-in GIF.
@@ -70,18 +75,19 @@ INIT_RESULT = [
     "Server version: 26.2 (build 120)",
     "Next: Review craflet.yaml, then run craflet install and craflet doctor.",
 ]
+INSTALL_COMMAND = "craflet install"
+INSTALL_RESULT = [
+    "Prepared 1 pending installation.",
+    "survival: pending ready; no declared plugins",
+    "Running JARs were not replaced.",
+    "Apply the pending installation with craflet start or craflet restart.",
+]
 ADD_COMMAND = "craflet add modrinth:luckperms@v5.5.53-bukkit"
 ADD_RESULT = [
     "Added plugins and prepared 1 pending installation.",
     "survival: pending ready; declared plugins: LuckPerms",
     "Running JARs were not replaced.",
     "Apply the pending installation with craflet start or craflet restart.",
-]
-LIST_INITIAL_RESULT = [
-    "Project: survival",
-    "Server: paper 26.2 | locked 26.2 | active -",
-    "Plugins:",
-    "  LuckPerms: requested modrinth@v5.5.53-bukkit | active - | pending v5.5.53-bukkit | locked v5.5.53-bukkit",
 ]
 START_RESULT = [
     "Started 1 server.",
@@ -90,11 +96,21 @@ START_RESULT = [
     "  Process: runner 5360, Java 2968",
     "  Last shutdown: clean",
 ]
+CONSOLE_RESULT = [
+    "[12:34:56 INFO]: There are 0 of a max of 20 players online:",
+    "^C",
+    "Detached from the server console; the server was not stopped.",
+]
+STATUS_RESULT = [
+    "Server: running",
+    f"  Active installation: {INSTALLATION_ID}",
+    "  Process: runner 5360, Java 2968",
+]
 BACKUP_COMMAND = (
     "craflet backup setup --path /backup --password-env BACKUP_PASSWORD "
     "--init --yes"
 )
-BACKUP_RESULT = ['Registered backup repository "main" at /backup.']
+BACKUP_RESULT = ['Configured backup repository "main" at /backup.']
 OUTDATED_RESULT = [
     "1 update available.",
     "Project: survival",
@@ -158,13 +174,21 @@ def line_color(line: str) -> str:
             "Added ",
             "Started ",
             "Restarted ",
-            "Registered ",
+            "Configured ",
         )
     ) or "pending ready" in line:
         return STRING
-    if stripped.startswith(("Project:", "Plugins:")):
+    if stripped.startswith(("Project:", "Plugins:", "Server:")):
         return ACCENT
-    if stripped.startswith(("Running JAR", "Apply the pending", "Next:")):
+    if stripped.startswith(
+        (
+            "Running JAR",
+            "Apply the pending",
+            "Next:",
+            "Detached from",
+            "^C",
+        )
+    ):
         return MUTED
     if "->" in line or "pending " in line:
         return PURPLE
@@ -300,6 +324,7 @@ def add_typing(
     command: str,
     *,
     prefix: list[str] | None = None,
+    prompt: str = "$ ",
     step: int = 5,
 ) -> None:
     prior = prefix or []
@@ -309,7 +334,7 @@ def add_typing(
         add_frame(
             frames,
             durations,
-            render(font, title, [*prior, f"$ {shown}"], cursor=True),
+            render(font, title, [*prior, f"{prompt}{shown}"], cursor=True),
             55 if index < len(positions) - 1 else 650,
         )
 
@@ -334,15 +359,33 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
             "craflet - Create a Paper server",
             [f"$ {INIT_COMMAND}", *INIT_RESULT, "$ cd survival"],
         ),
-        1800,
+        1600,
     )
     add_typing(
         frames,
         durations,
         font,
-        "craflet - Resolve the server and add a plugin",
-        ADD_COMMAND,
+        "craflet - Resolve the server JAR",
+        INSTALL_COMMAND,
         prefix=["$ cd survival"],
+        step=4,
+    )
+    add_frame(
+        frames,
+        durations,
+        render(
+            font,
+            "craflet - Resolve the server JAR",
+            [f"$ {INSTALL_COMMAND}", *INSTALL_RESULT],
+        ),
+        1500,
+    )
+    add_typing(
+        frames,
+        durations,
+        font,
+        "craflet - Add LuckPerms from Modrinth",
+        ADD_COMMAND,
         step=6,
     )
     add_frame(
@@ -350,20 +393,10 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         render(
             font,
-            "craflet - Resolve the server and add a plugin",
+            "craflet - Add LuckPerms from Modrinth",
             [f"$ {ADD_COMMAND}", *ADD_RESULT],
         ),
-        1750,
-    )
-    add_frame(
-        frames,
-        durations,
-        render(
-            font,
-            "craflet - Review the pending installation",
-            ["$ craflet list", *LIST_INITIAL_RESULT],
-        ),
-        1700,
+        1650,
     )
     add_typing(
         frames,
@@ -381,7 +414,41 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
             "craflet - Start the prepared installation",
             ["$ craflet start", *START_RESULT],
         ),
-        1750,
+        1650,
+    )
+    add_typing(
+        frames,
+        durations,
+        font,
+        "craflet - Attach the interactive console",
+        "craflet console",
+        step=3,
+    )
+    add_typing(
+        frames,
+        durations,
+        font,
+        "craflet - Attach the interactive console",
+        "list",
+        prefix=["$ craflet console"],
+        prompt="",
+        step=1,
+    )
+    add_frame(
+        frames,
+        durations,
+        render(
+            font,
+            "craflet - Detach without stopping the server",
+            [
+                "$ craflet console",
+                "list",
+                *CONSOLE_RESULT,
+                "$ craflet status",
+                *STATUS_RESULT,
+            ],
+        ),
+        2600,
     )
     add_typing(
         frames,
@@ -399,7 +466,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
             "craflet - Register backups before updates",
             [f"$ {BACKUP_COMMAND}", *BACKUP_RESULT],
         ),
-        1650,
+        1500,
     )
     add_typing(
         frames,
@@ -417,7 +484,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
             "craflet - Check plugin updates",
             ["$ craflet outdated LuckPerms", *OUTDATED_RESULT],
         ),
-        1650,
+        1500,
     )
     add_typing(
         frames,
@@ -435,7 +502,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
             "craflet - Prepare the update",
             ["$ craflet update LuckPerms", *UPDATE_RESULT],
         ),
-        1750,
+        1650,
     )
     add_frame(
         frames,
@@ -445,7 +512,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
             "craflet - Active stays unchanged",
             ["$ craflet list", *LIST_PENDING_RESULT],
         ),
-        1800,
+        1650,
     )
     add_typing(
         frames,
@@ -468,7 +535,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
                 *LIST_FINAL_RESULT,
             ],
         ),
-        2400,
+        2300,
     )
     return frames, durations
 
