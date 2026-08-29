@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, readdir, rename, rm } from "node:fs/promises";
+import { lstat, readdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { CrafletError } from "@craflet/core";
 import { type } from "arktype";
@@ -10,7 +10,11 @@ import {
     readEulaText,
 } from "./eula-file.js";
 import { assertNoSymlinks, atomicWrite, exists } from "./io.js";
-import { assertPrivateFile, ensurePrivateDirectory } from "./private.js";
+import {
+    assertPrivateFile,
+    ensurePrivateDirectory,
+    ensurePrivateFile,
+} from "./private.js";
 
 const UserEulaSchema = type({
     "+": "reject",
@@ -184,7 +188,7 @@ async function acquireEulaLock(
             home,
             `.eula-lock-${randomUUID()}.pending`,
         );
-        await mkdir(pending, { mode: 0o700 });
+        await ensurePrivateDirectory(pending);
         const owner = await assertNoSymlinks(pending, "owner.json");
         const raw = `${JSON.stringify(
             {
@@ -197,6 +201,7 @@ async function acquireEulaLock(
         )}\n`;
         try {
             await atomicWrite(owner, raw);
+            await ensurePrivateFile(owner);
             await rename(pending, directory);
             return {
                 directory,
@@ -276,8 +281,9 @@ export async function ensureUserEulaConsent(
             proposedEulaDocument(path.join(absolute, "eula.txt"));
         await requestConsent(document);
         options.signal?.throwIfAborted();
+        const record = await assertNoSymlinks(absolute, "eula.json");
         await atomicWrite(
-            await assertNoSymlinks(absolute, "eula.json"),
+            record,
             `${JSON.stringify(
                 {
                     schemaVersion: 1,
@@ -289,6 +295,7 @@ export async function ensureUserEulaConsent(
                 4,
             )}\n`,
         );
+        await ensurePrivateFile(record);
         return true;
     });
 }

@@ -1,4 +1,5 @@
 import {
+    chmod,
     lstat,
     mkdir,
     readdir,
@@ -17,9 +18,15 @@ import {
     removePrivateBackupDirectory,
     stageBackupPlan,
 } from "../../packages/adapters/src/filesystem/backup-files.js";
-import { ensurePrivateDirectory } from "../../packages/adapters/src/filesystem/private.js";
+import { ensureUserEulaConsent } from "../../packages/adapters/src/filesystem/eula-consent.js";
+import {
+    assertPrivateFile,
+    ensurePrivateDirectory,
+    ensurePrivateFile,
+} from "../../packages/adapters/src/filesystem/private.js";
 import { DEFAULT_BACKUP_PATTERNS } from "../../packages/core/src/domain/backup.js";
 import {
+    addForeignBackupTestAcl,
     backupTestDirectory,
     cleanupBackupTestDirectories,
     readWindowsBackupTestAcl,
@@ -226,6 +233,51 @@ describe("backup file planning on the real filesystem", () => {
             expect(acl.protected).toBe(true);
         }
     });
+
+    it("secures and verifies private files on the current platform", async () => {
+        const root = await backupTestDirectory();
+        const directory = path.join(root, "private-file");
+        await ensurePrivateDirectory(directory);
+        const file = await writeBackupTestFile(directory, "secret", "private");
+        if (process.platform === "win32") await addForeignBackupTestAcl(file);
+        else await chmod(file, 0o644);
+
+        await ensurePrivateFile(file);
+        await expect(assertPrivateFile(file)).resolves.toBeUndefined();
+        if (process.platform === "win32") {
+            const acl = await readWindowsBackupTestAcl(file);
+            expect(acl.ownerSid).toBe(acl.currentSid);
+            expect(acl.allowSids).toEqual([acl.currentSid]);
+            expect(acl.denySids).toEqual([]);
+            expect(acl.protected).toBe(true);
+        } else expect((await lstat(file)).mode & 0o777).toBe(0o600);
+    });
+
+    it.runIf(process.platform === "win32")(
+        "secures the active EULA lock owner and saved receipt for the current SID",
+        async () => {
+            const root = await backupTestDirectory();
+            const home = path.join(root, "eula-home");
+            let lockAcl:
+                | Awaited<ReturnType<typeof readWindowsBackupTestAcl>>
+                | undefined;
+            await ensureUserEulaConsent(home, async () => {
+                lockAcl = await readWindowsBackupTestAcl(
+                    path.join(home, "eula.lock", "owner.json"),
+                );
+            });
+            const receiptAcl = await readWindowsBackupTestAcl(
+                path.join(home, "eula.json"),
+            );
+            for (const acl of [lockAcl, receiptAcl]) {
+                expect(acl).toBeDefined();
+                expect(acl?.ownerSid).toBe(acl?.currentSid);
+                expect(acl?.allowSids).toEqual([acl?.currentSid]);
+                expect(acl?.denySids).toEqual([]);
+                expect(acl?.protected).toBe(true);
+            }
+        },
+    );
 
     it.runIf(process.platform === "win32")(
         "restricts an already owned directory without requiring WRITE_OWNER",

@@ -52,7 +52,10 @@ import {
 } from "../../packages/adapters/src/filesystem/installations.js";
 import * as io from "../../packages/adapters/src/filesystem/io.js";
 import { addPlugins } from "../../packages/adapters/src/filesystem/plugin-commands.js";
-import { ensurePrivateDirectory } from "../../packages/adapters/src/filesystem/private.js";
+import {
+    ensurePrivateDirectory,
+    ensurePrivateFile,
+} from "../../packages/adapters/src/filesystem/private.js";
 import {
     initProject,
     initWorkspace,
@@ -2874,9 +2877,10 @@ describe("explicit Paper EULA consent", () => {
         if (!processDefinitelyExited(deadPid))
             throw new Error("Could not reserve a dead fixture PID");
         const lock = path.join(home, "eula.lock");
-        await mkdir(lock);
+        await ensurePrivateDirectory(lock);
+        const owner = path.join(lock, "owner.json");
         await io.atomicWrite(
-            path.join(lock, "owner.json"),
+            owner,
             `${JSON.stringify(
                 {
                     schemaVersion: 1,
@@ -2887,6 +2891,7 @@ describe("explicit Paper EULA consent", () => {
                 4,
             )}\n`,
         );
+        await ensurePrivateFile(owner);
         const request = vi.fn(async () => undefined);
         await expect(ensureUserEulaConsent(home, request)).resolves.toBe(true);
         expect(request).toHaveBeenCalledOnce();
@@ -2899,9 +2904,10 @@ describe("explicit Paper EULA consent", () => {
         const home = path.join(root, "home");
         await ensurePrivateDirectory(home);
         const lock = path.join(home, "eula.lock");
-        await mkdir(lock);
+        await ensurePrivateDirectory(lock);
+        const owner = path.join(lock, "owner.json");
         await io.atomicWrite(
-            path.join(lock, "owner.json"),
+            owner,
             `${JSON.stringify(
                 {
                     schemaVersion: 1,
@@ -2912,6 +2918,7 @@ describe("explicit Paper EULA consent", () => {
                 4,
             )}\n`,
         );
+        await ensurePrivateFile(owner);
         const request = vi.fn(async () => undefined);
         await expect(
             ensureUserEulaConsent(home, request),
