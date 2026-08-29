@@ -1,10 +1,25 @@
 import { CrafletError } from "@craflet/core";
+import { type HumanResultContext, renderHumanResult } from "./human.js";
+import { sanitizeTerminalOutput } from "./terminal.js";
 
-export function printResult(result: unknown, json: boolean): void {
+export function printResult(
+    result: unknown,
+    json: boolean,
+    context: HumanResultContext,
+): void {
     if (result === undefined) return;
     if (json) process.stdout.write(`${JSON.stringify({ ok: true, result })}\n`);
-    else if (typeof result === "string") process.stdout.write(`${result}\n`);
-    else process.stdout.write(`${JSON.stringify(result, null, 4)}\n`);
+    else if (typeof result === "string")
+        process.stdout.write(`${sanitizeTerminalOutput(result)}\n`);
+    else {
+        try {
+            process.stdout.write(`${renderHumanResult(result, context)}\n`);
+        } catch {
+            process.stdout.write(
+                "The operation may have completed in whole or in part, but its result could not be displayed safely. Verify with a read-only command such as craflet status, craflet list, or craflet deploy plan before retrying.\n",
+            );
+        }
+    }
 }
 export function printError(error: unknown, json: boolean): void {
     const normalized =
@@ -27,7 +42,9 @@ export function printError(error: unknown, json: boolean): void {
         );
     else
         process.stderr.write(
-            `Error [${code}]: ${message}\n${hint ? `${hint}\n` : ""}`,
+            sanitizeTerminalOutput(
+                `Error [${code}]: ${message}\n${hint ? `${hint}\n` : ""}`,
+            ),
         );
     process.exitCode = known ? normalized.exitCode : 1;
 }

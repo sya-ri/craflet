@@ -42,6 +42,11 @@ export interface ArtifactContext {
     offline?: boolean;
     signal?: AbortSignal;
 }
+export interface LatestArtifact {
+    source: SourceSpec;
+    /** Provider-facing version label suitable for display; never compare as SemVer. */
+    version: string;
+}
 export interface ArtifactStore {
     resolve(
         source: SourceInput,
@@ -49,5 +54,8 @@ export interface ArtifactStore {
     ): Promise<LockedArtifact>;
     ensure(artifact: LockedArtifact, context: ArtifactContext): Promise<string>;
     inspect(path: string): Promise<PluginIdentity>;
-    latest(source: SourceInput, context: ArtifactContext): Promise<SourceSpec>;
+    latest(
+        source: SourceInput,
+        context: ArtifactContext,
+    ): Promise<LatestArtifact>;
 }

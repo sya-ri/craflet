@@ -22,7 +22,7 @@ export async function diagnoseProject(
         diagnostics.push({
             id: "project.manifest",
             status: "pass",
-            message: "Project declaration is valid.",
+            message: `Project "${project.manifest.name}" declaration is valid.`,
         });
     } catch (error) {
         diagnostics.push({

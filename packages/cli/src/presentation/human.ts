@@ -1,0 +1,1108 @@
+import { sanitizeTerminalOutput } from "./terminal.js";
+
+type ResultRecord = Record<string, unknown>;
+
+export interface HumanResultContext {
+    command: string;
+    dryRun: boolean;
+    artifactMutation?: {
+        plugins: readonly string[];
+        server: boolean;
+        all: boolean;
+    };
+}
+
+const ITEM_LIMIT = 20;
+
+function record(value: unknown): ResultRecord | undefined {
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+        ? (value as ResultRecord)
+        : undefined;
+}
+
+function list(value: unknown): unknown[] {
+    return Array.isArray(value) ? value : [];
+}
+
+function text(value: unknown, fallback = "-"): string {
+    if (
+        typeof value !== "string" &&
+        typeof value !== "number" &&
+        typeof value !== "boolean"
+    )
+        return fallback;
+    const sanitized = sanitizeTerminalOutput(String(value))
+        .replaceAll("\n", "?")
+        .replaceAll("\t", "?");
+    return sanitized.length > 240 ? `${sanitized.slice(0, 237)}...` : sanitized;
+}
+
+function optionalText(value: unknown): string | undefined {
+    return value === null || value === undefined ? undefined : text(value);
+}
+
+function count(value: unknown): number {
+    return Array.isArray(value) ? value.length : 0;
+}
+
+function plural(amount: number, singular: string, pluralForm = `${singular}s`) {
+    return amount === 1 ? singular : pluralForm;
+}
+
+function formatBytes(value: unknown): string {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0)
+        return "unknown size";
+    if (value < 1024) return `${value} B`;
+    const units = ["KiB", "MiB", "GiB", "TiB"];
+    let amount = value;
+    let unit = "B";
+    for (const next of units) {
+        amount /= 1024;
+        unit = next;
+        if (amount < 1024) break;
+    }
+    return `${amount.toFixed(amount >= 10 ? 1 : 2)} ${unit}`;
+}
+
+function sourceVersion(value: unknown): string {
+    const source = record(value);
+    if (source) return text(source.version);
+    if (typeof value !== "string") return "unknown";
+    const at = value.lastIndexOf("@");
+    if (at < 0) return text(value);
+    const hash = value.indexOf("#", at);
+    return text(value.slice(at + 1, hash < 0 ? undefined : hash));
+}
+
+function requestedLabel(value: unknown, displayVersion?: unknown): string {
+    const source = record(value);
+    if (source) {
+        const provider = text(source.provider, "declared source");
+        if (provider === "file") return "local file";
+        const version =
+            optionalText(displayVersion) ?? optionalText(source.version);
+        return version ? `${provider}@${version}` : provider;
+    }
+    if (typeof value !== "string") return "not declared";
+    if (value.startsWith("file:")) return "local file";
+    const separator = value.indexOf(":");
+    const provider = text(
+        separator < 0 ? "declared source" : value.slice(0, separator),
+    );
+    const resolved = optionalText(displayVersion);
+    if (resolved) return `${provider}@${resolved}`;
+    const at = value.lastIndexOf("@");
+    if (at < 0) return provider;
+    const hash = value.indexOf("#", at);
+    const version = text(value.slice(at + 1, hash < 0 ? undefined : hash));
+    return `${provider}@${version}`;
+}
+
+function boundedLines(
+    values: unknown,
+    render: (value: unknown, index: number) => string,
+): string[] {
+    const entries = list(values);
+    const lines = entries.slice(0, ITEM_LIMIT).map(render);
+    if (entries.length > ITEM_LIMIT)
+        lines.push(`  ... ${entries.length - ITEM_LIMIT} more`);
+    return lines;
+}
+
+function failureLines(result: unknown): string[] {
+    return (Array.isArray(result) ? list(result) : [result]).flatMap(
+        (value) => {
+            const item = record(value);
+            if (item?.ok !== false) return [];
+            return [
+                `${text(item.project ?? item.group, "Recovery unit")}: failed [${text(item.code, "OPERATION_FAILED")}].${item.message ? ` ${text(item.message)}` : ""}`,
+            ];
+        },
+    );
+}
+
+function formatServerStatus(value: unknown, prefix = "Server"): string[] {
+    const status = record(value);
+    if (!status) return [`${prefix} status is unavailable.`];
+    const state = text(status.status, "unknown");
+    const lines = [`${prefix}: ${state}`];
+    const active = optionalText(status.activeId);
+    if (active) lines.push(`  Active installation: ${active}`);
+    const pid = optionalText(status.pid);
+    const javaPid = optionalText(status.javaPid);
+    if (pid || javaPid)
+        lines.push(
+            `  Process: ${pid ? `runner ${pid}` : "runner unknown"}${javaPid ? `, Java ${javaPid}` : ""}`,
+        );
+    if (typeof status.clean === "boolean")
+        lines.push(`  Last shutdown: ${status.clean ? "clean" : "unclean"}`);
+    return lines;
+}
+
+function renderInit(result: unknown, dryRun: boolean): string {
+    const item = record(result);
+    if (!item)
+        return dryRun
+            ? "Project creation preview completed."
+            : "Project created.";
+    const server = record(item.server);
+    const kind = text(server?.type, "Minecraft");
+    const name = text(item.name, "server");
+    const action = dryRun ? "Would create" : "Created";
+    const lines = [
+        `${action} ${kind === "paper" ? "Paper" : kind === "velocity" ? "Velocity" : kind} server "${name}" at ${text(item.directory)}.`,
+    ];
+    if (server) {
+        const build = optionalText(server.build);
+        lines.push(
+            `Server version: ${text(server.version)}${build ? ` (build ${build})` : ""}`,
+        );
+    }
+    if (typeof item.next === "string") lines.push(`Next: ${text(item.next)}`);
+    return lines.join("\n");
+}
+
+function renderInstall(
+    result: unknown,
+    command: string,
+    dryRun: boolean,
+    context: HumanResultContext,
+): string {
+    const preview = record(result);
+    if (preview?.action === "add") {
+        const projects = list(preview.projects).map((item) => text(item));
+        const sources = count(preview.sources);
+        return [
+            `Plan: add ${sources} ${plural(sources, "plugin source")} to ${projects.join(", ") || "the selected project"}.`,
+            "No declaration, lock, cache, pending installation, or running JAR was changed.",
+        ].join("\n");
+    }
+    const items = list(result)
+        .map(record)
+        .filter((item) => item !== undefined);
+    if (!items.length)
+        return dryRun
+            ? "No installation changes are planned."
+            : "No installation changes were needed.";
+    const changed = items.filter((item) => item.changed === true);
+    const verb =
+        command === "add"
+            ? "Added plugins and prepared"
+            : command === "remove"
+              ? "Removed plugin declarations and prepared"
+              : command === "update"
+                ? "Resolved updates and prepared"
+                : "Prepared";
+    const lines = [
+        dryRun
+            ? `${changed.length} of ${items.length} selected ${plural(items.length, "project")} would receive a pending installation.`
+            : changed.length
+              ? `${verb} ${changed.length} pending ${plural(changed.length, "installation")}.`
+              : `All ${items.length} selected ${plural(items.length, "project")} are already up to date.`,
+    ];
+    const mutation = context.artifactMutation;
+    if (mutation && command === "remove" && mutation.plugins.length)
+        lines.push(
+            `Requested removals: ${mutation.plugins.map((name) => text(name)).join(", ")}.`,
+        );
+    if (mutation && command === "update") {
+        const targets = mutation.all
+            ? "all declared plugins and the server"
+            : mutation.server
+              ? "the server"
+              : mutation.plugins.length
+                ? mutation.plugins.map((name) => text(name)).join(", ")
+                : "all declared plugins";
+        lines.push(`Requested updates: ${targets}.`);
+    }
+    for (const item of items) {
+        const plugins = list(item.plugins).map((plugin) => text(plugin));
+        lines.push(
+            `${text(item.project)}: ${item.changed === true ? (dryRun ? "changes planned" : "pending ready") : "unchanged"}${plugins.length ? `; declared plugins: ${plugins.join(", ")}` : "; no declared plugins"}`,
+        );
+        for (const warning of list(item.warnings))
+            lines.push(`  Warning: ${text(warning)}`);
+        const unresolved = list(item.unresolved).map((entry) => text(entry));
+        if (unresolved.length)
+            lines.push(`  Unresolved during preview: ${unresolved.join(", ")}`);
+    }
+    if (!dryRun && changed.length) {
+        lines.push("Running JARs were not replaced.");
+        lines.push(
+            "Apply the pending installation with craflet start or craflet restart.",
+        );
+    }
+    if (command === "remove")
+        lines.push("Plugin data under runtime was left unchanged.");
+    return lines.join("\n");
+}
+
+function renderPluginList(result: unknown): string {
+    const projects = list(result)
+        .map(record)
+        .filter((item) => item !== undefined);
+    if (!projects.length) return "No projects were selected.";
+    const lines: string[] = [];
+    for (const project of projects) {
+        if (lines.length) lines.push("");
+        lines.push(`Project: ${text(project.project)}`);
+        const server = record(project.server);
+        if (server) {
+            const declared = record(server.declared);
+            lines.push(
+                `Server: ${text(declared?.type, "unknown")} ${text(declared?.version)} | locked ${text(server.locked)} | active ${text(server.active)}`,
+            );
+        }
+        const plugins = list(project.plugins)
+            .map(record)
+            .filter((item) => item !== undefined);
+        if (!plugins.length) {
+            lines.push("Plugins: none declared.");
+            continue;
+        }
+        lines.push("Plugins:");
+        for (const plugin of plugins)
+            lines.push(
+                `  ${text(plugin.name)}: requested ${requestedLabel(plugin.requested, plugin.requestedVersion)} | active ${text(plugin.active)} | pending ${text(plugin.pending)} | locked ${text(plugin.locked)}`,
+            );
+    }
+    return lines.join("\n");
+}
+
+function renderOutdated(result: unknown): string {
+    const projects = list(result)
+        .map(record)
+        .filter((item) => item !== undefined);
+    const lines: string[] = [];
+    let available = 0;
+    for (const project of projects) {
+        const updates = list(project.updates)
+            .map(record)
+            .filter((item) => item !== undefined);
+        if (!updates.length) continue;
+        lines.push(`Project: ${text(project.project)}`);
+        for (const update of updates) {
+            const name = text(update.name);
+            if (update.status === "local") {
+                const updateCommand =
+                    name === "(server)"
+                        ? "craflet update --server"
+                        : `craflet update ${name}`;
+                lines.push(
+                    `  ${name}: local JAR at ${text(update.currentVersion, text(update.current))}; run ${updateCommand} to reimport changed bytes.`,
+                );
+            } else if (update.changed === true) {
+                available += 1;
+                lines.push(
+                    `  ${name}: ${text(update.currentVersion, text(update.current))} -> ${text(update.availableVersion, sourceVersion(update.available))}`,
+                );
+            } else {
+                lines.push(
+                    `  ${name}: up to date at ${text(update.currentVersion, text(update.current))}.`,
+                );
+            }
+        }
+    }
+    if (!lines.length) return "No plugins are declared for update checks.";
+    lines.unshift(
+        available
+            ? `${available} ${plural(available, "update")} available.`
+            : "No newer provider versions are available.",
+    );
+    return lines.join("\n");
+}
+
+function isDeploymentPlan(value: unknown): boolean {
+    const item = record(value);
+    return Boolean(
+        item &&
+            record(item.status) &&
+            (Object.hasOwn(item, "active") ||
+                Object.hasOwn(item, "pending") ||
+                Object.hasOwn(item, "plugins") ||
+                Object.hasOwn(item, "configuration") ||
+                Object.hasOwn(item, "recoveryRequired")),
+    );
+}
+
+function renderDeploymentPlan(
+    value: unknown,
+    label: string,
+    preview = true,
+): string[] {
+    const plan = record(value);
+    if (!plan) return [`${label}: deployment details are unavailable.`];
+    const plugins = list(plan.plugins);
+    const configuration = list(plan.configuration);
+    return [
+        `${label}: ${preview ? "deployment preview" : "deployment state"}`,
+        ...formatServerStatus(plan.status, "  Runtime"),
+        `  Active installation: ${text(plan.active, "none")}`,
+        `  Pending installation: ${text(plan.pending, "none")}`,
+        plugins.length
+            ? `  Pending plugins (${plugins.length}): ${plugins
+                  .slice(0, ITEM_LIMIT)
+                  .map((entry) => text(entry))
+                  .join(
+                      ", ",
+                  )}${plugins.length > ITEM_LIMIT ? `, ... ${plugins.length - ITEM_LIMIT} more` : ""}`
+            : "  Pending plugins: none",
+        configuration.length
+            ? `  Configuration (${configuration.length}): ${configuration
+                  .slice(0, ITEM_LIMIT)
+                  .map((entry) => text(entry))
+                  .join(
+                      ", ",
+                  )}${configuration.length > ITEM_LIMIT ? `, ... ${configuration.length - ITEM_LIMIT} more` : ""}`
+            : "  Configuration: none",
+        `  Recovery required: ${plan.recoveryRequired === true ? "yes" : "no"}`,
+    ];
+}
+
+interface LifecycleRow {
+    label: string;
+    value?: unknown;
+    failed?: boolean;
+    code?: unknown;
+    message?: unknown;
+}
+
+function lifecycleRows(result: unknown): LifecycleRow[] {
+    const inputs = Array.isArray(result) ? result : [result];
+    const rows: LifecycleRow[] = [];
+    for (const input of inputs) {
+        const item = record(input);
+        if (!item) continue;
+        const outerLabel = text(item.project ?? item.group, "Server");
+        if (item.ok === false) {
+            rows.push({
+                label: outerLabel,
+                failed: true,
+                code: item.code,
+                message: item.message,
+            });
+            continue;
+        }
+        if (Array.isArray(item.result)) {
+            const members = list(item.result);
+            for (const [index, memberValue] of members.entries()) {
+                const member = record(memberValue);
+                if (!member) continue;
+                const label = text(
+                    member.project,
+                    `${outerLabel} member ${index + 1}`,
+                );
+                rows.push({
+                    label,
+                    value:
+                        record(member.status) && !isDeploymentPlan(member)
+                            ? member.status
+                            : member,
+                });
+            }
+            continue;
+        }
+        rows.push({
+            label: outerLabel,
+            value: item.result ?? item,
+        });
+    }
+    return rows;
+}
+
+function renderRuntime(
+    result: unknown,
+    command: string,
+    dryRun: boolean,
+): string {
+    if (command === "status" && !Array.isArray(result))
+        return formatServerStatus(result).join("\n");
+    if (command === "stop" && !Array.isArray(result))
+        return [
+            ...(dryRun ? ["Stop preview; no stop signal was sent."] : []),
+            ...formatServerStatus(result),
+        ].join("\n");
+
+    const rows = lifecycleRows(result);
+    if (!rows.length)
+        return dryRun
+            ? `No ${command} operation is planned.`
+            : command === "stop"
+              ? "No server was stopped."
+              : `No server was ${command}ed.`;
+    const failures = rows.filter((row) => row.failed).length;
+    const completed = rows.length - failures;
+    const action =
+        command === "restart"
+            ? "Restart"
+            : command === "stop"
+              ? "Stop"
+              : "Start";
+    const lines = [
+        command === "status"
+            ? `Status for ${rows.length} ${plural(rows.length, "server")}.`
+            : dryRun
+              ? `${action} preview completed for ${completed} ${plural(completed, "server")}${failures ? `; ${failures} failed inspection` : ""}. No lifecycle action was performed.`
+              : failures
+                ? `${action} completed for ${completed} ${plural(completed, "server")}; ${failures} failed.`
+                : `${command === "restart" ? "Restarted" : command === "stop" ? "Stopped" : "Started"} ${rows.length} ${plural(rows.length, "server")}.`,
+    ];
+    for (const row of rows) {
+        if (row.failed) {
+            lines.push(
+                `${row.label}: failed [${text(row.code, "OPERATION_FAILED")}].${row.message ? ` ${text(row.message)}` : ""}`,
+            );
+        } else if (isDeploymentPlan(row.value)) {
+            lines.push(...renderDeploymentPlan(row.value, row.label));
+        } else if (record(row.value)?.status !== undefined) {
+            lines.push(...formatServerStatus(row.value, row.label));
+        } else {
+            lines.push(
+                `${row.label}: ${dryRun ? "preview completed" : "operation completed"}.`,
+            );
+        }
+    }
+    return lines.join("\n");
+}
+
+function renderWorkspaceList(result: unknown): string {
+    const projects = list(result)
+        .map(record)
+        .filter((item) => item !== undefined);
+    if (!projects.length) return "No workspace projects were found.";
+    return [
+        `${projects.length} workspace ${plural(projects.length, "project")}:`,
+        ...projects.map(
+            (project) => `  ${text(project.name)}: ${text(project.directory)}`,
+        ),
+    ].join("\n");
+}
+
+function renderValidation(result: unknown): string {
+    const projects = list(result)
+        .map(record)
+        .filter((item) => item !== undefined);
+    if (!projects.length) return "No projects were validated.";
+    return [
+        `Validated ${projects.length} ${plural(projects.length, "project")}.`,
+        ...projects.map(
+            (project) =>
+                `[${project.valid === true ? "OK" : "FAIL"}] ${text(project.project)}: lock ${project.locked ? "present" : "missing"}, active ${project.active ? "present" : "none"}, pending ${project.pending ? "present" : "none"}`,
+        ),
+    ].join("\n");
+}
+
+function renderDoctor(result: unknown): string {
+    const groups = list(result);
+    const diagnostics = groups
+        .flatMap((group) => list(group).map(record))
+        .filter((item) => item !== undefined);
+    if (!diagnostics.length) return "Doctor completed without diagnostics.";
+    const failed = diagnostics.filter(
+        (item) =>
+            item.status === "fail" ||
+            (item.status === "unknown" && item.required === true),
+    ).length;
+    const warned = diagnostics.filter((item) => item.status === "warn").length;
+    const unknown = diagnostics.filter(
+        (item) => item.status === "unknown" && item.required !== true,
+    ).length;
+    const lines = [
+        failed
+            ? `Doctor found ${failed} failing ${plural(failed, "check")}, ${warned} ${plural(warned, "warning")}, and ${unknown} optional unknown ${plural(unknown, "check")}.`
+            : warned || unknown
+              ? `Doctor completed with ${warned} ${plural(warned, "warning")} and ${unknown} optional unknown ${plural(unknown, "check")}.`
+              : `Doctor passed ${diagnostics.length} ${plural(diagnostics.length, "check")}.`,
+    ];
+    for (const item of diagnostics) {
+        lines.push(
+            `[${text(item.status).toUpperCase()}] ${text(item.message)}`,
+        );
+        if (item.hint) lines.push(`  Hint: ${text(item.hint)}`);
+    }
+    return lines.join("\n");
+}
+
+function renderConfig(
+    result: unknown,
+    command: string,
+    dryRun: boolean,
+): string {
+    if (command === "config capture") {
+        const item = record(result);
+        const conflicts = list(item?.conflicts)
+            .map(record)
+            .filter((entry) => entry !== undefined);
+        if (conflicts.length)
+            return [
+                `Capture stopped with ${conflicts.length} ${plural(conflicts.length, "conflict")}; no templates were changed.`,
+                ...conflicts.map(
+                    (entry) =>
+                        `  ${text(entry.relative)}: review with craflet config diff`,
+                ),
+            ].join("\n");
+        const captured = list(item?.captured).map((entry) => text(entry));
+        const unchanged = count(item?.unchanged);
+        return `${dryRun ? "Would capture" : "Captured"} ${captured.length} ${plural(captured.length, "configuration file")}; ${unchanged} unchanged.${captured.length ? `\n  ${captured.join("\n  ")}` : ""}`;
+    }
+    if (command === "config diff") {
+        const files = list(result)
+            .map(record)
+            .filter((item) => item !== undefined);
+        if (!files.length)
+            return "No tracked configuration files have differences.";
+        return [
+            `${files.length} tracked configuration ${plural(files.length, "file")}:`,
+            ...files.map((file) => {
+                const changes = [
+                    file.baseChanged === true ? "base changed" : undefined,
+                    file.runtimeChanged === true
+                        ? "runtime changed"
+                        : undefined,
+                    count(file.conflicts)
+                        ? `${count(file.conflicts)} ${plural(count(file.conflicts), "conflict")}`
+                        : undefined,
+                ].filter(Boolean);
+                return `  ${text(file.relative)}: ${changes.join(", ") || "unchanged"}`;
+            }),
+        ].join("\n");
+    }
+    if (command === "config list" || command === "config track") {
+        const preview = record(result);
+        if (command === "config track" && preview?.action === "track") {
+            const paths = list(preview.paths).map((entry) => text(entry));
+            return `${dryRun ? "Would track" : "Tracked"} ${paths.length} ${plural(paths.length, "configuration file")}.${paths.length ? `\n  ${paths.join("\n  ")}` : ""}`;
+        }
+        const files = list(result)
+            .map(record)
+            .filter((item) => item !== undefined);
+        if (!files.length)
+            return command === "config list"
+                ? "No managed configuration files were found."
+                : dryRun
+                  ? "No configuration files would be tracked."
+                  : "No configuration files were added.";
+        return [
+            `${files.length} configuration ${plural(files.length, "file")}:`,
+            ...files.map((file) => `  ${text(file.relative)}`),
+        ].join("\n");
+    }
+    const item = record(result);
+    if (command === "config untrack") {
+        const paths = list(item?.untracked).map((entry) => text(entry));
+        return `${dryRun ? "Would stop tracking" : "Stopped tracking"} ${paths.length} ${plural(paths.length, "configuration file")}. Runtime files are unchanged.${paths.length ? `\n  ${paths.join("\n  ")}` : ""}`;
+    }
+    if (command === "config resolve")
+        return `${dryRun ? "Would resolve" : "Resolved"} ${text(item?.path)} using the ${text(item?.resolution)} version.`;
+    return "Configuration operation completed.";
+}
+
+function renderBackupPlan(value: unknown, label = "Backup plan"): string {
+    const plan = record(value);
+    if (!plan) return `${label}: details are unavailable.`;
+    const files = list(plan.files);
+    const roots = list(plan.roots);
+    const databases = list(plan.databaseIds);
+    const lines = [
+        `${label}: ${files.length} ${plural(files.length, "file")}, ${formatBytes(plan.bytes)}, ${databases.length} ${plural(databases.length, "database")}.`,
+        `Staging estimate: ${formatBytes(plan.stagingBytes)}`,
+        roots.length ? "Roots:" : "Roots: none",
+        ...boundedLines(roots, (value) => {
+            const root = record(value);
+            return `  ${text(root?.id)}: ${text(root?.path)} (${text(root?.kind)}${root?.external === true ? ", external" : ""})`;
+        }),
+        files.length
+            ? "Selected files after exclusions:"
+            : "Selected files after exclusions: none",
+        ...boundedLines(files, (value) => {
+            const file = record(value);
+            return `  ${text(file?.destination)} <- ${text(file?.source)} (${formatBytes(file?.size)})`;
+        }),
+        databases.length
+            ? `Databases: ${databases.map((database) => text(database)).join(", ")}`
+            : "Databases: none",
+        ...list(plan.warnings).map((warning) => `Warning: ${text(warning)}`),
+    ];
+    return lines.join("\n");
+}
+
+function backupPlans(result: unknown): { label: string; plan: ResultRecord }[] {
+    if (!Array.isArray(result)) {
+        const plan = record(result);
+        return plan ? [{ label: "Backup plan", plan }] : [];
+    }
+    return list(result).flatMap((value) => {
+        const wrapper = record(value);
+        const plan = record(wrapper?.result);
+        if (!wrapper || !plan) return [];
+        return [
+            {
+                label: `Backup plan for ${text(wrapper.project ?? wrapper.group, "selected recovery unit")}`,
+                plan,
+            },
+        ];
+    });
+}
+
+function renderBackupApply(result: unknown, dryRun: boolean): string {
+    const item = record(result);
+    if (!item)
+        return dryRun
+            ? "Restore application preview is unavailable; no live data was changed."
+            : "Restore application completed; verify the stopped server before continuing.";
+    const label = text(item.project ?? item.group, "selected recovery unit");
+    const changes = list(item.changes);
+    if (dryRun) {
+        return [
+            `Restore application preview for ${label}: ${item.files === undefined ? "group file changes are listed below" : `${count(item.files)} ${plural(count(item.files), "file")}`}, ${count(item.databases)} ${plural(count(item.databases), "database")}, ${changes.length} planned ${plural(changes.length, "change")}.`,
+            ...boundedLines(changes, (value) => {
+                const change = record(value);
+                const action =
+                    change?.before === null
+                        ? "create"
+                        : change?.after === null
+                          ? "remove"
+                          : "replace";
+                return `  ${text(change?.kind)} ${action}: ${text(change?.target)}`;
+            }),
+            ...list(item.unresolved).map(
+                (entry) => `Still checked during apply: ${text(entry)}`,
+            ),
+            "No live data was changed.",
+        ].join("\n");
+    }
+    const lines = [
+        item.applied === true
+            ? `Applied verified restored data for ${label}. The server remains stopped.`
+            : `Restore application completed for ${label}; verify the stopped server before continuing.`,
+    ];
+    if (item.preRestoreSnapshot)
+        lines.push(
+            `Pre-restore snapshot: ${text(item.preRestoreSnapshot).slice(0, 12)}`,
+        );
+    if (item.pendingDiscarded === true)
+        lines.push("The previous pending installation was discarded.");
+    if (item.cleanupRequired)
+        lines.push(
+            `Warning: temporary restore data still requires cleanup at ${text(item.cleanupRequired)}.`,
+        );
+    return lines.join("\n");
+}
+
+function renderBackup(
+    result: unknown,
+    command: string,
+    dryRun: boolean,
+): string {
+    const item = record(result);
+    if (command === "backup plan") return renderBackupPlan(result);
+    if (command === "backup setup")
+        return `${dryRun ? "Would register" : "Registered"} backup repository "${text(item?.alias)}" at ${text(item?.path)}.`;
+    if (command === "backup list") {
+        const snapshots = list(result)
+            .map(record)
+            .filter((entry) => entry !== undefined);
+        if (!snapshots.length)
+            return "No snapshots were found for this recovery unit.";
+        return [
+            `${snapshots.length} backup ${plural(snapshots.length, "snapshot")}:`,
+            ...snapshots.map(
+                (snapshot) =>
+                    `  ${text(snapshot.shortId ?? snapshot.id)}  ${text(snapshot.time)}`,
+            ),
+        ].join("\n");
+    }
+    if (command === "backup show")
+        return `Snapshot created ${text(item?.createdAt)} for project ${text(item?.projectId)}: ${count(item?.files)} ${plural(count(item?.files), "file")}, ${count(item?.databases)} ${plural(count(item?.databases), "database")}.`;
+    if (command === "backup diff") {
+        const differences = list(result).filter(
+            (value) => record(value)?.message_type !== "statistics",
+        );
+        return differences.length
+            ? [
+                  `${differences.length} backup ${plural(differences.length, "difference")} found:`,
+                  ...boundedLines(differences, (value) => {
+                      const difference = record(value);
+                      const target =
+                          difference?.path ??
+                          difference?.changed ??
+                          difference?.source;
+                      const action =
+                          difference?.modifier ?? difference?.type ?? "changed";
+                      return `  ${text(action)}: ${text(target)}`;
+                  }),
+              ].join("\n")
+            : "The selected snapshots have no reported differences.";
+    }
+    if (command === "backup check")
+        return "Backup repository integrity check passed.";
+    if (command === "backup prune") {
+        const groups = list(item?.plan).map(record).filter(Boolean);
+        const structured = groups.every((group) =>
+            Array.isArray(group?.remove),
+        );
+        const removed = structured
+            ? groups.flatMap((group) =>
+                  list(group?.remove).map(record).filter(Boolean),
+              )
+            : [];
+        const lines = [
+            structured
+                ? item?.applied === true
+                    ? `Applied retention and pruned repository data; ${removed.length} ${plural(removed.length, "snapshot")} removed.`
+                    : `Retention preview: ${removed.length} ${plural(removed.length, "snapshot")} would be removed. Run craflet backup prune --apply to delete them.`
+                : `Retention ${item?.applied === true ? "result" : "preview"}: restic reported ${groups.length} ${plural(groups.length, "retention group")}; use --json to inspect its provider-specific structure.`,
+        ];
+        lines.push(
+            ...boundedLines(removed, (value) => {
+                const snapshot = record(value);
+                const reasons = list(snapshot?.reasons)
+                    .map((reason) => text(reason))
+                    .join(", ");
+                return `  ${text(snapshot?.shortId ?? snapshot?.short_id ?? snapshot?.id)}  ${text(snapshot?.time)}${reasons ? ` (${reasons})` : ""}`;
+            }),
+        );
+        return lines.join("\n");
+    }
+    if (command === "backup restore") {
+        return `${dryRun ? "Restore plan verified" : "Restored snapshot"} ${text(item?.snapshotId)} ${dryRun ? "for" : "to"} ${text(item?.target)}${item?.requiredBytes !== undefined ? `; ${formatBytes(item.requiredBytes)} required` : ""}.`;
+    }
+    if (command === "backup create") {
+        const failures = failureLines(result);
+        if (dryRun) {
+            const plans = backupPlans(result);
+            return [
+                ...(plans.length
+                    ? plans.map(({ label, plan }) =>
+                          renderBackupPlan(plan, label),
+                      )
+                    : [
+                          "Backup preview details are unavailable; no server was stopped.",
+                      ]),
+                ...failures,
+            ].join("\n\n");
+        }
+        const operations = Array.isArray(result) ? list(result) : [result];
+        const backups = operations.flatMap((operation) => {
+            const wrapper = record(operation);
+            const nested = record(wrapper?.result);
+            const backup = record(wrapper?.backup) ?? record(nested?.backup);
+            return backup
+                ? [{ wrapper: nested ?? wrapper, outer: wrapper, backup }]
+                : wrapper?.snapshotId
+                  ? [{ wrapper, outer: wrapper, backup: wrapper }]
+                  : [];
+        });
+        if (backups.length)
+            return [
+                ...backups.map(({ wrapper, outer, backup }) => {
+                    const snapshotId = text(backup.snapshotId).slice(0, 12);
+                    const files =
+                        typeof backup.fileCount === "number"
+                            ? backup.fileCount
+                            : 0;
+                    const resumed = Array.isArray(wrapper?.resumed)
+                        ? list(wrapper?.resumed).map((entry) => text(entry))
+                        : [];
+                    const label = optionalText(outer?.project ?? outer?.group);
+                    return `${label ? `${label}: ` : ""}Created cold backup ${snapshotId} with ${files} ${plural(files, "file")} (${formatBytes(backup.bytes)}).${wrapper?.resumed === true ? " The previously running server was resumed with the same active installation." : resumed.length ? ` Resumed with the same active installation: ${resumed.join(", ")}.` : ""}`;
+                }),
+                ...failures,
+            ].join("\n");
+        return failures.length
+            ? failures.join("\n")
+            : "Cold backup operation completed.";
+    }
+    if (command === "backup apply") return renderBackupApply(result, dryRun);
+    return "Backup operation completed.";
+}
+
+function renderCache(result: unknown, command: string): string {
+    const item = record(result);
+    if (command === "cache prune") {
+        const candidates = count(item?.candidates);
+        return [
+            item?.applied === true
+                ? `Removed ${candidates} unreferenced cache ${plural(candidates, "entry", "entries")}; ${text(item?.retained, "0")} retained.`
+                : `Cache prune preview: ${candidates} unreferenced ${plural(candidates, "entry", "entries")}; ${text(item?.retained, "0")} retained.`,
+            ...list(item?.warnings).map(
+                (warning) => `Warning: ${text(warning)}`,
+            ),
+        ].join("\n");
+    }
+    const entries = count(item?.entries);
+    const invalid = list(item?.entries)
+        .map(record)
+        .filter((entry) => entry?.valid === false).length;
+    const ignored = list(item?.ignored).map((entry) => text(entry));
+    return [
+        `${command === "cache verify" ? "Verified" : "Cache contains"} ${entries} ${plural(entries, "artifact")} (${formatBytes(item?.bytes)})${invalid ? `; ${invalid} failed verification` : ""}.`,
+        `Cache directory: ${text(item?.directory)}`,
+        ...(ignored.length
+            ? [
+                  `Ignored ${ignored.length} unrecognized ${plural(ignored.length, "entry", "entries")}: ${ignored.slice(0, ITEM_LIMIT).join(", ")}${ignored.length > ITEM_LIMIT ? `, ... ${ignored.length - ITEM_LIMIT} more` : ""}`,
+              ]
+            : []),
+    ].join("\n");
+}
+
+function renderInspect(result: unknown): string {
+    const item = record(result);
+    if (!item) return "JAR inspection completed.";
+    const names: Record<string, string> = {
+        bukkit: "Bukkit/Spigot",
+        paper: "Paper",
+        velocity: "Velocity",
+    };
+    const format = text(item.format);
+    const dependencies = list(item.dependencies).map((entry) => text(entry));
+    return [
+        `Plugin: ${text(item.id)}`,
+        `Version: ${text(item.version)}`,
+        `Descriptor: ${names[format] ?? format}`,
+        dependencies.length
+            ? `Required plugins: ${dependencies.join(", ")}`
+            : "Required plugins: none",
+    ].join("\n");
+}
+
+function renderRecovery(result: unknown, dryRun: boolean): string {
+    const rows = list(result).map(record).filter(Boolean);
+    if (!rows.length)
+        return dryRun
+            ? "No interrupted operation was found; no state was changed."
+            : "No interrupted operation required recovery.";
+    const changed = rows.filter(
+        (row) =>
+            row?.ok !== false &&
+            (row?.declarations === true ||
+                row?.restore === true ||
+                row?.recovered === true),
+    ).length;
+    const failures = rows.filter((row) => row?.ok === false).length;
+    const lines = [
+        dryRun
+            ? `Recovery preview produced ${rows.length} ${plural(rows.length, "result")}; ${changed} would require work${failures ? ` and ${failures} failed inspection` : ""}.`
+            : failures
+              ? `Recovery produced ${rows.length - failures} successful ${plural(rows.length - failures, "result")}; ${failures} failed.`
+              : changed
+                ? `Recovered interrupted state in ${changed} of ${rows.length} ${plural(rows.length, "result")}.`
+                : `Checked ${rows.length} recovery ${plural(rows.length, "result")}; no recovery was needed.`,
+    ];
+    for (const row of rows) {
+        if (row?.ok === false) {
+            lines.push(
+                `${text(row.project ?? row.group, "Recovery unit")}: failed [${text(row.code, "OPERATION_FAILED")}].${row.message ? ` ${text(row.message)}` : ""}`,
+            );
+            continue;
+        }
+        const actions = [
+            row?.declarations === true ? "declarations" : undefined,
+            row?.restore === true ? "restore" : undefined,
+            row?.recovered === true ? "deployment" : undefined,
+        ].filter((value): value is string => Boolean(value));
+        lines.push(
+            `${text(row?.project ?? row?.group, "Recovery unit")}: ${actions.length ? `${dryRun ? "would recover" : "recovered"} ${actions.join(", ")}` : "no recovery needed"}.`,
+        );
+    }
+    if (!dryRun)
+        lines.push(
+            "Run craflet validate, craflet status, and craflet deploy plan before continuing.",
+        );
+    return lines.join("\n");
+}
+
+function renderDeployApply(result: unknown, dryRun: boolean): string {
+    const wrappers = list(result).map(record).filter(Boolean);
+    if (!wrappers.length)
+        return dryRun
+            ? "No deployment application was selected; runtime files were not changed."
+            : "No deployment application was selected.";
+    const lines = [
+        dryRun
+            ? `Deployment application preview for ${wrappers.length} ${plural(wrappers.length, "recovery unit")}; runtime files were not changed.`
+            : `Deployment application completed for ${wrappers.length} ${plural(wrappers.length, "recovery unit")}. No server was started.`,
+    ];
+    for (const wrapper of wrappers) {
+        const label = text(wrapper?.project ?? wrapper?.group, "Recovery unit");
+        if (wrapper?.ok === false) {
+            lines.push(
+                `${label}: failed [${text(wrapper.code, "OPERATION_FAILED")}].${wrapper.message ? ` ${text(wrapper.message)}` : ""}`,
+            );
+            continue;
+        }
+        const nested = wrapper?.result;
+        if (Array.isArray(nested)) {
+            const plans = list(nested).map(record).filter(Boolean);
+            if (!plans.length) {
+                lines.push(
+                    `${label}: deployment completed; all members remain stopped.`,
+                );
+                continue;
+            }
+            for (const [index, plan] of plans.entries())
+                lines.push(
+                    ...renderDeploymentPlan(
+                        plan,
+                        `${label} member ${index + 1}`,
+                        dryRun,
+                    ),
+                );
+            continue;
+        }
+        if (isDeploymentPlan(nested))
+            lines.push(...renderDeploymentPlan(nested, label, dryRun));
+        else lines.push(`${label}: deployment result details are unavailable.`);
+    }
+    return lines.join("\n");
+}
+
+function renderSimple(
+    result: unknown,
+    command: string,
+    dryRun: boolean,
+): string {
+    const item = record(result);
+    if (command === "import") {
+        const files = optionalText(item?.files);
+        const plugins = count(item?.plugins);
+        const lines = [
+            `${dryRun ? "Would import" : "Imported"} the stopped server from ${text(item?.source)} to ${text(item?.target)}.`,
+            "The original server files were left unchanged.",
+        ];
+        if (files)
+            lines.push(
+                `Selected ${files} ${plural(Number(files), "file")} and ${plugins} ${plural(plugins, "plugin")}.`,
+            );
+        if (typeof item?.next === "string")
+            lines.push(`Next: ${text(item.next)}`);
+        return lines.join("\n");
+    }
+    if (command === "workspace init")
+        return `${dryRun ? "Would create" : "Created"} workspace at ${text(item?.directory)} with ${count(item?.projects)} project ${plural(count(item?.projects), "pattern")}.`;
+    if (command === "command")
+        return item?.sent === true
+            ? "Console command sent."
+            : "Dry run: console command was not sent.";
+    if (command === "logs")
+        return item?.detached === true
+            ? "Detached from server logs; the server was not stopped."
+            : "Server log stream ended.";
+    if (command === "deploy discard") {
+        if (Array.isArray(result)) {
+            const rows = list(result).map(record).filter(Boolean);
+            const discarded = rows.flatMap((row) =>
+                list(row?.discarded).map((entry) => text(entry)),
+            );
+            const failures = rows.filter((row) => row?.ok === false);
+            return [
+                `${dryRun ? "Would discard" : "Discarded"} pending installations for ${discarded.length} ${plural(discarded.length, "project")}; ${failures.length} failed. Desired YAML and lock entries are unchanged.`,
+                ...(discarded.length
+                    ? [`  Completed: ${discarded.join(", ")}`]
+                    : []),
+                ...failures.map(
+                    (failure) =>
+                        `  ${text(failure?.project ?? failure?.group, "Project")}: failed [${text(failure?.code, "OPERATION_FAILED")}].${failure?.message ? ` ${text(failure.message)}` : ""}`,
+                ),
+            ].join("\n");
+        }
+        const discarded = list(item?.discarded).map((entry) => text(entry));
+        return `${dryRun ? "Would discard" : "Discarded"} pending installations for ${discarded.length} ${plural(discarded.length, "project")}. Desired YAML and lock entries are unchanged.`;
+    }
+    if (command === "tools prepare")
+        return dryRun
+            ? `Would prepare restic under ${text(item?.home)}.`
+            : `Prepared restic ${text(item?.version)} at ${text(item?.path)}.`;
+    if (command === "console")
+        return dryRun
+            ? [
+                  "Console preview; no terminal was attached.",
+                  ...formatServerStatus(result),
+              ].join("\n")
+            : "Detached from the server console; the server was not stopped.";
+    if (command === "run")
+        return dryRun && isDeploymentPlan(result)
+            ? [
+                  "Run preview; the server was not started.",
+                  ...renderDeploymentPlan(result, "Server"),
+              ].join("\n")
+            : "The foreground server session ended.";
+    if (command === "recover") return renderRecovery(result, dryRun);
+    if (command === "deploy apply") return renderDeployApply(result, dryRun);
+    if (command === "deploy plan") {
+        const projects = list(result)
+            .map(record)
+            .filter((entry) => entry !== undefined);
+        if (!projects.length) return "No deployment plans were found.";
+        return [
+            `Deployment plan for ${projects.length} ${plural(projects.length, "project")}:`,
+            ...projects.flatMap((project) =>
+                renderDeploymentPlan(
+                    project,
+                    text(project.project, "Project"),
+                    false,
+                ),
+            ),
+        ].join("\n");
+    }
+    return dryRun
+        ? "Operation preview completed; no changes were made."
+        : "Operation completed successfully.";
+}
+
+export function renderHumanResult(
+    result: unknown,
+    context: HumanResultContext,
+): string {
+    const { command, dryRun } = context;
+    switch (command) {
+        case "init":
+            return renderInit(result, dryRun);
+        case "inspect":
+            return renderInspect(result);
+        case "add":
+        case "remove":
+        case "install":
+        case "update":
+            return renderInstall(result, command, dryRun, context);
+        case "list":
+            return renderPluginList(result);
+        case "outdated":
+            return renderOutdated(result);
+        case "start":
+        case "restart":
+        case "stop":
+        case "status":
+            return renderRuntime(result, command, dryRun);
+        case "workspace list":
+            return renderWorkspaceList(result);
+        case "validate":
+            return renderValidation(result);
+        case "doctor":
+            return renderDoctor(result);
+        case "config list":
+        case "config track":
+        case "config untrack":
+        case "config diff":
+        case "config capture":
+        case "config resolve":
+            return renderConfig(result, command, dryRun);
+        case "backup setup":
+        case "backup plan":
+        case "backup create":
+        case "backup list":
+        case "backup show":
+        case "backup diff":
+        case "backup check":
+        case "backup restore":
+        case "backup apply":
+        case "backup prune":
+            return renderBackup(result, command, dryRun);
+        case "cache info":
+        case "cache verify":
+        case "cache prune":
+            return renderCache(result, command);
+        default:
+            return renderSimple(result, command, dryRun);
+    }
+}

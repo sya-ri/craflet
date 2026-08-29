@@ -7,7 +7,7 @@ import {
     readState,
     removePlugins,
 } from "@craflet/adapters";
-import { CrafletError } from "@craflet/core";
+import { CrafletError, parseSource, stableStringify } from "@craflet/core";
 import type { Command } from "commander";
 import type { CommandContext } from "./context.js";
 
@@ -83,17 +83,29 @@ export function registerArtifactCommands(
                             locked: locked?.server.version ?? null,
                             active: state.active?.lock.server.version ?? null,
                         },
-                        plugins: names.map((name) => ({
-                            name,
-                            requested: project.manifest.plugins[name] ?? null,
-                            locked: locked?.plugins[name]?.version ?? null,
-                            active:
-                                state.active?.lock.plugins[name]?.version ??
-                                null,
-                            pending:
-                                state.pending?.lock.plugins[name]?.version ??
-                                null,
-                        })),
+                        plugins: names.map((name) => {
+                            const requested =
+                                project.manifest.plugins[name] ?? null;
+                            const requestMatchesLock = Boolean(
+                                requested &&
+                                    locked?.requests.plugins[name] ===
+                                        stableStringify(parseSource(requested)),
+                            );
+                            return {
+                                name,
+                                requested,
+                                requestedVersion: requestMatchesLock
+                                    ? (locked?.plugins[name]?.version ?? null)
+                                    : null,
+                                locked: locked?.plugins[name]?.version ?? null,
+                                active:
+                                    state.active?.lock.plugins[name]?.version ??
+                                    null,
+                                pending:
+                                    state.pending?.lock.plugins[name]
+                                        ?.version ?? null,
+                            };
+                        }),
                     };
                 }),
             ),

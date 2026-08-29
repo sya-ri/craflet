@@ -11,7 +11,41 @@ import {
     validateBackupIdentifier,
 } from "@craflet/core";
 import type { Command } from "commander";
+import { sanitizeTerminalOutput } from "../presentation/terminal.js";
 import type { CommandContext } from "./context.js";
+
+type PartialFailureUnit = { project: string } | { group: string };
+
+function safeInline(value: string): string {
+    const sanitized = sanitizeTerminalOutput(value)
+        .replaceAll("\n", "?")
+        .replaceAll("\t", "?");
+    return sanitized.length > 240 ? `${sanitized.slice(0, 237)}...` : sanitized;
+}
+
+function isCancellation(error: unknown, signal: AbortSignal): boolean {
+    return (
+        signal.aborted ||
+        (error instanceof CrafletError && error.code === "CANCELLED") ||
+        (error instanceof Error && error.name === "AbortError")
+    );
+}
+
+function partialFailure(
+    error: unknown,
+    unit: PartialFailureUnit,
+    fallback: string,
+) {
+    const known = error instanceof CrafletError;
+    return {
+        ...("project" in unit
+            ? { project: safeInline(unit.project) }
+            : { group: safeInline(unit.group) }),
+        ok: false as const,
+        code: safeInline(known ? error.code : "OPERATION_FAILED"),
+        message: safeInline(known ? error.message : fallback),
+    };
+}
 
 export function registerBackupCommands(
     program: Command,
@@ -174,38 +208,58 @@ export function registerBackupCommands(
             }
             const results = [];
             for (const batch of batches) {
-                if (batch.group)
-                    results.push({
-                        group: batch.group,
-                        result: await context
-                            .group(batch)
-                            .createBackup(
-                                Boolean(command.opts().leaveStopped),
-                                context.globals(command).dryRun ?? false,
-                            ),
-                    });
-                else
-                    for (const project of batch.projects) {
-                        if (!batch.backup)
-                            throw new CrafletError(
-                                "BACKUP_REQUIRED",
-                                `Configure a backup repository for ${project.manifest.name}.`,
-                                3,
-                            );
+                try {
+                    if (batch.group)
                         results.push({
-                            project: project.manifest.name,
-                            result: context.globals(command).dryRun
-                                ? await batch.backup.plan()
-                                : await (
-                                      await context.deployment(
-                                          project,
-                                          batch.backup,
-                                      )
-                                  ).createBackup(
-                                      Boolean(command.opts().leaveStopped),
-                                  ),
+                            group: batch.group,
+                            result: await context
+                                .group(batch)
+                                .createBackup(
+                                    Boolean(command.opts().leaveStopped),
+                                    context.globals(command).dryRun ?? false,
+                                ),
                         });
-                    }
+                    else
+                        for (const project of batch.projects) {
+                            if (!batch.backup)
+                                throw new CrafletError(
+                                    "BACKUP_REQUIRED",
+                                    `Configure a backup repository for ${project.manifest.name}.`,
+                                    3,
+                                );
+                            results.push({
+                                project: project.manifest.name,
+                                result: context.globals(command).dryRun
+                                    ? await batch.backup.plan()
+                                    : await (
+                                          await context.deployment(
+                                              project,
+                                              batch.backup,
+                                          )
+                                      ).createBackup(
+                                          Boolean(command.opts().leaveStopped),
+                                      ),
+                            });
+                        }
+                } catch (error) {
+                    if (isCancellation(error, context.abort.signal))
+                        throw error;
+                    if (batches.length === 1) throw error;
+                    process.exitCode = 4;
+                    results.push(
+                        partialFailure(
+                            error,
+                            batch.group
+                                ? { group: batch.group }
+                                : {
+                                      project:
+                                          batch.projects[0]?.manifest.name ??
+                                          "Selected project",
+                                  },
+                            "Backup creation failed; inspect this recovery unit with craflet doctor before retrying.",
+                        ),
+                    );
+                }
             }
             return results;
         },

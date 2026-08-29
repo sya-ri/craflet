@@ -17,6 +17,7 @@ import {
 import { type BackupService, CrafletError } from "@craflet/core";
 import type { Command } from "commander";
 import { confirmEula } from "../presentation/eula.js";
+import type { HumanResultContext } from "../presentation/human.js";
 import { printError, printResult } from "../presentation/output.js";
 
 export interface Globals {
@@ -217,14 +218,59 @@ export class CommandContext {
         command.action(async (...args: unknown[]) => {
             const current = args.at(-1) as Command;
             this.activeGlobals = this.globals(current);
+            const positional = args.slice(0, -2);
+            const commandPath = this.commandPath(current);
+            const artifactMutation = this.artifactMutation(
+                commandPath,
+                positional,
+                current,
+            );
+            const presentation = {
+                command: commandPath,
+                dryRun: this.globals(current).dryRun ?? false,
+                ...(artifactMutation ? { artifactMutation } : {}),
+            };
             try {
                 printResult(
-                    await handler(args.slice(0, -2), current),
+                    await handler(positional, current),
                     this.globals(current).json ?? false,
+                    presentation,
                 );
             } catch (error) {
                 printError(error, this.globals(current).json ?? false);
             }
         });
+    }
+    private commandPath(command: Command): string {
+        const names: string[] = [];
+        for (
+            let current: Command | null = command;
+            current?.parent;
+            current = current.parent
+        )
+            names.unshift(current.name());
+        return names.join(" ");
+    }
+    private artifactMutation(
+        commandPath: string,
+        positional: unknown[],
+        command: Command,
+    ): NonNullable<HumanResultContext["artifactMutation"]> | undefined {
+        if (commandPath !== "update" && commandPath !== "remove")
+            return undefined;
+        const first = positional[0];
+        const plugins = Array.isArray(first)
+            ? first.filter(
+                  (value): value is string => typeof value === "string",
+              )
+            : typeof first === "string"
+              ? [first]
+              : [];
+        const options = command.opts<{ server?: boolean; all?: boolean }>();
+        return {
+            plugins,
+            server: commandPath === "update" && options.server === true,
+            all: commandPath === "update" && options.all === true,
+        };
     }
 }

@@ -125,7 +125,7 @@ async function planInstallation(
             2,
         );
     let requestedServer = options.updateServer
-        ? await store.latest(originalServer, context)
+        ? (await store.latest(originalServer, context)).source
         : originalServer;
     if (options.updateServer && options.to) {
         const parsed = parseSource(requestedServer);
@@ -171,7 +171,9 @@ async function planInstallation(
                 `Plugin ${name} does not match the lockfile.`,
                 2,
             );
-        let source = update ? await store.latest(input, context) : input;
+        let source = update
+            ? (await store.latest(input, context)).source
+            : input;
         if (update && options.to) {
             const parsed = parseSource(source);
             if (parsed.provider !== "file" && parsed.provider !== "paper")

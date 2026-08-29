@@ -4,9 +4,9 @@ Manage Paper and Velocity server JARs, plugins, configuration, and backups. Keep
 
 Craflet runs on the server host and targets Linux, Windows, and macOS. For remote servers, install it on that host and connect with your usual SSH client.
 
-## See Craflet in action
+## See server setup and plugin updates in action
 
-![Craflet terminal demo showing Paper setup, EULA review, installation, startup, status, and graceful shutdown](docs/assets/craflet-demo.gif)
+![Craflet terminal demo showing Paper initialization, plugin installation, backup setup, a pending plugin update, and restart-time deployment](docs/assets/craflet-demo.gif)
 
 ## Installation
 
@@ -23,28 +23,45 @@ craflet --help
 
 Or use `npx craflet --help` without a global installation. The examples below use `craflet`; you can use `npx craflet` instead.
 
-## Start your first server
+## Set up your first server
 
-For Paper, first read the [Minecraft EULA](https://www.minecraft.net/eula). **Only if you accept it**, create the project and explicitly record consent:
+Create a Paper project, resolve its server JAR, add a plugin, and start the managed server:
 
 ```sh
 craflet init my-server --name survival --type paper --version 26.2 --yes
 cd my-server
 craflet install
+craflet add modrinth:luckperms
+craflet list
 craflet doctor
 craflet start
 craflet status
 ```
 
-Omit `--yes` from `init` to review the EULA preview in an interactive terminal pager, then choose Agree or Decline. Decline is the default. If an unaccepted Paper project already exists, launching it with `start`, `run`, or `restart` presents the same pager; pass `--yes` to that launch command to accept explicitly without the UI.
+`init` creates the project without starting Java. `install` resolves the declared server build into `craflet-lock.yaml` and the shared cache. `add` downloads the plugin, reads its identity from the JAR descriptor, records the source, and prepares a pending installation. `start` copies the complete pending installation into the runtime before it launches Java. Commands print concise, human-readable summaries by default; add `--json` when a script needs structured output.
 
-Consent is saved for the current OS user and host in `CRAFLET_HOME/eula.json`, under `~/.craflet` by default. A valid saved record avoids prompts for future Paper projects and starts that use the same Craflet home. At start, Craflet materializes `runtime/eula.txt`; a project where that file already records acceptance also bypasses the prompt. Changing `CRAFLET_HOME` creates a separate consent scope.
-
-In CI, JSON output, or another non-interactive environment, fresh Paper consent requires `--yes` on `init` or on the `start`, `run`, or `restart` command that launches it; otherwise the command fails without opening the UI. `--dry-run` never records consent. `install` does not accept the EULA. Velocity does not use this flow; create a proxy with `--type velocity` and its proxy version in `--version`.
+Paper requires acceptance of the [Minecraft EULA](https://www.minecraft.net/eula); after reading it, pass `--yes` to `init`, `start`, `run`, or `restart` to record consent. In a plain interactive terminal outside CI, omit `--yes` and avoid `--json` and `--dry-run` to see the proposed `eula.txt` and agreement link, then choose Agree or Decline; CI, non-interactive, and JSON runs require `--yes`, while `--dry-run` never records consent. Consent is remembered for the current OS user and Craflet home; Velocity does not use this flow.
 
 A pristine standalone server does not need a backup repository for its first start. Applying pending changes to an existing installation or runtime data requires a configured, usable [backup repository](#backups).
 
 Already have a server? Stop it first. `craflet import --help` explains how to copy it into a new project while leaving the original files unchanged.
+
+## Update a plugin safely
+
+After [setting up backups](#backups), check for a new plugin release and prepare it while the current JAR keeps running:
+
+```sh
+craflet outdated LuckPerms
+craflet update LuckPerms
+craflet list
+craflet deploy plan
+craflet restart
+craflet list
+```
+
+`outdated` only checks upstream releases. `update` changes the declaration and lock, downloads and verifies the new JAR, and records it as pending. It does not replace the JAR under `runtime/plugins` or change the version currently loaded by the server. `list` shows the requested source alongside locked, pending, and active versions so you can review the transition.
+
+On `restart`, Craflet verifies prerequisites, gracefully stops the server, takes a cold backup, applies the pending installation, and starts the new active version. Use `update --all` to update plugins and the server build together, or `restart --active` to restart without applying pending changes.
 
 ### Everyday commands
 
@@ -71,7 +88,7 @@ Ctrl-C in `run` requests a graceful shutdown. Disconnecting `console` or interru
 
 Keep the declarations, lock, and reviewed base configuration in Git. Keep runtime data, local state, and actual secrets out of Git. Craflet does not automatically commit or push.
 
-## Plugins and updates
+## Choose plugin sources
 
 `add` reads the plugin's name from `plugin.yml` or `paper-plugin.yml`, or its ID from `velocity-plugin.json`. It does not execute the JAR. Use `craflet inspect ../build/MyPlugin.jar` to inspect a local JAR first; `craflet list` shows the names to use in later commands.
 
@@ -86,18 +103,9 @@ file:../build/MyPlugin.jar
 file:../build/MyPlugin-*.jar
 ```
 
+Omit `@<version>` for a provider when you want its latest eligible release, as in `modrinth:luckperms`. The lock always records the exact resolved source and hash. Plugin version labels are treated as opaque provider values rather than assumed to be SemVer.
+
 A local glob must match exactly one file. Relative paths are based on the directory containing `craflet.yaml`. Structured YAML such as `{ provider: file, path: ../build/MyPlugin.jar }` is also supported. If a provider requires unsupported authentication, an external download, or restricted distribution, Craflet explains the limitation and directs you to `file:`.
-
-Once backups are configured, a typical update looks like this. Replace `MyPlugin` with the name reported by `list`:
-
-```sh
-craflet add file:../build/MyPlugin.jar
-craflet list
-craflet outdated
-craflet update MyPlugin
-craflet deploy plan
-craflet restart
-```
 
 `install` reproduces existing lock entries; `install --frozen-lockfile` refuses missing or outdated entries. `update` selects new versions and also imports changed local JARs. Use `update --server` for server builds or `update --all` for plugins and the server. Routine updates do not change the declared Minecraft version. A plugin identity change is rejected rather than silently renamed.
 
@@ -178,7 +186,7 @@ craflet backup apply /restore/survival --dry-run
 craflet backup apply /restore/survival
 ```
 
-`apply` verifies the files and targets, stops the server, and takes a backup before replacing data. It restores the snapshot's active installation, leaves the server stopped, and clears pending. Current YAML declarations and the shared lock remain unchanged, so desired and restored active may differ. Inspect the result and use `craflet start --active` to launch the restored installation. Additional data roots require `--map root-id=absolute-path`; database restores require `--database id`.
+`apply` verifies the files and targets, stops the server, and takes a backup before replacing data. It restores the snapshot's active installation, leaves the server stopped, and clears pending. Current YAML declarations and the shared lock remain unchanged, so the requested and restored active versions may differ. Inspect the result and use `craflet start --active` to launch the restored installation. Additional data roots require `--map root-id=absolute-path`; database restores require `--database id`.
 
 JARs are recovered from the cache or source with the exact hash recorded for the snapshot. **Keep older custom JARs retrievable.** If an old cached JAR was deleted and its `file:` source was replaced, restoration is rejected before shutdown rather than substituting newer bytes.
 
@@ -220,11 +228,11 @@ craflet recover
 
 Inspect the proposed recovery before applying it. `recover --unlock` removes only locks belonging to operations that have ended; it does not kill Java based solely on a PID. If an SQL restore fails partway through, Craflet refuses automatic replay, records the earlier snapshot as `backupId` in the operation journal, and requires manual database recovery.
 
-Use `--json` for structured output, `--dry-run` to preview changes, and `--offline` for artifact retrieval without network access. `--yes` skips interactive confirmation for an explicitly requested operation but never bypasses safety checks. For an unaccepted Paper server, it records EULA consent only when used with `init` or a launch command (`start`, `run`, or `restart`). Run `craflet --help` or a command's `--help` for its complete options.
+Use `--json` for structured automation output, `--dry-run` to preview changes, and `--offline` for artifact retrieval without network access. `--yes` confirms an explicitly requested operation but never bypasses safety checks. Run `craflet --help` or a command's `--help` for its complete options.
 
 ## Agent skill
 
-This repository includes a distributable Craflet agent skill at `skills/craflet`. It teaches compatible AI tools the project model, CLI workflows, EULA boundaries, backup rules, and recovery invariants.
+This repository includes a distributable Craflet agent skill at `skills/craflet`. It teaches compatible AI tools the project model, CLI workflows, update boundaries, backup rules, and recovery invariants.
 
 Preview it with `gh skill`:
 

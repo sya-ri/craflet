@@ -136,10 +136,16 @@ export async function outdatedPlugins(
         result.push({
             name,
             current: current?.version ?? null,
-            available: formatSource(latest),
+            currentVersion:
+                current?.source.provider === "paper"
+                    ? current.source.build
+                    : (current?.version ?? null),
+            available: formatSource(latest.source),
+            availableVersion: latest.version,
             changed:
                 !current ||
-                stableStringify(current.source) !== stableStringify(latest),
+                stableStringify(current.source) !==
+                    stableStringify(latest.source),
         });
     }
     return result;

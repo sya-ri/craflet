@@ -87,7 +87,10 @@ describe("artifact resolution and immutable cache", () => {
                 ...context,
                 offline: true,
             }),
-        ).toEqual({ provider: "file", path: "Plugin.jar" });
+        ).toEqual({
+            source: { provider: "file", path: "Plugin.jar" },
+            version: "local",
+        });
         const updated = await store.resolve("file:Plugin.jar", context);
         expect(updated.sha256).not.toBe(first.sha256);
         expect(updated.version).toBe("2.0");
@@ -203,7 +206,11 @@ describe("artifact resolution and immutable cache", () => {
         };
         const fetcher = vi.fn<typeof fetch>(async (url) =>
             String(url).includes("api.modrinth.com")
-                ? new Response(JSON.stringify(metadata))
+                ? new Response(
+                      JSON.stringify(
+                          String(url).includes("?") ? [metadata] : metadata,
+                      ),
+                  )
                 : new Response(bytes),
         );
         const store = new NodeArtifactStore(home, { fetch: fetcher });
@@ -217,7 +224,15 @@ describe("artifact resolution and immutable cache", () => {
             sha256: sha256(bytes),
             identity: { id: "Example" },
         });
-        expect(fetcher).toHaveBeenCalledTimes(2);
+        expect(await store.latest("modrinth:slug@v1", context)).toEqual({
+            source: {
+                provider: "modrinth",
+                project: "project-id",
+                version: "version-id",
+            },
+            version: "v1",
+        });
+        expect(fetcher).toHaveBeenCalledTimes(3);
         const missingSourceStore = new NodeArtifactStore(home, {
             fetch: vi.fn<typeof fetch>(),
         });
@@ -407,10 +422,13 @@ describe("artifact resolution and immutable cache", () => {
         );
         const store = new NodeArtifactStore(home, { fetch: fetcher });
         expect(await store.latest("paper:1.21.4@1", context)).toEqual({
-            provider: "paper",
-            project: "paper",
-            version: "1.21.4",
-            build: "10",
+            source: {
+                provider: "paper",
+                project: "paper",
+                version: "1.21.4",
+                build: "10",
+            },
+            version: "10",
         });
         expect(fetcher).toHaveBeenCalledTimes(1);
         await store.resolve("paper:1.21.4@10", context);

@@ -655,7 +655,12 @@ export class NodeRecoveryGroup {
                     action === "start" &&
                     statuses.every((status) => status.status === "running")
                 )
-                    return statuses;
+                    return statuses.map((status, index) => ({
+                        project:
+                            this.managers[index]?.context.manifest.name ??
+                            `Member ${index + 1}`,
+                        status,
+                    }));
                 for (const status of statuses)
                     if (action === "apply" || status.status !== "running")
                         assertStopped(status.status);

@@ -9,7 +9,44 @@ import {
 } from "@craflet/adapters";
 import { CrafletError } from "@craflet/core";
 import type { Command } from "commander";
+import {
+    formatRuntimeLogChunk,
+    sanitizeTerminalOutput,
+} from "../presentation/terminal.js";
 import type { CommandContext } from "./context.js";
+
+type PartialFailureUnit = { project: string } | { group: string };
+
+function safeInline(value: string): string {
+    const sanitized = sanitizeTerminalOutput(value)
+        .replaceAll("\n", "?")
+        .replaceAll("\t", "?");
+    return sanitized.length > 240 ? `${sanitized.slice(0, 237)}...` : sanitized;
+}
+
+function isCancellation(error: unknown, signal: AbortSignal): boolean {
+    return (
+        signal.aborted ||
+        (error instanceof CrafletError && error.code === "CANCELLED") ||
+        (error instanceof Error && error.name === "AbortError")
+    );
+}
+
+function partialFailure(
+    error: unknown,
+    unit: PartialFailureUnit,
+    fallback: string,
+) {
+    const known = error instanceof CrafletError;
+    return {
+        ...("project" in unit
+            ? { project: safeInline(unit.project) }
+            : { group: safeInline(unit.group) }),
+        ok: false as const,
+        code: safeInline(known ? error.code : "OPERATION_FAILED"),
+        message: safeInline(known ? error.message : fallback),
+    };
+}
 
 export function registerRuntimeCommands(
     program: Command,
@@ -74,6 +111,10 @@ export function registerRuntimeCommands(
                             error instanceof CrafletError
                                 ? error.code
                                 : "OPERATION_FAILED",
+                        message:
+                            error instanceof CrafletError
+                                ? error.message
+                                : "Operation failed; inspect this recovery unit's doctor and logs.",
                     });
                 }
             }
@@ -92,6 +133,7 @@ export function registerRuntimeCommands(
                     result: value,
                 });
             } catch (error) {
+                if (isCancellation(error, context.abort.signal)) throw error;
                 if (projects.length === 1) throw error;
                 process.exitCode = 4;
                 results.push({
@@ -192,14 +234,7 @@ export function registerRuntimeCommands(
         const controller = await context.controller(command);
         const abort = new AbortController();
         const output = (chunk: string) => {
-            if (chunk)
-                process.stdout.write(
-                    json
-                        ? `${JSON.stringify({ event: "log", text: chunk })}\n`
-                        : chunk.endsWith("\n")
-                          ? chunk
-                          : `${chunk}\n`,
-                );
+            if (chunk) process.stdout.write(formatRuntimeLogChunk(chunk, json));
         };
         const onInterrupt = () => {
             abort.abort();
@@ -331,7 +366,7 @@ export function registerRuntimeCommands(
                     await context.runtimeDir(command),
                     abort.signal,
                 ))
-                    process.stdout.write(text);
+                    process.stdout.write(sanitizeTerminalOutput(text));
             })();
             try {
                 for await (const line of input)
@@ -368,26 +403,49 @@ export function registerRuntimeCommands(
             ),
         async (_, command) => {
             const results = [];
-            for (const batch of await context.batches(command, true)) {
-                if (batch.group)
-                    results.push({
-                        group: batch.group,
-                        result: await context
-                            .group(batch)
-                            .operate(
-                                "apply",
-                                false,
-                                context.globals(command).dryRun ?? false,
-                            ),
-                    });
-                else
-                    for (const project of batch.projects)
+            const batches = await context.batches(command, true);
+            for (const batch of batches) {
+                try {
+                    if (batch.group)
                         results.push({
-                            project: project.manifest.name,
-                            result: await (
-                                await context.deployment(project)
-                            ).apply(context.globals(command).dryRun ?? false),
+                            group: batch.group,
+                            result: await context
+                                .group(batch)
+                                .operate(
+                                    "apply",
+                                    false,
+                                    context.globals(command).dryRun ?? false,
+                                ),
                         });
+                    else
+                        for (const project of batch.projects)
+                            results.push({
+                                project: project.manifest.name,
+                                result: await (
+                                    await context.deployment(project)
+                                ).apply(
+                                    context.globals(command).dryRun ?? false,
+                                ),
+                            });
+                } catch (error) {
+                    if (isCancellation(error, context.abort.signal))
+                        throw error;
+                    if (batches.length === 1) throw error;
+                    process.exitCode = 4;
+                    results.push(
+                        partialFailure(
+                            error,
+                            batch.group
+                                ? { group: batch.group }
+                                : {
+                                      project:
+                                          batch.projects[0]?.manifest.name ??
+                                          "Selected project",
+                                  },
+                            "Deployment application failed; inspect this recovery unit with craflet doctor and craflet deploy plan.",
+                        ),
+                    );
+                }
             }
             return results;
         },
@@ -405,13 +463,43 @@ export function registerRuntimeCommands(
                     command,
                     "Discard prepared pending installations? Desired YAML and lock remain unchanged.",
                 );
-            for (const project of projects)
-                await (await context.deployment(project)).discard(
-                    context.globals(command).dryRun ?? false,
-                );
-            return {
-                discarded: projects.map((project) => project.manifest.name),
-            };
+            const unitKeys = new Set(
+                projects.map((project) =>
+                    project.manifest.backup?.group
+                        ? `group:${project.manifest.backup.group}`
+                        : `project:${project.dir}`,
+                ),
+            );
+            const failedGroups = new Set<string>();
+            const discarded: string[] = [];
+            const failures: ReturnType<typeof partialFailure>[] = [];
+            for (const project of projects) {
+                const recoveryGroup = project.manifest.backup?.group;
+                if (recoveryGroup && failedGroups.has(recoveryGroup)) continue;
+                try {
+                    await (await context.deployment(project)).discard(
+                        context.globals(command).dryRun ?? false,
+                    );
+                    discarded.push(project.manifest.name);
+                } catch (error) {
+                    if (isCancellation(error, context.abort.signal))
+                        throw error;
+                    if (unitKeys.size === 1) throw error;
+                    process.exitCode = 4;
+                    if (recoveryGroup) failedGroups.add(recoveryGroup);
+                    failures.push(
+                        partialFailure(
+                            error,
+                            recoveryGroup
+                                ? { group: recoveryGroup }
+                                : { project: project.manifest.name },
+                            "Pending installation discard failed; inspect this recovery unit with craflet doctor and craflet deploy plan.",
+                        ),
+                    );
+                }
+            }
+            const result = { discarded };
+            return failures.length ? [result, ...failures] : result;
         },
     );
     context.action(
@@ -425,63 +513,82 @@ export function registerRuntimeCommands(
                 "remove only locks whose recorded owner has exited",
             ),
         async (_, command) => {
-            const projects = await context.projects(command);
             const batches = await context.batches(command, true);
-            const results = [];
-            for (const project of projects) {
-                const dryRun = context.globals(command).dryRun ?? false;
-                if (command.opts().unlock)
-                    await recoverProcessLocks(project, dryRun);
-                const declarations = await recoverManifests(
-                    project.lockRoot,
-                    dryRun,
-                );
-                const batch = batches.find((entry) =>
-                    entry.projects.some((member) => member.dir === project.dir),
-                );
-                const restored =
-                    batch?.backup && !batch.group
-                        ? await recoverBackupRestore(
-                              project,
-                              context.store,
-                              batch.backup,
-                              dryRun,
-                          )
-                        : false;
-                const deployment = batch?.group
-                    ? { recovered: false }
-                    : await (await context.deployment(project)).recover(dryRun);
-                results.push({
-                    project: project.manifest.name,
-                    declarations,
-                    restore: restored,
-                    ...deployment,
-                });
-            }
-            for (const batch of batches)
-                if (batch.group) {
-                    const restored = await recoverGroupBackupRestore(
-                        batch,
-                        context.store,
-                        {
-                            dryRun: context.globals(command).dryRun ?? false,
-                            offline: context.globals(command).offline ?? false,
-                            signal: context.abort.signal,
-                        },
+            const projectResults = [];
+            const groupResults = [];
+            const dryRun = context.globals(command).dryRun ?? false;
+            for (const batch of batches) {
+                const unitProjectResults = [];
+                try {
+                    for (const project of batch.projects) {
+                        if (command.opts().unlock)
+                            await recoverProcessLocks(project, dryRun);
+                        const declarations = await recoverManifests(
+                            project.lockRoot,
+                            dryRun,
+                        );
+                        const restored =
+                            batch.backup && !batch.group
+                                ? await recoverBackupRestore(
+                                      project,
+                                      context.store,
+                                      batch.backup,
+                                      dryRun,
+                                  )
+                                : false;
+                        const deployment = batch.group
+                            ? { recovered: false }
+                            : await (await context.deployment(project)).recover(
+                                  dryRun,
+                              );
+                        unitProjectResults.push({
+                            project: project.manifest.name,
+                            declarations,
+                            restore: restored,
+                            ...deployment,
+                        });
+                    }
+                    if (batch.group) {
+                        const restored = await recoverGroupBackupRestore(
+                            batch,
+                            context.store,
+                            {
+                                dryRun,
+                                offline:
+                                    context.globals(command).offline ?? false,
+                                signal: context.abort.signal,
+                            },
+                        );
+                        groupResults.push({
+                            group: batch.group,
+                            restore: restored,
+                            recovered:
+                                restored ||
+                                (await context.group(batch).recover(dryRun)),
+                        });
+                    }
+                    projectResults.push(...unitProjectResults);
+                } catch (error) {
+                    if (isCancellation(error, context.abort.signal))
+                        throw error;
+                    if (batches.length === 1) throw error;
+                    process.exitCode = 4;
+                    const failure = partialFailure(
+                        error,
+                        batch.group
+                            ? { group: batch.group }
+                            : {
+                                  project:
+                                      batch.projects[0]?.manifest.name ??
+                                      "Selected project",
+                              },
+                        "Recovery failed; inspect this recovery unit with craflet doctor before retrying.",
                     );
-                    results.push({
-                        group: batch.group,
-                        restore: restored,
-                        recovered:
-                            restored ||
-                            (await context
-                                .group(batch)
-                                .recover(
-                                    context.globals(command).dryRun ?? false,
-                                )),
-                    });
+                    if (batch.group) groupResults.push(failure);
+                    else projectResults.push(failure);
                 }
-            return results;
+            }
+            return [...projectResults, ...groupResults];
         },
     );
 }

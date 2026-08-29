@@ -139,7 +139,11 @@ export async function backupGroupFixture() {
             throw new Error("No fixture plugins are used");
         },
         async latest(input) {
-            return parseSource(input);
+            const source = parseSource(input);
+            return {
+                source,
+                version: source.provider === "file" ? "local" : source.version,
+            };
         },
     };
     await installProjects(projects, store);

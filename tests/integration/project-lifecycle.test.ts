@@ -27,7 +27,6 @@ import {
     type LockedArtifact,
     parseSource,
     type SourceInput,
-    type SourceSpec,
 } from "@craflet/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NodeArtifactStore } from "../../packages/adapters/src/filesystem/artifact-store.js";
@@ -214,14 +213,19 @@ function artifactStore(root: string) {
         },
     );
     const latest = vi.fn(
-        async (
-            input: SourceInput,
-            _context: ArtifactContext,
-        ): Promise<SourceSpec> => {
+        async (input: SourceInput, _context: ArtifactContext) => {
             const source = parseSource(input);
             if (source.provider === "paper") source.build = "2";
             else if (source.provider !== "file") source.version = "2.0.0";
-            return source;
+            return {
+                source,
+                version:
+                    source.provider === "paper"
+                        ? source.build
+                        : source.provider === "file"
+                          ? "local"
+                          : source.version,
+            };
         },
     );
     const store = {

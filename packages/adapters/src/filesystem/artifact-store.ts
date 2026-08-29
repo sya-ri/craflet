@@ -482,13 +482,20 @@ export class NodeArtifactStore implements ArtifactStore {
     async latest(
         input: SourceInput,
         context: ArtifactContext,
-    ): Promise<SourceSpec> {
+    ): Promise<{ source: SourceSpec; version: string }> {
         const source = parseSource(input);
-        if (source.provider === "file") return source;
+        if (source.provider === "file") return { source, version: "local" };
         const requested =
             source.provider === "paper"
                 ? { ...source, build: "latest" }
                 : { ...source, version: "latest" };
-        return (await resolveRemote(this.http, requested, context)).source;
+        const resolved = await resolveRemote(this.http, requested, context);
+        return {
+            source: resolved.source,
+            version:
+                resolved.source.provider === "paper"
+                    ? resolved.source.build
+                    : resolved.version,
+        };
     }
 }
