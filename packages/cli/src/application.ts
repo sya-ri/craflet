@@ -59,7 +59,9 @@ export function createCli(
 }
 
 export async function runCli(args: string[], entryUrl: string): Promise<void> {
-    const json = args.includes("--json");
+    const json =
+        args.find((argument) => argument === "--json" || argument === "--") ===
+        "--json";
     const { program, context } = createCli(entryUrl, json);
     const interrupt = () => context.abort.abort();
     process.once("SIGINT", interrupt);

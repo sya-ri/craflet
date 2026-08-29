@@ -1,6 +1,5 @@
 import path from "node:path";
 import { discoverConfigCandidates, NodeConfigManager } from "@craflet/adapters";
-import { CrafletError } from "@craflet/core";
 import { type Command, Option } from "commander";
 import type { CommandContext } from "./context.js";
 
@@ -125,12 +124,6 @@ export function registerConfigCommands(
         async ([file], command) => {
             const { config } = await manager(command);
             const side = command.opts<{ use: "base" | "runtime" }>().use;
-            if (!side)
-                throw new CrafletError(
-                    "CONFIG_RESOLUTION",
-                    "Use --use base or --use runtime.",
-                    2,
-                );
             if (!context.globals(command).dryRun) {
                 await context.ask(
                     command,

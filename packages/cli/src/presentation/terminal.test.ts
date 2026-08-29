@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatRuntimeLogChunk, sanitizeTerminalOutput } from "./terminal.js";
+import {
+    formatRuntimeLogChunk,
+    sanitizeInlineTerminalOutput,
+    sanitizeTerminalOutput,
+} from "./terminal.js";
 
 describe("terminal output sanitization", () => {
     it("preserves readable layout while neutralizing terminal and bidi controls", () => {
@@ -35,6 +39,20 @@ describe("terminal output sanitization", () => {
         );
         expect(formatRuntimeLogChunk(value, false)).toBe(
             "line\tvalue\n?]52;c;payload??\n",
+        );
+    });
+
+    it("bounds untrusted inline fields without preserving layout controls", () => {
+        expect(
+            sanitizeInlineTerminalOutput(
+                "name\tline\nparagraph\u2028separator\u2029value",
+            ),
+        ).toBe("name?line?paragraph?separator?value");
+        expect(sanitizeInlineTerminalOutput("x".repeat(241))).toBe(
+            `${"x".repeat(237)}...`,
+        );
+        expect(sanitizeInlineTerminalOutput(`${"x".repeat(239)}😀😀`)).toBe(
+            `${"x".repeat(237)}...`,
         );
     });
 });

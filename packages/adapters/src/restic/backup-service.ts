@@ -10,6 +10,7 @@ import {
     unlink,
 } from "node:fs/promises";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import {
     assertCompleteBackup,
     type BackupConfig,
@@ -183,7 +184,6 @@ export class NodeBackupService implements BackupService {
         options: BackupSetupOptions = {},
     ): Promise<{ alias: string; path: string; id: string }> {
         const context = await this.context(alias, false);
-        await this.validateRepositoryPath(context.repository.path);
         let result = await this.execute(context, ["cat", "config"], options);
         if (result.exitCode === 10) {
             if (!options.initialize || !options.confirm) {
@@ -266,9 +266,7 @@ export class NodeBackupService implements BackupService {
             for (const suffix of ["", "-wal", "-shm", "-journal"])
                 managedSqlite.add(`${source}${suffix}`);
         }
-        const removed = plan.files.filter((file) =>
-            managedSqlite.has(file.source),
-        );
+        const originalFileCount = plan.files.length;
         plan.files = plan.files.filter(
             (file) => !managedSqlite.has(file.source),
         );
@@ -277,7 +275,7 @@ export class NodeBackupService implements BackupService {
         plan.databaseIds = (this.config.databases ?? []).map(
             (database) => database.id,
         );
-        if (removed.length)
+        if (plan.files.length !== originalFileCount)
             plan.warnings.push(
                 "Configured SQLite databases and sidecars are captured by the database adapter, not copied as ordinary runtime files.",
             );
@@ -613,16 +611,15 @@ export class NodeBackupService implements BackupService {
             ),
             this.projectId,
         );
+        const restoredActive = parseJson(
+            await readFile(
+                path.join(target, "metadata", "active.json"),
+                "utf8",
+            ),
+        );
         if (
-            JSON.stringify(restoredMetadata) !== JSON.stringify(metadata) ||
-            JSON.stringify(
-                parseJson(
-                    await readFile(
-                        path.join(target, "metadata", "active.json"),
-                        "utf8",
-                    ),
-                ),
-            ) !== JSON.stringify(metadata.active)
+            !isDeepStrictEqual(restoredMetadata, metadata) ||
+            !isDeepStrictEqual(restoredActive, metadata.active)
         ) {
             throw new CrafletError(
                 "BACKUP_RESTORE_VERIFY",

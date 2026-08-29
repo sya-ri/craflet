@@ -12,9 +12,8 @@ export function parseJavaVersion(output: string): number | undefined {
         output,
     );
     if (!match?.[1]) return undefined;
-    return Number(match[1]) === 1
-        ? Number(match[2]) || undefined
-        : Number(match[1]);
+    const major = Number(match[1]);
+    return major === 1 ? Number(match[2]) || undefined : major;
 }
 
 export function javaRequirement(

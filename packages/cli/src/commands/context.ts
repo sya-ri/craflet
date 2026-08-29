@@ -111,10 +111,8 @@ export class CommandContext {
         return projects[0];
     }
     async runtimeDir(command: Command): Promise<string> {
-        if (
-            this.globals(command).recursive ||
-            this.globals(command).filter?.length
-        )
+        const options = this.globals(command);
+        if (options.recursive || options.filter?.length)
             return (await this.one(command)).dir;
         const file = await nearestFile(this.cwd(command), "craflet.yaml");
         if (!file)
@@ -177,8 +175,9 @@ export class CommandContext {
         };
     }
     async ask(command: Command, message: string): Promise<void> {
-        if (this.globals(command).yes) return;
-        if (this.globals(command).json || !process.stdin.isTTY)
+        const options = this.globals(command);
+        if (options.yes) return;
+        if (options.json || !process.stdin.isTTY)
             throw new CrafletError(
                 "CONFIRMATION_REQUIRED",
                 `${message} Supply --yes to confirm this explicitly requested operation.`,
@@ -196,11 +195,8 @@ export class CommandContext {
         message: string,
     ): Promise<string> {
         if (value) return value;
-        if (
-            this.globals(command).json ||
-            !process.stdin.isTTY ||
-            this.globals(command).yes
-        )
+        const options = this.globals(command);
+        if (options.json || !process.stdin.isTTY || options.yes)
             throw new CrafletError("INPUT_REQUIRED", message, 2);
         const answer = await text({ message, output: process.stderr });
         if (isCancel(answer)) {
@@ -217,7 +213,8 @@ export class CommandContext {
     ): void {
         command.action(async (...args: unknown[]) => {
             const current = args.at(-1) as Command;
-            this.activeGlobals = this.globals(current);
+            const globals = this.globals(current);
+            this.activeGlobals = globals;
             const positional = args.slice(0, -2);
             const commandPath = this.commandPath(current);
             const artifactMutation = this.artifactMutation(
@@ -227,17 +224,17 @@ export class CommandContext {
             );
             const presentation = {
                 command: commandPath,
-                dryRun: this.globals(current).dryRun ?? false,
+                dryRun: globals.dryRun ?? false,
                 ...(artifactMutation ? { artifactMutation } : {}),
             };
             try {
                 printResult(
                     await handler(positional, current),
-                    this.globals(current).json ?? false,
+                    globals.json ?? false,
                     presentation,
                 );
             } catch (error) {
-                printError(error, this.globals(current).json ?? false);
+                printError(error, globals.json ?? false);
             }
         });
     }

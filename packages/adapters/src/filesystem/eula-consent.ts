@@ -3,6 +3,7 @@ import { lstat, readdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { CrafletError } from "@craflet/core";
 import { type } from "arktype";
+import { processDefinitelyExited } from "../runtime/process.js";
 import {
     EULA_URL,
     type EulaDocument,
@@ -72,15 +73,6 @@ function busyLock(): never {
     );
 }
 
-function processDefinitelyExited(pid: number): boolean {
-    try {
-        process.kill(pid, 0);
-        return false;
-    } catch (error) {
-        return (error as NodeJS.ErrnoException).code === "ESRCH";
-    }
-}
-
 async function hasSavedConsent(
     home: string,
     signal?: AbortSignal,
@@ -89,7 +81,8 @@ async function hasSavedConsent(
     const file = path.join(home, "eula.json");
     let text: string | null;
     try {
-        if (!(await exists(await assertNoSymlinks(file)))) {
+        const safe = await assertNoSymlinks(file);
+        if (!(await exists(safe))) {
             signal?.throwIfAborted();
             return false;
         }
@@ -130,11 +123,8 @@ async function recoverStaleLock(
     try {
         await assertNoSymlinks(directory);
         if (!(await lstat(directory)).isDirectory()) invalidLock();
-        if (
-            JSON.stringify((await readdir(directory)).sort()) !==
-            JSON.stringify(["owner.json"])
-        )
-            invalidLock();
+        const entries = await readdir(directory);
+        if (entries.length !== 1 || entries[0] !== "owner.json") invalidLock();
         owner = await assertNoSymlinks(directory, "owner.json");
         const info = await lstat(owner);
         if (!info.isFile() || info.nlink !== 1 || info.size > 64 * 1024)

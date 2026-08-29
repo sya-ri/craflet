@@ -151,6 +151,12 @@ function isAbsolutePattern(pattern: string): boolean {
     return pattern.startsWith("/") || /^[a-zA-Z]:\//u.test(pattern);
 }
 
+function pathAndAncestors(path: string | undefined): string[] {
+    if (path === undefined) return [];
+    const segments = path.replaceAll("\\", "/").split("/");
+    return segments.map((_, index) => segments.slice(0, index + 1).join("/"));
+}
+
 export function parseBackupRules(patterns: readonly string[]): BackupRule[] {
     if (patterns.length > 512) {
         throw new CrafletError(
@@ -218,19 +224,18 @@ export function createBackupSelector(
     return (relative, absolute) => {
         let included = false;
         let matchedRule = -1;
+        const relativePaths = pathAndAncestors(relative);
+        const internalPaths = pathAndAncestors(
+            relative.replace(/^(?:\.\.\/)+/u, ""),
+        );
+        const absolutePaths = pathAndAncestors(absolute);
         rules.forEach((rule, index) => {
-            const candidate = rule.absolute
-                ? absolute
+            const candidates = rule.absolute
+                ? absolutePaths
                 : rule.external
-                  ? relative
-                  : relative.replace(/^(?:\.\.\/)+/u, "");
-            const normalized = candidate?.replaceAll("\\", "/");
-            const ancestors = normalized
-                ?.split("/")
-                .map((_, part, segments) =>
-                    segments.slice(0, part + 1).join("/"),
-                );
-            if (ancestors?.some((ancestor) => rule.match(ancestor))) {
+                  ? relativePaths
+                  : internalPaths;
+            if (candidates.some((candidate) => rule.match(candidate))) {
                 included = rule.include;
                 matchedRule = index;
             }

@@ -108,13 +108,14 @@ try {
         "LICENSE",
         "THIRD_PARTY_NOTICES.md",
     ]);
+    const installedEntries = await readdir(installed);
     assert(
-        (await readdir(installed)).every((name) => allowed.has(name)),
+        installedEntries.every((name) => allowed.has(name)),
         "Unexpected source, fixture or development files in the tarball.",
     );
     for (const name of allowed)
         assert(
-            (await readdir(installed)).includes(name),
+            installedEntries.includes(name),
             `Missing required package file: ${name}`,
         );
     assert.match(

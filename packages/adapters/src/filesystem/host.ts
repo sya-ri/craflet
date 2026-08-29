@@ -26,6 +26,17 @@ const RepositoriesSchema = type({
         "id?": "string > 0",
     },
 });
+
+function sameRepository(
+    first: BackupRepository,
+    second: BackupRepository,
+): boolean {
+    return (
+        path.resolve(first.path) === path.resolve(second.path) &&
+        JSON.stringify(first.password) === JSON.stringify(second.password)
+    );
+}
+
 export function crafletHome(): string {
     return path.resolve(
         process.env.CRAFLET_HOME || path.join(homedir(), ".craflet"),
@@ -89,12 +100,7 @@ export async function setupBackup(
     if (options.dryRun) {
         const repositories = await readRepositories(project.home);
         const old = repositories[alias];
-        if (
-            old &&
-            (path.resolve(old.path) !== path.resolve(repository.path) ||
-                JSON.stringify(old.password) !==
-                    JSON.stringify(repository.password))
-        )
+        if (old && !sameRepository(old, repository))
             throw new CrafletError(
                 "REPOSITORY_EXISTS",
                 "Repository alias already identifies another destination or password reference.",
@@ -113,12 +119,7 @@ export async function setupBackup(
             async () => {
                 const repositories = await readRepositories(project.home);
                 const old = repositories[alias];
-                if (
-                    old &&
-                    (path.resolve(old.path) !== path.resolve(repository.path) ||
-                        JSON.stringify(old.password) !==
-                            JSON.stringify(repository.password))
-                )
+                if (old && !sameRepository(old, repository))
                     throw new CrafletError(
                         "REPOSITORY_EXISTS",
                         "Repository alias already points to a different destination or password reference. Choose another alias.",

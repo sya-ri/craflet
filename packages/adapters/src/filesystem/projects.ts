@@ -34,6 +34,29 @@ export interface ProjectContext {
     manifestText?: string;
 }
 
+export function recoveryJournalPaths(
+    project: Pick<ProjectContext, "dir" | "lockRoot">,
+): string[] {
+    return [
+        ...["deploy.json", "restore.json", "import-incomplete.json"].map(
+            (name) => path.join(project.dir, ".craflet", name),
+        ),
+        ...[
+            "manifest-transaction.json",
+            "group-operation.json",
+            "group-restore.json",
+        ].map((name) => path.join(project.lockRoot, ".craflet", name)),
+    ];
+}
+
+export async function hasRecoveryJournal(
+    project: Pick<ProjectContext, "dir" | "lockRoot">,
+): Promise<boolean> {
+    for (const file of recoveryJournalPaths(project))
+        if (await exists(file)) return true;
+    return false;
+}
+
 export async function readYaml(file: string): Promise<unknown> {
     const text = await readYamlText(file);
     return parseYamlContent(text, file);
@@ -242,12 +265,13 @@ export async function selectProjects(
             2,
         );
     const all = await Promise.all(dirs.map((dir) => loadProject(dir, home)));
-    const selected = options.filters?.length
+    const filters = options.filters?.map((filter) => picomatch(filter));
+    const selected = filters?.length
         ? all.filter((project) =>
-              options.filters?.some(
-                  (filter) =>
-                      picomatch(filter)(project.manifest.name) ||
-                      picomatch(filter)(project.lockKey),
+              filters.some(
+                  (matches) =>
+                      matches(project.manifest.name) ||
+                      matches(project.lockKey),
               ),
           )
         : all;

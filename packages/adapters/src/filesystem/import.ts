@@ -15,6 +15,7 @@ import {
     containedPath,
     exists,
     listFiles,
+    pathContains,
     writeJson,
 } from "./io.js";
 import { initProject, loadProject, writeYaml } from "./projects.js";
@@ -34,16 +35,7 @@ export async function importProject(
 ): Promise<unknown> {
     const source = path.resolve(sourceDir);
     const target = path.resolve(targetDir);
-    const overlap = (parent: string, child: string) => {
-        const relative = path.relative(parent, child);
-        return (
-            relative === "" ||
-            (!relative.startsWith(`..${path.sep}`) &&
-                relative !== ".." &&
-                !path.isAbsolute(relative))
-        );
-    };
-    if (overlap(source, target) || overlap(target, source))
+    if (pathContains(source, target) || pathContains(target, source))
         throw new CrafletError(
             "IMPORT_OVERLAP",
             "The source and destination must be separate directory trees.",

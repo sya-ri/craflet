@@ -1,4 +1,4 @@
-import { sanitizeTerminalOutput } from "./terminal.js";
+import { sanitizeInlineTerminalOutput } from "./terminal.js";
 
 type ResultRecord = Record<string, unknown>;
 
@@ -24,6 +24,15 @@ function list(value: unknown): unknown[] {
     return Array.isArray(value) ? value : [];
 }
 
+function records(value: unknown): ResultRecord[] {
+    const result: ResultRecord[] = [];
+    for (const entry of list(value)) {
+        const item = record(entry);
+        if (item) result.push(item);
+    }
+    return result;
+}
+
 function text(value: unknown, fallback = "-"): string {
     if (
         typeof value !== "string" &&
@@ -31,10 +40,7 @@ function text(value: unknown, fallback = "-"): string {
         typeof value !== "boolean"
     )
         return fallback;
-    const sanitized = sanitizeTerminalOutput(String(value))
-        .replaceAll("\n", "?")
-        .replaceAll("\t", "?");
-    return sanitized.length > 240 ? `${sanitized.slice(0, 237)}...` : sanitized;
+    return sanitizeInlineTerminalOutput(String(value));
 }
 
 function optionalText(value: unknown): string | undefined {
@@ -104,13 +110,26 @@ function boundedLines(
     return lines;
 }
 
+function formatFailure(
+    label: unknown,
+    code: unknown,
+    message: unknown,
+    fallback = "Recovery unit",
+): string {
+    return `${text(label, fallback)}: failed [${text(code, "OPERATION_FAILED")}].${message ? ` ${text(message)}` : ""}`;
+}
+
 function failureLines(result: unknown): string[] {
     return (Array.isArray(result) ? list(result) : [result]).flatMap(
         (value) => {
             const item = record(value);
             if (item?.ok !== false) return [];
             return [
-                `${text(item.project ?? item.group, "Recovery unit")}: failed [${text(item.code, "OPERATION_FAILED")}].${item.message ? ` ${text(item.message)}` : ""}`,
+                formatFailure(
+                    item.project ?? item.group,
+                    item.code,
+                    item.message,
+                ),
             ];
         },
     );
@@ -172,9 +191,7 @@ function renderInstall(
             "No declaration, lock, cache, pending installation, or running JAR was changed.",
         ].join("\n");
     }
-    const items = list(result)
-        .map(record)
-        .filter((item) => item !== undefined);
+    const items = records(result);
     if (!items.length)
         return dryRun
             ? "No installation changes are planned."
@@ -233,9 +250,7 @@ function renderInstall(
 }
 
 function renderPluginList(result: unknown): string {
-    const projects = list(result)
-        .map(record)
-        .filter((item) => item !== undefined);
+    const projects = records(result);
     if (!projects.length) return "No projects were selected.";
     const lines: string[] = [];
     for (const project of projects) {
@@ -248,9 +263,7 @@ function renderPluginList(result: unknown): string {
                 `Server: ${text(declared?.type, "unknown")} ${text(declared?.version)} | locked ${text(server.locked)} | active ${text(server.active)}`,
             );
         }
-        const plugins = list(project.plugins)
-            .map(record)
-            .filter((item) => item !== undefined);
+        const plugins = records(project.plugins);
         if (!plugins.length) {
             lines.push("Plugins: none declared.");
             continue;
@@ -265,15 +278,11 @@ function renderPluginList(result: unknown): string {
 }
 
 function renderOutdated(result: unknown): string {
-    const projects = list(result)
-        .map(record)
-        .filter((item) => item !== undefined);
+    const projects = records(result);
     const lines: string[] = [];
     let available = 0;
     for (const project of projects) {
-        const updates = list(project.updates)
-            .map(record)
-            .filter((item) => item !== undefined);
+        const updates = records(project.updates);
         if (!updates.length) continue;
         lines.push(`Project: ${text(project.project)}`);
         for (const update of updates) {
@@ -444,9 +453,7 @@ function renderRuntime(
     ];
     for (const row of rows) {
         if (row.failed) {
-            lines.push(
-                `${row.label}: failed [${text(row.code, "OPERATION_FAILED")}].${row.message ? ` ${text(row.message)}` : ""}`,
-            );
+            lines.push(formatFailure(row.label, row.code, row.message));
         } else if (isDeploymentPlan(row.value)) {
             lines.push(...renderDeploymentPlan(row.value, row.label));
         } else if (record(row.value)?.status !== undefined) {
@@ -461,9 +468,7 @@ function renderRuntime(
 }
 
 function renderWorkspaceList(result: unknown): string {
-    const projects = list(result)
-        .map(record)
-        .filter((item) => item !== undefined);
+    const projects = records(result);
     if (!projects.length) return "No workspace projects were found.";
     return [
         `${projects.length} workspace ${plural(projects.length, "project")}:`,
@@ -474,9 +479,7 @@ function renderWorkspaceList(result: unknown): string {
 }
 
 function renderValidation(result: unknown): string {
-    const projects = list(result)
-        .map(record)
-        .filter((item) => item !== undefined);
+    const projects = records(result);
     if (!projects.length) return "No projects were validated.";
     return [
         `Validated ${projects.length} ${plural(projects.length, "project")}.`,
@@ -489,9 +492,7 @@ function renderValidation(result: unknown): string {
 
 function renderDoctor(result: unknown): string {
     const groups = list(result);
-    const diagnostics = groups
-        .flatMap((group) => list(group).map(record))
-        .filter((item) => item !== undefined);
+    const diagnostics = groups.flatMap(records);
     if (!diagnostics.length) return "Doctor completed without diagnostics.";
     const failed = diagnostics.filter(
         (item) =>
@@ -525,9 +526,7 @@ function renderConfig(
 ): string {
     if (command === "config capture") {
         const item = record(result);
-        const conflicts = list(item?.conflicts)
-            .map(record)
-            .filter((entry) => entry !== undefined);
+        const conflicts = records(item?.conflicts);
         if (conflicts.length)
             return [
                 `Capture stopped with ${conflicts.length} ${plural(conflicts.length, "conflict")}; no templates were changed.`,
@@ -541,9 +540,7 @@ function renderConfig(
         return `${dryRun ? "Would capture" : "Captured"} ${captured.length} ${plural(captured.length, "configuration file")}; ${unchanged} unchanged.${captured.length ? `\n  ${captured.join("\n  ")}` : ""}`;
     }
     if (command === "config diff") {
-        const files = list(result)
-            .map(record)
-            .filter((item) => item !== undefined);
+        const files = records(result);
         if (!files.length)
             return "No tracked configuration files have differences.";
         return [
@@ -568,9 +565,7 @@ function renderConfig(
             const paths = list(preview.paths).map((entry) => text(entry));
             return `${dryRun ? "Would track" : "Tracked"} ${paths.length} ${plural(paths.length, "configuration file")}.${paths.length ? `\n  ${paths.join("\n  ")}` : ""}`;
         }
-        const files = list(result)
-            .map(record)
-            .filter((item) => item !== undefined);
+        const files = records(result);
         if (!files.length)
             return command === "config list"
                 ? "No managed configuration files were found."
@@ -694,9 +689,7 @@ function renderBackup(
     if (command === "backup setup")
         return `${dryRun ? "Would configure" : "Configured"} backup repository "${text(item?.alias)}" at ${text(item?.path)}.`;
     if (command === "backup list") {
-        const snapshots = list(result)
-            .map(record)
-            .filter((entry) => entry !== undefined);
+        const snapshots = records(result);
         if (!snapshots.length)
             return "No snapshots were found for this recovery unit.";
         return [
@@ -732,14 +725,12 @@ function renderBackup(
     if (command === "backup check")
         return "Backup repository integrity check passed.";
     if (command === "backup prune") {
-        const groups = list(item?.plan).map(record).filter(Boolean);
+        const groups = records(item?.plan);
         const structured = groups.every((group) =>
             Array.isArray(group?.remove),
         );
         const removed = structured
-            ? groups.flatMap((group) =>
-                  list(group?.remove).map(record).filter(Boolean),
-              )
+            ? groups.flatMap((group) => records(group.remove))
             : [];
         const lines = [
             structured
@@ -826,9 +817,9 @@ function renderCache(result: unknown, command: string): string {
         ].join("\n");
     }
     const entries = count(item?.entries);
-    const invalid = list(item?.entries)
-        .map(record)
-        .filter((entry) => entry?.valid === false).length;
+    const invalid = records(item?.entries).filter(
+        (entry) => entry.valid === false,
+    ).length;
     const ignored = list(item?.ignored).map((entry) => text(entry));
     return [
         `${command === "cache verify" ? "Verified" : "Cache contains"} ${entries} ${plural(entries, "artifact")} (${formatBytes(item?.bytes)})${invalid ? `; ${invalid} failed verification` : ""}.`,
@@ -862,7 +853,7 @@ function renderInspect(result: unknown): string {
 }
 
 function renderRecovery(result: unknown, dryRun: boolean): string {
-    const rows = list(result).map(record).filter(Boolean);
+    const rows = records(result);
     if (!rows.length)
         return dryRun
             ? "No interrupted operation was found; no state was changed."
@@ -887,7 +878,7 @@ function renderRecovery(result: unknown, dryRun: boolean): string {
     for (const row of rows) {
         if (row?.ok === false) {
             lines.push(
-                `${text(row.project ?? row.group, "Recovery unit")}: failed [${text(row.code, "OPERATION_FAILED")}].${row.message ? ` ${text(row.message)}` : ""}`,
+                formatFailure(row.project ?? row.group, row.code, row.message),
             );
             continue;
         }
@@ -908,7 +899,7 @@ function renderRecovery(result: unknown, dryRun: boolean): string {
 }
 
 function renderDeployApply(result: unknown, dryRun: boolean): string {
-    const wrappers = list(result).map(record).filter(Boolean);
+    const wrappers = records(result);
     if (!wrappers.length)
         return dryRun
             ? "No deployment application was selected; runtime files were not changed."
@@ -927,14 +918,12 @@ function renderDeployApply(result: unknown, dryRun: boolean): string {
     for (const wrapper of wrappers) {
         const label = text(wrapper?.project ?? wrapper?.group, "Recovery unit");
         if (wrapper?.ok === false) {
-            lines.push(
-                `${label}: failed [${text(wrapper.code, "OPERATION_FAILED")}].${wrapper.message ? ` ${text(wrapper.message)}` : ""}`,
-            );
+            lines.push(formatFailure(label, wrapper.code, wrapper.message));
             continue;
         }
         const nested = wrapper?.result;
         if (Array.isArray(nested)) {
-            const plans = list(nested).map(record).filter(Boolean);
+            const plans = records(nested);
             if (!plans.length) {
                 lines.push(
                     `${label}: deployment completed; all members remain stopped.`,
@@ -991,7 +980,7 @@ function renderSimple(
             : "Server log stream ended.";
     if (command === "deploy discard") {
         if (Array.isArray(result)) {
-            const rows = list(result).map(record).filter(Boolean);
+            const rows = records(result);
             const discarded = rows.flatMap((row) =>
                 list(row?.discarded).map((entry) => text(entry)),
             );
@@ -1003,7 +992,7 @@ function renderSimple(
                     : []),
                 ...failures.map(
                     (failure) =>
-                        `  ${text(failure?.project ?? failure?.group, "Project")}: failed [${text(failure?.code, "OPERATION_FAILED")}].${failure?.message ? ` ${text(failure.message)}` : ""}`,
+                        `  ${formatFailure(failure.project ?? failure.group, failure.code, failure.message, "Project")}`,
                 ),
             ].join("\n");
         }
@@ -1031,9 +1020,7 @@ function renderSimple(
     if (command === "recover") return renderRecovery(result, dryRun);
     if (command === "deploy apply") return renderDeployApply(result, dryRun);
     if (command === "deploy plan") {
-        const projects = list(result)
-            .map(record)
-            .filter((entry) => entry !== undefined);
+        const projects = records(result);
         if (!projects.length) return "No deployment previews were found.";
         return [
             `Deployment preview for ${projects.length} ${plural(projects.length, "project")}:`,

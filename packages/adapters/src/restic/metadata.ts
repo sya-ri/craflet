@@ -24,15 +24,16 @@ export function backupPathKey(value: string): string {
 }
 
 export function validateBackupRelativePath(value: string): string {
+    const segments = value.split("/");
     if (
         !value ||
         value.length > 4096 ||
         value.startsWith("/") ||
         value.includes("\\") ||
         value.includes("\0") ||
-        value
-            .split("/")
-            .some((segment) => !segment || segment === "." || segment === "..")
+        segments.some(
+            (segment) => !segment || segment === "." || segment === "..",
+        )
     ) {
         throw new CrafletError(
             "BACKUP_RESTORE_PATH",
@@ -42,19 +43,17 @@ export function validateBackupRelativePath(value: string): string {
     }
     if (
         process.platform === "win32" &&
-        value
-            .split("/")
-            .some(
-                (segment) =>
-                    /[<>:"|?*]/u.test(segment) ||
-                    [...segment].some(
-                        (character) => character.charCodeAt(0) < 32,
-                    ) ||
-                    /[. ]$/u.test(segment) ||
-                    /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(
-                        segment,
-                    ),
-            )
+        segments.some(
+            (segment) =>
+                /[<>:"|?*]/u.test(segment) ||
+                [...segment].some(
+                    (character) => character.charCodeAt(0) < 32,
+                ) ||
+                /[. ]$/u.test(segment) ||
+                /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(
+                    segment,
+                ),
+        )
     ) {
         throw new CrafletError(
             "BACKUP_RESTORE_PATH",
@@ -99,6 +98,7 @@ export function validateBackupMetadata(
         );
     }
     const rootIds = new Set<string>();
+    const externalRootIds = new Set<string>();
     let runtimeRoot = false;
     for (const root of value.roots) {
         if (
@@ -140,7 +140,7 @@ export function validateBackupMetadata(
                 "An additional root cannot use the runtime ID.",
                 3,
             );
-        }
+        } else externalRootIds.add(root.id);
         rootIds.add(backupPathKey(root.id));
     }
     if (value.roots.length === 0)
@@ -181,12 +181,7 @@ export function validateBackupMetadata(
                 file.destination.startsWith("data/runtime/") ||
                 (file.destination.startsWith("data/external/") &&
                     components.length >= 4 &&
-                    value.roots.some(
-                        (root) =>
-                            backupRecord(root) &&
-                            root.external === true &&
-                            root.id === components[2],
-                    ))
+                    externalRootIds.has(components[2] ?? ""))
             )
         ) {
             throw new CrafletError(

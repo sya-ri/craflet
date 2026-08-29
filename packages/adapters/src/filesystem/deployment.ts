@@ -40,7 +40,7 @@ import {
     withMutex,
     writeJson,
 } from "./io.js";
-import type { ProjectContext } from "./projects.js";
+import { hasRecoveryJournal, type ProjectContext } from "./projects.js";
 import {
     type Installation,
     installationJars as jars,
@@ -150,30 +150,7 @@ export class NodeDeploymentManager {
     }
     async preflight(applyPending: boolean, launch = true): Promise<void> {
         this.options.signal?.throwIfAborted();
-        if (
-            (await exists(this.journalFile)) ||
-            (await exists(
-                path.join(this.context.lockRoot, ".craflet/group-restore.json"),
-            )) ||
-            (await exists(
-                path.join(this.context.dir, ".craflet/import-incomplete.json"),
-            )) ||
-            (await exists(
-                path.join(this.context.dir, ".craflet/restore.json"),
-            )) ||
-            (await exists(
-                path.join(
-                    this.context.lockRoot,
-                    ".craflet/group-operation.json",
-                ),
-            )) ||
-            (await exists(
-                path.join(
-                    this.context.lockRoot,
-                    ".craflet/manifest-transaction.json",
-                ),
-            ))
-        )
+        if (await hasRecoveryJournal(this.context))
             throw new CrafletError(
                 "RECOVERY_REQUIRED",
                 "An interrupted operation must be recovered first.",

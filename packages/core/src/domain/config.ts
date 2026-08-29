@@ -45,6 +45,14 @@ export const ConfigBundleSchema = type({
 });
 export type ConfigBundle = typeof ConfigBundleSchema.infer;
 
+function normalizeConfigState(state: ConfigState): ConfigState {
+    const files: ConfigState["files"] = Object.assign(
+        Object.create(null),
+        state.files,
+    );
+    return { ...state, files };
+}
+
 export function validateConfigState(input: unknown): ConfigState {
     const result = ConfigStateSchema(input);
     if (result instanceof type.errors || Array.isArray(result.files))
@@ -53,11 +61,7 @@ export function validateConfigState(input: unknown): ConfigState {
             "Configuration observation state is invalid; no input values have been included in this error.",
             3,
         );
-    const files: ConfigState["files"] = Object.assign(
-        Object.create(null),
-        result.files,
-    );
-    return { ...result, files };
+    return normalizeConfigState(result);
 }
 
 export function validateConfigBundle(input: unknown): ConfigBundle {
@@ -68,7 +72,7 @@ export function validateConfigBundle(input: unknown): ConfigBundle {
             "Pending configuration is invalid; no input values have been included in this error.",
             3,
         );
-    return { ...result, state: validateConfigState(result.state) };
+    return { ...result, state: normalizeConfigState(result.state) };
 }
 
 export interface ConfigConflict {

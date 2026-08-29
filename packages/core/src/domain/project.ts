@@ -138,6 +138,19 @@ export const LockSchema = type({
 });
 export type LockFile = typeof LockSchema.infer;
 
+function validateProjectLockMappings(project: ProjectLock): ProjectLock {
+    if (
+        Array.isArray(project.plugins) ||
+        Array.isArray(project.requests.plugins)
+    )
+        throw new CrafletError(
+            "INVALID_INPUT",
+            "craflet-lock.yaml: plugin resolutions and requests must be objects, not arrays.",
+            2,
+        );
+    return project;
+}
+
 export function validateProject(input: unknown): ProjectManifest {
     const result = ProjectSchema(input);
     if (result instanceof type.errors) {
@@ -179,13 +192,7 @@ export function validateProjectLock(input: unknown): ProjectLock {
     const result = ProjectLockSchema(input);
     if (result instanceof type.errors)
         throw validationError("craflet-lock.yaml", result);
-    if (Array.isArray(result.plugins) || Array.isArray(result.requests.plugins))
-        throw new CrafletError(
-            "INVALID_INPUT",
-            "craflet-lock.yaml: plugin resolutions and requests must be objects, not arrays.",
-            2,
-        );
-    return result;
+    return validateProjectLockMappings(result);
 }
 
 export function validateLock(input: unknown): LockFile {
@@ -200,7 +207,7 @@ export function validateLock(input: unknown): LockFile {
         );
     const projects: Record<string, ProjectLock> = Object.create(null);
     for (const [key, project] of Object.entries(result.projects))
-        projects[key] = validateProjectLock(project);
+        projects[key] = validateProjectLockMappings(project);
     return { ...result, projects };
 }
 

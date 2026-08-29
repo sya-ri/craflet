@@ -23,6 +23,9 @@ import {
 } from "../restic/process.js";
 import { backupSecretResolver } from "../restic/secrets.js";
 
+const NON_INNODB_QUERY =
+    "SELECT COALESCE(GROUP_CONCAT(DISTINCT ENGINE), '') FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' AND ENGINE <> 'InnoDB'";
+
 function mysqlOption(value: string): string {
     if (value.includes("\0"))
         throw new CrafletError(
@@ -58,6 +61,22 @@ export function databaseClientOptions(
     return `${values.join("\n")}\n`;
 }
 
+function addDatabaseId(
+    id: string,
+    seen: Set<string>,
+    operation: "backup" | "restore",
+): void {
+    validateBackupIdentifier(id, `Database ${operation} ID`);
+    const key = id.toLowerCase();
+    if (seen.has(key))
+        throw new CrafletError(
+            "DATABASE_DUPLICATE",
+            `Each database ${operation} ID must be unique.`,
+            2,
+        );
+    seen.add(key);
+}
+
 export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
     private readonly secrets: BackupSecretResolver;
     private readonly temporaryRoot: string;
@@ -79,14 +98,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
         const seen = new Set<string>();
         for (const config of configs) {
             signal?.throwIfAborted();
-            validateBackupIdentifier(config.id, "Database backup ID");
-            if (seen.has(config.id.toLowerCase()))
-                throw new CrafletError(
-                    "DATABASE_DUPLICATE",
-                    "Each database backup ID must be unique.",
-                    2,
-                );
-            seen.add(config.id.toLowerCase());
+            addDatabaseId(config.id, seen, "backup");
             if (config.kind === "sqlite") {
                 const source = this.sqlitePath(config.path);
                 await assertNoSymlinks(source);
@@ -98,61 +110,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
                     );
                 continue;
             }
-            this.validateMysql(config);
-            const dumpExecutable = this.mysqlExecutable(config, false);
-            const version = await this.runner({
-                executable: dumpExecutable,
-                args: ["--no-defaults", "--version"],
-                env: sanitizedBackupEnvironment(),
-                maxOutputBytes: 8192,
-                timeoutMs: 10000,
-                ...(signal ? { signal } : {}),
-            });
-            const identifiesMaria = /mariadb/iu.test(version.stdout);
-            if (
-                version.exitCode !== 0 ||
-                (config.kind === "mariadb"
-                    ? !identifiesMaria
-                    : identifiesMaria || !/mysqldump/iu.test(version.stdout))
-            ) {
-                throw new CrafletError(
-                    "DATABASE_CLIENT",
-                    "The configured dump client does not match the selected database kind.",
-                    3,
-                );
-            }
-            await this.withCredentials(config, async (credentials, env) => {
-                const result = await this.runner({
-                    executable: this.mysqlExecutable(config, true),
-                    args: [
-                        credentials,
-                        ...(config.kind === "mysql"
-                            ? ["--no-login-paths"]
-                            : []),
-                        "--batch",
-                        "--raw",
-                        "--skip-column-names",
-                        `--database=${config.database}`,
-                        "--execute=SELECT COALESCE(GROUP_CONCAT(DISTINCT ENGINE), '') FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' AND ENGINE <> 'InnoDB'",
-                    ],
-                    env,
-                    timeoutMs: 30000,
-                    maxOutputBytes: 65536,
-                    ...(signal ? { signal } : {}),
-                });
-                if (result.exitCode !== 0)
-                    throw new CrafletError(
-                        "DATABASE_PREFLIGHT",
-                        "Database authentication or access preflight failed; client output is withheld to protect secrets.",
-                        3,
-                    );
-                if (result.stdout.trim())
-                    throw new CrafletError(
-                        "DATABASE_ENGINE",
-                        "Consistent SQL dumps currently require all base tables to use InnoDB. Other table engines require a separate locking strategy.",
-                        3,
-                    );
-            });
+            await this.preflightMysql(config, "backup", signal);
         }
     }
 
@@ -163,65 +121,12 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
         const seen = new Set<string>();
         for (const config of configs) {
             signal?.throwIfAborted();
-            validateBackupIdentifier(config.id, "Database restore ID");
-            if (seen.has(config.id.toLowerCase()))
-                throw new CrafletError(
-                    "DATABASE_DUPLICATE",
-                    "Each database restore ID must be unique.",
-                    2,
-                );
-            seen.add(config.id.toLowerCase());
+            addDatabaseId(config.id, seen, "restore");
             if (config.kind === "sqlite") {
                 await assertNoSymlinks(this.sqlitePath(config.path));
                 continue;
             }
-            this.validateMysql(config);
-            const executable = this.mysqlExecutable(config, true);
-            const version = await this.runner({
-                executable,
-                args: ["--no-defaults", "--version"],
-                env: sanitizedBackupEnvironment(),
-                timeoutMs: 10000,
-                maxOutputBytes: 8192,
-                ...(signal ? { signal } : {}),
-            });
-            const maria = /mariadb/iu.test(version.stdout);
-            if (
-                version.exitCode !== 0 ||
-                (config.kind === "mariadb"
-                    ? !maria
-                    : maria || !/mysql/iu.test(version.stdout))
-            )
-                throw new CrafletError(
-                    "DATABASE_CLIENT",
-                    "The configured restore client does not match the selected database kind.",
-                    3,
-                );
-            await this.withCredentials(config, async (credentials, env) => {
-                const result = await this.runner({
-                    executable,
-                    args: [
-                        credentials,
-                        ...(config.kind === "mysql"
-                            ? ["--no-login-paths"]
-                            : []),
-                        "--batch",
-                        "--skip-column-names",
-                        `--database=${config.database}`,
-                        "--execute=SELECT 1",
-                    ],
-                    env,
-                    timeoutMs: 30000,
-                    maxOutputBytes: 8192,
-                    ...(signal ? { signal } : {}),
-                });
-                if (result.exitCode !== 0 || result.stdout.trim() !== "1")
-                    throw new CrafletError(
-                        "DATABASE_PREFLIGHT",
-                        "Database restore authentication or target access failed; client output is withheld.",
-                        3,
-                    );
-            });
+            await this.preflightMysql(config, "restore", signal);
         }
     }
 
@@ -254,7 +159,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
                 await reservation.close();
                 await this.withCredentials(config, async (credentials, env) => {
                     const result = await this.runner({
-                        executable: this.mysqlExecutable(config, false),
+                        executable: this.mysqlExecutable(config, "dump"),
                         args: [
                             credentials,
                             ...(config.kind === "mysql"
@@ -365,7 +270,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
         this.validateMysql(config);
         await this.withCredentials(config, async (credentials, env) => {
             const result = await this.runner({
-                executable: this.mysqlExecutable(config, true),
+                executable: this.mysqlExecutable(config, "restore"),
                 args: [
                     credentials,
                     ...(config.kind === "mysql" ? ["--no-login-paths"] : []),
@@ -393,15 +298,99 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
 
     private mysqlExecutable(
         config: MysqlBackupConfig,
-        restore: boolean,
+        operation: "dump" | "restore",
     ): string {
-        const configured = restore ? config.restoreCommand : config.command;
+        const configured =
+            operation === "restore" ? config.restoreCommand : config.command;
         if (configured)
             return /[\\/]/u.test(configured)
                 ? path.resolve(this.projectDir, configured)
                 : configured;
-        if (restore) return config.kind === "mysql" ? "mysql" : "mariadb";
+        if (operation === "restore")
+            return config.kind === "mysql" ? "mysql" : "mariadb";
         return config.kind === "mysql" ? "mysqldump" : "mariadb-dump";
+    }
+
+    private async validateMysqlClient(
+        config: MysqlBackupConfig,
+        operation: "dump" | "restore",
+        signal?: AbortSignal,
+    ): Promise<string> {
+        const executable = this.mysqlExecutable(config, operation);
+        const result = await this.runner({
+            executable,
+            args: ["--no-defaults", "--version"],
+            env: sanitizedBackupEnvironment(),
+            timeoutMs: 10000,
+            maxOutputBytes: 8192,
+            ...(signal ? { signal } : {}),
+        });
+        const identifiesMaria = /mariadb/iu.test(result.stdout);
+        const expectedClient =
+            operation === "restore" ? /mysql/iu : /mysqldump/iu;
+        const matchesKind =
+            config.kind === "mariadb"
+                ? identifiesMaria
+                : !identifiesMaria && expectedClient.test(result.stdout);
+        if (result.exitCode !== 0 || !matchesKind)
+            throw new CrafletError(
+                "DATABASE_CLIENT",
+                `The configured ${operation} client does not match the selected database kind.`,
+                3,
+            );
+        return executable;
+    }
+
+    private async preflightMysql(
+        config: MysqlBackupConfig,
+        purpose: "backup" | "restore",
+        signal?: AbortSignal,
+    ): Promise<void> {
+        this.validateMysql(config);
+        const backup = purpose === "backup";
+        const validatedClient = await this.validateMysqlClient(
+            config,
+            backup ? "dump" : "restore",
+            signal,
+        );
+        const queryClient = backup
+            ? this.mysqlExecutable(config, "restore")
+            : validatedClient;
+        await this.withCredentials(config, async (credentials, env) => {
+            const result = await this.runner({
+                executable: queryClient,
+                args: [
+                    credentials,
+                    ...(config.kind === "mysql" ? ["--no-login-paths"] : []),
+                    "--batch",
+                    ...(backup ? ["--raw"] : []),
+                    "--skip-column-names",
+                    `--database=${config.database}`,
+                    `--execute=${backup ? NON_INNODB_QUERY : "SELECT 1"}`,
+                ],
+                env,
+                timeoutMs: 30000,
+                maxOutputBytes: backup ? 65536 : 8192,
+                ...(signal ? { signal } : {}),
+            });
+            if (
+                result.exitCode !== 0 ||
+                (!backup && result.stdout.trim() !== "1")
+            )
+                throw new CrafletError(
+                    "DATABASE_PREFLIGHT",
+                    backup
+                        ? "Database authentication or access preflight failed; client output is withheld to protect secrets."
+                        : "Database restore authentication or target access failed; client output is withheld.",
+                    3,
+                );
+            if (backup && result.stdout.trim())
+                throw new CrafletError(
+                    "DATABASE_ENGINE",
+                    "Consistent SQL dumps currently require all base tables to use InnoDB. Other table engines require a separate locking strategy.",
+                    3,
+                );
+        });
     }
 
     private validateMysql(config: MysqlBackupConfig): void {

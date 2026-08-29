@@ -18,7 +18,11 @@ import {
     writeAcceptedEula,
 } from "./eula-file.js";
 import { assertNoSymlinks, exists } from "./io.js";
-import { loadProject, type ProjectContext } from "./projects.js";
+import {
+    loadProject,
+    type ProjectContext,
+    recoveryJournalPaths,
+} from "./projects.js";
 import { readState } from "./state.js";
 
 export interface OwnedEulaOperationJournal {
@@ -150,19 +154,11 @@ async function guard(
             3,
         );
     const current = { ...declared, manifest: project.manifest };
-    const journals = [
-        path.join(project.dir, ".craflet/deploy.json"),
-        path.join(project.dir, ".craflet/restore.json"),
-        path.join(project.dir, ".craflet/import-incomplete.json"),
-        path.join(project.lockRoot, ".craflet/group-restore.json"),
-        path.join(project.lockRoot, ".craflet/group-operation.json"),
-        path.join(project.lockRoot, ".craflet/manifest-transaction.json"),
-    ];
     const groupOperationJournal = path.resolve(
         project.lockRoot,
         ".craflet/group-operation.json",
     );
-    for (const file of journals) {
+    for (const file of recoveryJournalPaths(project)) {
         signal?.throwIfAborted();
         const safe = await assertNoSymlinks(file);
         if (!(await exists(safe))) continue;

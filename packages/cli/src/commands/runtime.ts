@@ -14,39 +14,7 @@ import {
     sanitizeTerminalOutput,
 } from "../presentation/terminal.js";
 import type { CommandContext } from "./context.js";
-
-type PartialFailureUnit = { project: string } | { group: string };
-
-function safeInline(value: string): string {
-    const sanitized = sanitizeTerminalOutput(value)
-        .replaceAll("\n", "?")
-        .replaceAll("\t", "?");
-    return sanitized.length > 240 ? `${sanitized.slice(0, 237)}...` : sanitized;
-}
-
-function isCancellation(error: unknown, signal: AbortSignal): boolean {
-    return (
-        signal.aborted ||
-        (error instanceof CrafletError && error.code === "CANCELLED") ||
-        (error instanceof Error && error.name === "AbortError")
-    );
-}
-
-function partialFailure(
-    error: unknown,
-    unit: PartialFailureUnit,
-    fallback: string,
-) {
-    const known = error instanceof CrafletError;
-    return {
-        ...("project" in unit
-            ? { project: safeInline(unit.project) }
-            : { group: safeInline(unit.group) }),
-        ok: false as const,
-        code: safeInline(known ? error.code : "OPERATION_FAILED"),
-        message: safeInline(known ? error.message : fallback),
-    };
-}
+import { isCancellation, partialFailure } from "./failures.js";
 
 export function registerRuntimeCommands(
     program: Command,
@@ -56,9 +24,10 @@ export function registerRuntimeCommands(
         command: Command,
         action: "start" | "restart" | "stop",
     ) => {
-        const projects = await context.projects(command);
+        const dryRun = context.globals(command).dryRun ?? false;
         if (action !== "stop") {
             const batches = await context.batches(command, true);
+            const active = Boolean(command.opts().active);
             const results: unknown[] = [];
             for (const batch of batches) {
                 try {
@@ -67,11 +36,7 @@ export function registerRuntimeCommands(
                             group: batch.group,
                             result: await context
                                 .group(batch, true)
-                                .operate(
-                                    action,
-                                    Boolean(command.opts().active),
-                                    context.globals(command).dryRun ?? false,
-                                ),
+                                .operate(action, active, dryRun),
                         });
                     else {
                         const project = batch.projects[0];
@@ -88,11 +53,9 @@ export function registerRuntimeCommands(
                         );
                         results.push({
                             project: project.manifest.name,
-                            result: context.globals(command).dryRun
+                            result: dryRun
                                 ? await deployment.plan()
-                                : await deployment[action](
-                                      Boolean(command.opts().active),
-                                  ),
+                                : await deployment[action](active),
                         });
                     }
                 } catch (error) {
@@ -117,11 +80,12 @@ export function registerRuntimeCommands(
             }
             return results;
         }
+        const projects = await context.projects(command);
         const results: unknown[] = [];
         for (const project of projects) {
             try {
                 const deployment = await context.deployment(project);
-                const value = context.globals(command).dryRun
+                const value = dryRun
                     ? { action, ...(await deployment.plan()) }
                     : await deployment.stop(Boolean(command.opts().force));
                 results.push({
@@ -133,18 +97,13 @@ export function registerRuntimeCommands(
                 if (isCancellation(error, context.abort.signal)) throw error;
                 if (projects.length === 1) throw error;
                 process.exitCode = 4;
-                results.push({
-                    project: project.manifest.name,
-                    ok: false,
-                    code:
-                        error instanceof CrafletError
-                            ? error.code
-                            : "OPERATION_FAILED",
-                    message:
-                        error instanceof CrafletError
-                            ? error.message
-                            : "Operation failed; inspect this project's doctor and logs.",
-                });
+                results.push(
+                    partialFailure(
+                        error,
+                        { project: project.manifest.name },
+                        "Operation failed; inspect this project's doctor and logs.",
+                    ),
+                );
             }
         }
         return results;
@@ -173,20 +132,19 @@ export function registerRuntimeCommands(
                 "explicitly kill only this runner's authenticated Java child",
             ),
         async (_, command) => {
-            if (command.opts().force && !context.globals(command).dryRun)
+            const globals = context.globals(command);
+            const force = Boolean(command.opts().force);
+            if (force && !globals.dryRun)
                 await context.ask(
                     command,
                     "Force termination can lose server data. Terminate this owned Java process?",
                 );
             // Broken YAML must not prevent stopping the current owned process.
-            if (
-                !context.globals(command).recursive &&
-                !context.globals(command).filter?.length
-            ) {
+            if (!globals.recursive && !globals.filter?.length) {
                 const controller = await context.controller(command);
-                return context.globals(command).dryRun
+                return globals.dryRun
                     ? controller.status()
-                    : controller.stop(Boolean(command.opts().force));
+                    : controller.stop(force);
             }
             return operate(command, "stop");
         },
@@ -198,10 +156,8 @@ export function registerRuntimeCommands(
                 "Query the authenticated runner; ambiguous or unreachable processes are unknown.",
             ),
         async (_, command) => {
-            if (
-                !context.globals(command).recursive &&
-                !context.globals(command).filter?.length
-            )
+            const globals = context.globals(command);
+            if (!globals.recursive && !globals.filter?.length)
                 return (await context.controller(command)).status();
             return Promise.all(
                 (await context.projects(command)).map(async (project) => ({
@@ -220,9 +176,10 @@ export function registerRuntimeCommands(
                 "Send one console command to the authenticated runner.",
             ),
         async ([text], command) => {
-            if (!context.globals(command).dryRun)
+            const dryRun = context.globals(command).dryRun ?? false;
+            if (!dryRun)
                 await (await context.controller(command)).command(String(text));
-            return { sent: !context.globals(command).dryRun };
+            return { sent: !dryRun };
         },
     );
     const streamLogs = async (command: Command, stopOnInterrupt = false) => {
@@ -233,12 +190,10 @@ export function registerRuntimeCommands(
         const output = (chunk: string) => {
             if (chunk) process.stdout.write(formatRuntimeLogChunk(chunk, json));
         };
-        const onInterrupt = () => {
+        const onAbort = () => {
             abort.abort();
         };
-        process.once("SIGINT", onInterrupt);
-        process.once("SIGTERM", onInterrupt);
-        context.abort.signal.addEventListener("abort", onInterrupt, {
+        context.abort.signal.addEventListener("abort", onAbort, {
             once: true,
         });
         if (context.abort.signal.aborted) abort.abort();
@@ -260,9 +215,7 @@ export function registerRuntimeCommands(
                 output(text);
         } finally {
             if (poll) clearInterval(poll);
-            process.removeListener("SIGINT", onInterrupt);
-            process.removeListener("SIGTERM", onInterrupt);
-            context.abort.signal.removeEventListener("abort", onInterrupt);
+            context.abort.signal.removeEventListener("abort", onAbort);
             if (
                 stopOnInterrupt &&
                 (await controller.status()).status === "running"
@@ -401,6 +354,7 @@ export function registerRuntimeCommands(
         async (_, command) => {
             const results = [];
             const batches = await context.batches(command, true);
+            const dryRun = context.globals(command).dryRun ?? false;
             for (const batch of batches) {
                 try {
                     if (batch.group)
@@ -408,11 +362,7 @@ export function registerRuntimeCommands(
                             group: batch.group,
                             result: await context
                                 .group(batch)
-                                .operate(
-                                    "apply",
-                                    false,
-                                    context.globals(command).dryRun ?? false,
-                                ),
+                                .operate("apply", false, dryRun),
                         });
                     else
                         for (const project of batch.projects)
@@ -420,9 +370,7 @@ export function registerRuntimeCommands(
                                 project: project.manifest.name,
                                 result: await (
                                     await context.deployment(project)
-                                ).apply(
-                                    context.globals(command).dryRun ?? false,
-                                ),
+                                ).apply(dryRun),
                             });
                 } catch (error) {
                     if (isCancellation(error, context.abort.signal))
@@ -455,7 +403,8 @@ export function registerRuntimeCommands(
             ),
         async (_, command) => {
             const projects = await context.projects(command);
-            if (!context.globals(command).dryRun)
+            const dryRun = context.globals(command).dryRun ?? false;
+            if (!dryRun)
                 await context.ask(
                     command,
                     "Discard prepared pending installations? Desired YAML and lock remain unchanged.",
@@ -474,9 +423,7 @@ export function registerRuntimeCommands(
                 const recoveryGroup = project.manifest.backup?.group;
                 if (recoveryGroup && failedGroups.has(recoveryGroup)) continue;
                 try {
-                    await (await context.deployment(project)).discard(
-                        context.globals(command).dryRun ?? false,
-                    );
+                    await (await context.deployment(project)).discard(dryRun);
                     discarded.push(project.manifest.name);
                 } catch (error) {
                     if (isCancellation(error, context.abort.signal))
@@ -513,7 +460,8 @@ export function registerRuntimeCommands(
             const batches = await context.batches(command, true);
             const projectResults = [];
             const groupResults = [];
-            const dryRun = context.globals(command).dryRun ?? false;
+            const globals = context.globals(command);
+            const dryRun = globals.dryRun ?? false;
             for (const batch of batches) {
                 const unitProjectResults = [];
                 try {
@@ -551,8 +499,7 @@ export function registerRuntimeCommands(
                             context.store,
                             {
                                 dryRun,
-                                offline:
-                                    context.globals(command).offline ?? false,
+                                offline: globals.offline ?? false,
                                 signal: context.abort.signal,
                             },
                         );

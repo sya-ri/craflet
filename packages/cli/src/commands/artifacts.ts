@@ -66,10 +66,11 @@ export function registerArtifactCommands(
         async (_, command) =>
             Promise.all(
                 (await context.projects(command)).map(async (project) => {
-                    const locked = (await readLock(project.lockRoot)).projects[
-                        project.lockKey
-                    ];
-                    const state = await readState(project.dir);
+                    const [lock, state] = await Promise.all([
+                        readLock(project.lockRoot),
+                        readState(project.dir),
+                    ]);
+                    const locked = lock.projects[project.lockKey];
                     const names = [
                         ...new Set([
                             ...Object.keys(project.manifest.plugins),
@@ -180,12 +181,8 @@ export function registerArtifactCommands(
                     "Use either --server or explicit plugin names; use --all to update both.",
                     2,
                 );
-            if (
-                options.to &&
-                (options.all ||
-                    (!(options.server && selected.length === 0) &&
-                        selected.length !== 1))
-            )
+            const targetCount = selected.length + (options.server ? 1 : 0);
+            if (options.to && (options.all || targetCount !== 1))
                 throw new CrafletError(
                     "UPDATE_TARGET",
                     "--to requires exactly one plugin or --server.",

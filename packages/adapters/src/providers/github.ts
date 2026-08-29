@@ -45,14 +45,13 @@ export async function resolveGithub(
             asset.name === source.asset &&
             (!asset.state || asset.state === "uploaded"),
     );
-    if (assets.length !== 1 || !/\.jar$/iu.test(source.asset))
+    const asset = assets[0];
+    if (!asset || assets.length !== 1 || !/\.jar$/iu.test(source.asset))
         throw new CrafletError(
             "AMBIGUOUS_ARTIFACT",
             "The GitHub release must contain exactly one uploaded JAR with the requested asset name.",
             3,
         );
-    const asset = assets[0];
-    if (!asset) return noVersion();
     const hashes: DownloadSpec["hashes"] = {};
     if (asset.digest) {
         if (!/^sha256:[a-f\d]{64}$/iu.test(asset.digest))

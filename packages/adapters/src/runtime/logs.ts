@@ -29,10 +29,9 @@ export async function readServerLogs(
             start,
         );
         const text = buffer.subarray(0, bytesRead).toString("utf8");
+        const firstLineEnd = text.indexOf("\n");
         const complete = start
-            ? text.slice(
-                  text.indexOf("\n") < 0 ? text.length : text.indexOf("\n") + 1,
-              )
+            ? text.slice(firstLineEnd < 0 ? text.length : firstLineEnd + 1)
             : text;
         return complete.trimEnd().split(/\r?\n/).slice(-lines).join("\n");
     } finally {

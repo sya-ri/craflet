@@ -46,12 +46,9 @@ function component(value: string): string {
 }
 
 function versioned(value: string): [string, string] {
-    const parts = value.split("@");
-    if (parts.length > 2 || !parts[0]) return invalidSource();
-    return [
-        component(parts[0]),
-        parts.length === 1 ? "latest" : component(parts[1] ?? ""),
-    ];
+    const [name, version = "latest", ...rest] = value.split("@");
+    if (!name || rest.length > 0) return invalidSource();
+    return [component(name), component(version)];
 }
 
 /** Opaque upstream versions are never interpreted as SemVer ranges. */

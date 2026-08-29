@@ -99,14 +99,13 @@ export async function resolveSpigot(
                     3,
                 );
         }
-        if (matches.length !== 1)
+        const selected = matches[0];
+        if (!selected || matches.length !== 1)
             throw new CrafletError(
                 "AMBIGUOUS_VERSION",
                 "SpigotMC labels are opaque and may repeat. Select an exact version ID.",
                 3,
             );
-        const selected = matches[0];
-        if (!selected) return noVersion();
         version = selected;
     }
     const id =

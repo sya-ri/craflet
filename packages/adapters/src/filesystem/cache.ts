@@ -11,7 +11,7 @@ import {
     withMutex,
     writeJson,
 } from "./io.js";
-import { loadProject, readLock } from "./projects.js";
+import { hasRecoveryJournal, loadProject, readLock } from "./projects.js";
 import { readState } from "./state.js";
 
 const RegistrySchema = type({
@@ -155,29 +155,7 @@ export async function pruneArtifactCache(
                 if (
                     (!ownedLocks.has(key(operationLock)) &&
                         (await exists(operationLock))) ||
-                    (await exists(path.join(dir, ".craflet/deploy.json"))) ||
-                    (await exists(path.join(dir, ".craflet/restore.json"))) ||
-                    (await exists(
-                        path.join(dir, ".craflet/import-incomplete.json"),
-                    )) ||
-                    (await exists(
-                        path.join(
-                            project.lockRoot,
-                            ".craflet/manifest-transaction.json",
-                        ),
-                    )) ||
-                    (await exists(
-                        path.join(
-                            project.lockRoot,
-                            ".craflet/group-operation.json",
-                        ),
-                    )) ||
-                    (await exists(
-                        path.join(
-                            project.lockRoot,
-                            ".craflet/group-restore.json",
-                        ),
-                    ))
+                    (await hasRecoveryJournal(project))
                 )
                     throw new CrafletError(
                         "CACHE_BUSY",

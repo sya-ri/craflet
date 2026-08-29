@@ -10,6 +10,7 @@ import {
 } from "../filesystem/io.js";
 import type { ProjectContext } from "../filesystem/projects.js";
 import { NodeServerController } from "./controller.js";
+import { processDefinitelyExited } from "./process.js";
 
 const OwnerSchema = type({
     "+": "reject",
@@ -17,14 +18,9 @@ const OwnerSchema = type({
     "token?": "string.uuid",
     "started?": "string",
 });
-export function processDefinitelyExited(pid: number): boolean {
-    try {
-        process.kill(pid, 0);
-        return false;
-    } catch (error) {
-        return (error as NodeJS.ErrnoException).code === "ESRCH";
-    }
-}
+
+export { processDefinitelyExited } from "./process.js";
+
 export async function recoverProcessLocks(
     project: ProjectContext,
     dryRun = false,
@@ -34,16 +30,15 @@ export async function recoverProcessLocks(
             project.dir,
             ".craflet/runner.json",
         );
-        if (
-            (await exists(recordFile)) &&
-            (!(await lstat(recordFile)).isFile() ||
-                (await lstat(recordFile)).size > 64 * 1024)
-        )
-            throw new CrafletError(
-                "UNKNOWN_PROCESS",
-                "The runner ownership record is invalid; no locks were removed.",
-                4,
-            );
+        if (await exists(recordFile)) {
+            const info = await lstat(recordFile);
+            if (!info.isFile() || info.size > 64 * 1024)
+                throw new CrafletError(
+                    "UNKNOWN_PROCESS",
+                    "The runner ownership record is invalid; no locks were removed.",
+                    4,
+                );
+        }
         const controller = new NodeServerController(project.dir, project.home);
         const status = await controller.status();
         if (status.status !== "stopped" && status.status !== "unknown")
@@ -80,12 +75,9 @@ export async function recoverProcessLocks(
             )
                 throw invalid();
             const file = await assertNoSymlinks(directory, "owner.json");
-            if (
-                !(await exists(file)) ||
-                !(await lstat(file)).isFile() ||
-                (await lstat(file)).size > 64 * 1024
-            )
-                throw invalid();
+            if (!(await exists(file))) throw invalid();
+            const info = await lstat(file);
+            if (!info.isFile() || info.size > 64 * 1024) throw invalid();
             const raw = await readFile(file, "utf8");
             let parsed: unknown;
             try {

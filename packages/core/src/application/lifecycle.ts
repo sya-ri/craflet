@@ -13,6 +13,12 @@ export interface LifecyclePorts {
     spawn(activeOnly: boolean): Promise<ServerStatus>;
 }
 
+async function applyPendingDeployment(ports: LifecyclePorts): Promise<void> {
+    await ports.verifyConfig();
+    await ports.backup();
+    await ports.apply();
+}
+
 export async function startServer(
     ports: LifecyclePorts,
     activeOnly = false,
@@ -22,11 +28,7 @@ export async function startServer(
     assertStopped(status.status);
     const pending = !activeOnly && (await ports.hasPending());
     await ports.preflight(pending);
-    if (pending) {
-        await ports.verifyConfig();
-        await ports.backup();
-        await ports.apply();
-    }
+    if (pending) await applyPendingDeployment(ports);
     return ports.spawn(activeOnly);
 }
 
@@ -44,11 +46,7 @@ export async function restartServer(
     const pending = !activeOnly && (await ports.hasPending());
     await ports.preflight(pending);
     assertStopped((await ports.stop()).status);
-    if (pending) {
-        await ports.verifyConfig();
-        await ports.backup();
-        await ports.apply();
-    }
+    if (pending) await applyPendingDeployment(ports);
     return ports.spawn(activeOnly);
 }
 

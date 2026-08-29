@@ -107,12 +107,10 @@ export function registerProjectCommands(
                 "Stop the original server, then explicitly pass --stopped.",
                 3,
             );
+        const cwd = context.cwd(command);
         return importProject(
-            path.resolve(context.cwd(command), String(source)),
-            path.resolve(
-                context.cwd(command),
-                String(directory ?? options.name),
-            ),
+            path.resolve(cwd, String(source)),
+            path.resolve(cwd, String(directory ?? options.name)),
             context.home,
             {
                 name: options.name,
@@ -139,12 +137,13 @@ export function registerProjectCommands(
             Array.isArray(patterns) && patterns.length
                 ? patterns.map(String)
                 : ["servers/*"];
+        const directory = context.cwd(command);
         await initWorkspace(
-            context.cwd(command),
+            directory,
             values,
             context.globals(command).dryRun ?? false,
         );
-        return { directory: context.cwd(command), projects: values };
+        return { directory, projects: values };
     });
     context.action(
         workspace
@@ -176,11 +175,10 @@ export function registerProjectCommands(
             .description(
                 "Validate declarations, source syntax, lock and managed state without changing files.",
             ),
-        async (_, command) => {
-            return Promise.all(
+        async (_, command) =>
+            Promise.all(
                 (await context.projects(command)).map(validateManagedProject),
-            );
-        },
+            ),
     );
     context.action(
         program
@@ -189,17 +187,15 @@ export function registerProjectCommands(
                 "Diagnose Java, declarations, runtime, configuration and backup prerequisites without mutation.",
             ),
         async (_, command) => {
-            const file = await nearestFile(
-                context.cwd(command),
-                "craflet.yaml",
-            );
+            const cwd = context.cwd(command);
+            const options = context.globals(command);
+            const file = await nearestFile(cwd, "craflet.yaml");
             const dirs =
-                context.globals(command).recursive ||
-                context.globals(command).filter?.length
+                options.recursive || options.filter?.length
                     ? (await context.projects(command)).map(
                           (project) => project.dir,
                       )
-                    : [file ? path.dirname(file) : context.cwd(command)];
+                    : [file ? path.dirname(file) : cwd];
             const results = await Promise.all(
                 dirs.map((dir) => diagnoseProject(dir, context.home)),
             );

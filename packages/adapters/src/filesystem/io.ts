@@ -89,14 +89,23 @@ export async function writeJson(file: string, value: unknown): Promise<void> {
     await atomicWrite(file, `${JSON.stringify(value, null, 4)}\n`);
 }
 
+export function pathContains(parent: string, child: string): boolean {
+    const relative = path.relative(path.resolve(parent), path.resolve(child));
+    return (
+        relative === "" ||
+        (relative !== ".." &&
+            !relative.startsWith(`..${path.sep}`) &&
+            !path.isAbsolute(relative))
+    );
+}
+
+export function pathsOverlap(first: string, second: string): boolean {
+    return pathContains(first, second) || pathContains(second, first);
+}
+
 export function containedPath(root: string, relative: string): string {
     const target = path.resolve(root, relative);
-    const difference = path.relative(path.resolve(root), target);
-    if (
-        difference === ".." ||
-        difference.startsWith(`..${path.sep}`) ||
-        path.isAbsolute(difference)
-    ) {
+    if (!pathContains(root, target)) {
         throw new CrafletError(
             "PATH_ESCAPE",
             `Path leaves its managed directory: ${relative}`,

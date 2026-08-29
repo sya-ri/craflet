@@ -145,6 +145,18 @@ async function initializeWorkspaceProjects(
 }
 
 describe("CLI usage and package-style project management", () => {
+    it("does not interpret positional text after -- as a global option", async () => {
+        output = "";
+        errors = "";
+        process.exitCode = 0;
+
+        await runCli(["--", "--json"], entryUrl);
+
+        expect(Number(process.exitCode)).toBe(2);
+        expect(output).toBe("");
+        expect(errors).toContain("Error [CLI_USAGE]");
+    });
+
     it("does not confuse init's server version with the tool version", async () => {
         const target = path.join(root, "created");
         const initialized = await result([

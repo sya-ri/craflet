@@ -25,10 +25,11 @@ export function validatePluginSet(
     plugins: readonly PluginIdentity[],
     serverKind: ServerKind,
 ): void {
-    const names = new Map<string, PluginIdentity>();
+    const names = new Set<string>();
     for (const plugin of plugins) {
         portablePluginJarName(plugin.id);
-        if ((serverKind === "velocity") !== (plugin.format === "velocity")) {
+        const velocityPlugin = plugin.format === "velocity";
+        if ((serverKind === "velocity") !== velocityPlugin) {
             throw new CrafletError(
                 "PLUGIN_PLATFORM",
                 `Plugin ${plugin.id} is not a ${serverKind} plugin.`,
@@ -47,7 +48,7 @@ export function validatePluginSet(
                     3,
                 );
             }
-            names.set(name, plugin);
+            names.add(name);
         }
     }
     const missing: string[] = [];

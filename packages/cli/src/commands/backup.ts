@@ -2,6 +2,7 @@ import path from "node:path";
 import {
     applyBackupRestore,
     applyGroupBackupRestore,
+    type BackupBatch,
     NodeBackupService,
     setupBackup,
 } from "@craflet/adapters";
@@ -11,41 +12,8 @@ import {
     validateBackupIdentifier,
 } from "@craflet/core";
 import type { Command } from "commander";
-import { sanitizeTerminalOutput } from "../presentation/terminal.js";
 import type { CommandContext } from "./context.js";
-
-type PartialFailureUnit = { project: string } | { group: string };
-
-function safeInline(value: string): string {
-    const sanitized = sanitizeTerminalOutput(value)
-        .replaceAll("\n", "?")
-        .replaceAll("\t", "?");
-    return sanitized.length > 240 ? `${sanitized.slice(0, 237)}...` : sanitized;
-}
-
-function isCancellation(error: unknown, signal: AbortSignal): boolean {
-    return (
-        signal.aborted ||
-        (error instanceof CrafletError && error.code === "CANCELLED") ||
-        (error instanceof Error && error.name === "AbortError")
-    );
-}
-
-function partialFailure(
-    error: unknown,
-    unit: PartialFailureUnit,
-    fallback: string,
-) {
-    const known = error instanceof CrafletError;
-    return {
-        ...("project" in unit
-            ? { project: safeInline(unit.project) }
-            : { group: safeInline(unit.group) }),
-        ok: false as const,
-        code: safeInline(known ? error.code : "OPERATION_FAILED"),
-        message: safeInline(known ? error.message : fallback),
-    };
-}
+import { isCancellation, partialFailure } from "./failures.js";
 
 export function registerBackupCommands(
     program: Command,
@@ -57,24 +25,24 @@ export function registerBackupCommands(
             "Create verified cold snapshots of selected operating data with restic.",
         )
         .option("--repository <alias>", "configured host repository alias");
-    const service = async (command: Command, allowUnconfigured = false) => {
-        const batches = await context.batches(command);
-        if (batches.length !== 1 || !batches[0]?.projects[0])
+    const service = async (
+        command: Command,
+        options: {
+            allowUnconfigured?: boolean;
+            batches?: BackupBatch[];
+        } = {},
+    ) => {
+        const batches = options.batches ?? (await context.batches(command));
+        const batch = batches[0];
+        const project = batch?.projects[0];
+        if (batches.length !== 1 || !batch || !project)
             throw new CrafletError(
                 "SINGLE_BACKUP_UNIT",
                 "Select one project or one complete recovery group for this snapshot operation.",
                 2,
             );
-        const batch = batches[0];
-        const project = batch.projects[0];
-        if (!project)
-            throw new CrafletError(
-                "EMPTY_SELECTION",
-                "No project selected.",
-                2,
-            );
         const configured = batch.backup;
-        if (!configured && !allowUnconfigured)
+        if (!configured && !options.allowUnconfigured)
             throw new CrafletError(
                 "BACKUP_REQUIRED",
                 "Configure a repository using backup setup.",
@@ -92,11 +60,9 @@ export function registerBackupCommands(
     };
     const prepare = async (command: Command) => {
         const result = await service(command);
+        const options = context.globals(command);
         await result.backup.prepare({
-            offline: Boolean(
-                context.globals(command).offline ||
-                    context.globals(command).dryRun,
-            ),
+            offline: Boolean(options.offline || options.dryRun),
             signal: context.abort.signal,
         });
         return result;
@@ -124,6 +90,7 @@ export function registerBackupCommands(
                 "explicitly initialize a new repository at the chosen destination",
             ),
         async ([alias], command) => {
+            const globals = context.globals(command);
             const options = command.opts<{
                 path?: string;
                 passwordEnv?: string;
@@ -161,7 +128,7 @@ export function registerBackupCommands(
                           "Password environment variable (--password-env) is required.",
                       ),
                   };
-            if (!context.globals(command).dryRun)
+            if (!globals.dryRun)
                 await context.ask(
                     command,
                     `${options.init ? "Initialize and register" : "Verify and register"} backup repository at ${target}?`,
@@ -173,8 +140,8 @@ export function registerBackupCommands(
                 {
                     initialize: options.init ?? false,
                     confirm: true,
-                    dryRun: context.globals(command).dryRun ?? false,
-                    offline: context.globals(command).offline ?? false,
+                    dryRun: globals.dryRun ?? false,
+                    offline: globals.offline ?? false,
                 },
             );
         },
@@ -185,7 +152,12 @@ export function registerBackupCommands(
             .description(
                 "Preview exact selected paths, exclusions and staging capacity without stopping servers.",
             ),
-        async (_, command) => (await service(command, true)).backup.plan(),
+        async (_, command) => {
+            const { backup } = await service(command, {
+                allowUnconfigured: true,
+            });
+            return backup.plan();
+        },
     );
     context.action(
         group
@@ -199,9 +171,10 @@ export function registerBackupCommands(
             ),
         async (_, command) => {
             const batches = await context.batches(command, true);
+            const dryRun = context.globals(command).dryRun ?? false;
             if (batches.length === 1 && !batches[0]?.group) {
-                const { project, backup } = await service(command);
-                if (context.globals(command).dryRun) return backup.plan();
+                const { project, backup } = await service(command, { batches });
+                if (dryRun) return backup.plan();
                 return (await context.deployment(project, backup)).createBackup(
                     Boolean(command.opts().leaveStopped),
                 );
@@ -216,7 +189,7 @@ export function registerBackupCommands(
                                 .group(batch)
                                 .createBackup(
                                     Boolean(command.opts().leaveStopped),
-                                    context.globals(command).dryRun ?? false,
+                                    dryRun,
                                 ),
                         });
                     else
@@ -229,7 +202,7 @@ export function registerBackupCommands(
                                 );
                             results.push({
                                 project: project.manifest.name,
-                                result: context.globals(command).dryRun
+                                result: dryRun
                                     ? await batch.backup.plan()
                                     : await (
                                           await context.deployment(
@@ -353,9 +326,12 @@ export function registerBackupCommands(
                 [],
             ),
         async ([directory], command) => {
-            await context.batches(command, true);
-            const { project, backup, batch } = await service(command);
-            if (!context.globals(command).dryRun)
+            const batches = await context.batches(command, true);
+            const { project, backup, batch } = await service(command, {
+                batches,
+            });
+            const globals = context.globals(command);
+            if (!globals.dryRun)
                 await context.ask(
                     command,
                     "Apply this restored data after stopping and creating a pre-restore backup? The server will remain stopped.",
@@ -385,8 +361,8 @@ export function registerBackupCommands(
                 mappings[id] = value.slice(split + 1);
             }
             const options = {
-                dryRun: context.globals(command).dryRun ?? false,
-                offline: context.globals(command).offline ?? false,
+                dryRun: globals.dryRun ?? false,
+                offline: globals.offline ?? false,
                 mappings,
                 databases: command.opts<{ database: string[] }>().database,
                 signal: context.abort.signal,
@@ -421,9 +397,8 @@ export function registerBackupCommands(
             )
             .option("--apply", "apply configured retention and prune"),
         async (_, command) => {
-            const apply = Boolean(
-                command.opts().apply && !context.globals(command).dryRun,
-            );
+            const dryRun = context.globals(command).dryRun ?? false;
+            const apply = Boolean(command.opts().apply && !dryRun);
             if (apply)
                 await context.ask(
                     command,

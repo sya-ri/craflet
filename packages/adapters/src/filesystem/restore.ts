@@ -27,11 +27,12 @@ import {
     assertNoSymlinks,
     exists,
     listFiles,
+    pathContains,
     readJson,
     withMutex,
     writeJson,
 } from "./io.js";
-import type { ProjectContext } from "./projects.js";
+import { type ProjectContext, recoveryJournalPaths } from "./projects.js";
 import {
     type Installation,
     installationJars,
@@ -120,15 +121,6 @@ function digest(value: unknown): string {
 function pathKey(value: string): string {
     return path.resolve(value).normalize("NFC").toLowerCase();
 }
-function within(parent: string, child: string): boolean {
-    const relative = path.relative(path.resolve(parent), path.resolve(child));
-    return (
-        relative === "" ||
-        (relative !== ".." &&
-            !relative.startsWith(`..${path.sep}`) &&
-            !path.isAbsolute(relative))
-    );
-}
 function policyFingerprint(
     project: ProjectContext,
     backup: BackupService,
@@ -212,7 +204,7 @@ function inRoots(verified: VerifiedRestore, target: string): boolean {
     return verified.roots.some((root) =>
         root.kind === "file"
             ? pathKey(root.path) === pathKey(target)
-            : within(root.path, target),
+            : pathContains(root.path, target),
     );
 }
 function assertDistinctTargets(targets: readonly string[]): void {
@@ -452,7 +444,7 @@ export async function inspectBackupRestore(
             );
         const target =
             root.kind === "file" ? root.path : path.resolve(root.path, suffix);
-        if (!within(root.path, target))
+        if (!pathContains(root.path, target))
             throw new CrafletError(
                 "RESTORE_MAPPING",
                 "A restore file leaves its mapped root.",
@@ -1118,17 +1110,7 @@ export async function applyBackupRestore(
     return withMutex(
         path.join(project.lockRoot, ".craflet/operation.lock"),
         async () => {
-            for (const target of [
-                path.join(project.dir, ".craflet/restore.json"),
-                path.join(project.dir, ".craflet/deploy.json"),
-                path.join(project.dir, ".craflet/import-incomplete.json"),
-                path.join(
-                    project.lockRoot,
-                    ".craflet/manifest-transaction.json",
-                ),
-                path.join(project.lockRoot, ".craflet/group-operation.json"),
-                path.join(project.lockRoot, ".craflet/group-restore.json"),
-            ])
+            for (const target of recoveryJournalPaths(project))
                 if (await exists(target))
                     throw new CrafletError(
                         "RECOVERY_REQUIRED",

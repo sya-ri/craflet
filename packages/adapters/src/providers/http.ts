@@ -33,20 +33,19 @@ export function safeDownloadUrl(value: string): URL {
         );
     }
     const host = url.hostname.toLowerCase().replace(/^\[|\]$/gu, "");
-    const parts = host.split(".").map(Number);
+    const ipVersion = isIP(host);
+    const [first = 0, second = 0] = host.split(".").map(Number);
     const privateIpv4 =
-        isIP(host) === 4 &&
-        (parts[0] === 0 ||
-            parts[0] === 10 ||
-            parts[0] === 127 ||
-            (parts[0] ?? 0) >= 224 ||
-            (parts[0] === 169 && parts[1] === 254) ||
-            (parts[0] === 192 && parts[1] === 168) ||
-            (parts[0] === 172 &&
-                (parts[1] ?? 0) >= 16 &&
-                (parts[1] ?? 0) <= 31));
+        ipVersion === 4 &&
+        (first === 0 ||
+            first === 10 ||
+            first === 127 ||
+            first >= 224 ||
+            (first === 169 && second === 254) ||
+            (first === 192 && second === 168) ||
+            (first === 172 && second >= 16 && second <= 31));
     const privateIpv6 =
-        isIP(host) === 6 &&
+        ipVersion === 6 &&
         (host === "::" ||
             host === "::1" ||
             /^(fc|fd|fe[89ab]|::ffff:)/u.test(host));

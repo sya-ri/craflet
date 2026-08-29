@@ -21,6 +21,19 @@ export function sanitizeTerminalOutput(value: string): string {
         .join("");
 }
 
+/** Sanitize untrusted text for a bounded, single-line diagnostic field. */
+export function sanitizeInlineTerminalOutput(value: string): string {
+    const sanitized = sanitizeTerminalOutput(value)
+        .replaceAll("\n", "?")
+        .replaceAll("\t", "?")
+        .replaceAll("\u2028", "?")
+        .replaceAll("\u2029", "?");
+    const characters = [...sanitized];
+    return characters.length > 240
+        ? `${characters.slice(0, 237).join("")}...`
+        : sanitized;
+}
+
 export function formatRuntimeLogChunk(value: string, json: boolean): string {
     if (json) return `${JSON.stringify({ event: "log", text: value })}\n`;
     const sanitized = sanitizeTerminalOutput(value);

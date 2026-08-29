@@ -8,7 +8,12 @@ import { inspectJava } from "../runtime/java.js";
 import { NodeConfigManager } from "./config.js";
 import { readRepositories } from "./host.js";
 import { assertNoSymlinks, exists } from "./io.js";
-import { loadProject, type ProjectContext, readLock } from "./projects.js";
+import {
+    hasRecoveryJournal,
+    loadProject,
+    type ProjectContext,
+    readLock,
+} from "./projects.js";
 import { installationJars, readState } from "./state.js";
 
 export async function diagnoseProject(
@@ -143,19 +148,7 @@ export async function diagnoseProject(
             message: "State is invalid or inaccessible; use recover.",
         });
     }
-    const journals = [
-        "deploy.json",
-        "restore.json",
-        "import-incomplete.json",
-    ].map((name) => path.join(dir, ".craflet", name));
-    journals.push(
-        ...[
-            "manifest-transaction.json",
-            "group-operation.json",
-            "group-restore.json",
-        ].map((name) => path.join(project.lockRoot, ".craflet", name)),
-    );
-    if ((await Promise.all(journals.map(exists))).some(Boolean))
+    if (await hasRecoveryJournal(project))
         diagnostics.push({
             id: "deployment.recovery",
             status: "fail",

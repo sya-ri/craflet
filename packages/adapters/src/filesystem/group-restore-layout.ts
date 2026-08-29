@@ -31,7 +31,13 @@ import {
     runtimeRootId,
     validateRecoveryGroup,
 } from "./groups.js";
-import { assertNoSymlinks, exists, readJson, writeJson } from "./io.js";
+import {
+    assertNoSymlinks,
+    exists,
+    pathContains,
+    readJson,
+    writeJson,
+} from "./io.js";
 import type { ProjectContext } from "./projects.js";
 import type { RestoreApplyOptions } from "./restore.js";
 import { type Installation, validateInstallation } from "./state.js";
@@ -42,16 +48,6 @@ export function groupRestoreDigest(value: unknown): string {
 
 export function groupRestorePathKey(value: string): string {
     return path.resolve(value).normalize("NFC").toLowerCase();
-}
-
-function contains(parent: string, child: string): boolean {
-    const relative = path.relative(parent, child);
-    return (
-        relative === "" ||
-        (relative !== ".." &&
-            !relative.startsWith(`..${path.sep}`) &&
-            !path.isAbsolute(relative))
-    );
 }
 
 const GroupActiveSchema = type({
@@ -541,7 +537,7 @@ function projectionBackup(
                         item.kind === "file"
                             ? groupRestorePathKey(item.path) ===
                               groupRestorePathKey(file.source)
-                            : contains(item.path, file.source),
+                            : pathContains(item.path, file.source),
                     );
                     if (!root) return [];
                     const suffix =

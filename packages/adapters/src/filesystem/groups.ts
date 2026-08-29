@@ -31,6 +31,7 @@ import { backupService, readRepositories } from "./host.js";
 import {
     assertNoSymlinks,
     exists,
+    pathContains,
     readJson,
     withMutex,
     writeJson,
@@ -39,6 +40,7 @@ import { ensurePrivateDirectory } from "./private.js";
 import {
     loadProject,
     type ProjectContext,
+    recoveryJournalPaths,
     workspaceProjects,
 } from "./projects.js";
 import { type Installation, readState } from "./state.js";
@@ -54,16 +56,6 @@ function pathKey(value: string): string {
     const absolute = path.resolve(value);
     return process.platform === "win32" ? absolute.toLowerCase() : absolute;
 }
-function contains(parent: string, child: string): boolean {
-    const relative = path.relative(parent, child);
-    return (
-        relative === "" ||
-        (relative !== ".." &&
-            !relative.startsWith(`..${path.sep}`) &&
-            !path.isAbsolute(relative))
-    );
-}
-
 export function validateRecoveryGroup(
     group: string,
     projects: readonly ProjectContext[],
@@ -196,16 +188,7 @@ export async function assertCleanRecoveryGroup(
             "The recovery group is empty.",
             2,
         );
-    const journals = [
-        path.join(first.lockRoot, ".craflet/group-operation.json"),
-        path.join(first.lockRoot, ".craflet/group-restore.json"),
-        path.join(first.lockRoot, ".craflet/manifest-transaction.json"),
-        ...projects.flatMap((project) =>
-            ["deploy.json", "restore.json", "import-incomplete.json"].map(
-                (name) => path.join(project.dir, ".craflet", name),
-            ),
-        ),
-    ];
+    const journals = [...new Set(projects.flatMap(recoveryJournalPaths))];
     for (const file of journals) {
         await assertNoSymlinks(file);
         if (await exists(file))
@@ -444,7 +427,7 @@ export async function createGroupBackupService(
             const candidates = [...additionalRoots.values()].filter(
                 (root) =>
                     !runtimeRoots.some((runtime) =>
-                        contains(runtime.path, root.path),
+                        pathContains(runtime.path, root.path),
                     ),
             );
             const additional = candidates.filter(
@@ -453,7 +436,7 @@ export async function createGroupBackupService(
                         (parent) =>
                             parent !== root &&
                             parent.kind === "directory" &&
-                            contains(parent.path, root.path),
+                            pathContains(parent.path, root.path),
                     ),
             );
             for (const root of additional) roots.set(root.id, root);
@@ -465,13 +448,13 @@ export async function createGroupBackupService(
                     sources.add(pathKey(file.source));
                     const root =
                         runtimeRoots.find((candidate) =>
-                            contains(candidate.path, file.source),
+                            pathContains(candidate.path, file.source),
                         ) ??
                         additional.find((candidate) =>
                             candidate.kind === "file"
                                 ? pathKey(candidate.path) ===
                                   pathKey(file.source)
-                                : contains(candidate.path, file.source),
+                                : pathContains(candidate.path, file.source),
                         );
                     if (!root)
                         throw new CrafletError(

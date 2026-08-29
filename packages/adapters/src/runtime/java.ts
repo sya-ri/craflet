@@ -10,6 +10,8 @@ import {
     parseJavaVersion,
 } from "@craflet/core";
 
+const execFileAsync = promisify(execFile);
+
 export async function javaExecutable(command = "java"): Promise<string> {
     if (path.isAbsolute(command)) {
         await access(command);
@@ -66,7 +68,7 @@ export async function inspectJava(
                     "Java option environment variables are present; values are hidden and excluded from the version probe.",
             });
         for (const name of injected) delete env[name];
-        const { stdout, stderr } = await promisify(execFile)(
+        const { stdout, stderr } = await execFileAsync(
             executable,
             ["-version"],
             { env, timeout: 5000, maxBuffer: 65536, windowsHide: true },

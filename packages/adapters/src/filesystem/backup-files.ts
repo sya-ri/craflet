@@ -21,34 +21,16 @@ import {
     createBackupSelector,
     parseBackupRules,
 } from "@craflet/core";
-import { assertNoSymlinks, containedPath, exists } from "./io.js";
+import {
+    assertNoSymlinks,
+    containedPath,
+    exists,
+    pathContains,
+    pathsOverlap,
+} from "./io.js";
 import { ensurePrivateDirectory } from "./private.js";
 
-export function pathsOverlap(first: string, second: string): boolean {
-    const within = (parent: string, child: string) => {
-        const relative = path.relative(
-            path.resolve(parent),
-            path.resolve(child),
-        );
-        return (
-            relative === "" ||
-            (relative !== ".." &&
-                !relative.startsWith(`..${path.sep}`) &&
-                !path.isAbsolute(relative))
-        );
-    };
-    return within(first, second) || within(second, first);
-}
-
-function inside(parent: string, child: string): boolean {
-    const relative = path.relative(parent, child);
-    return (
-        relative === "" ||
-        (relative !== ".." &&
-            !relative.startsWith(`..${path.sep}`) &&
-            !path.isAbsolute(relative))
-    );
-}
+export { pathsOverlap } from "./io.js";
 
 function rootId(source: string): string {
     return `external-${createHash("sha256").update(source).digest("hex").slice(0, 16)}`;
@@ -93,7 +75,7 @@ export async function planBackupFiles(
             );
         }
         const prefix = path.resolve(canonicalBase, rule.staticPrefix);
-        if (inside(canonicalRuntime, prefix)) continue;
+        if (pathContains(canonicalRuntime, prefix)) continue;
         await assertNoSymlinks(prefix);
         if (!(await exists(prefix))) {
             throw new CrafletError(
@@ -111,10 +93,10 @@ export async function planBackupFiles(
                 3,
             );
         }
-        if (inside(canonicalRuntime, canonical)) continue;
+        if (pathContains(canonicalRuntime, canonical)) continue;
         if (
             details.isDirectory() &&
-            (inside(canonical, canonicalRuntime) ||
+            (pathContains(canonical, canonicalRuntime) ||
                 canonical === path.parse(canonical).root)
         ) {
             throw new CrafletError(
@@ -259,12 +241,7 @@ export async function removePrivateBackupDirectory(
         path.resolve(parent),
         path.resolve(directory),
     );
-    if (
-        !relative ||
-        relative === ".." ||
-        relative.startsWith(`..${path.sep}`) ||
-        path.isAbsolute(relative)
-    ) {
+    if (!relative || !pathContains(parent, directory)) {
         throw new CrafletError(
             "BACKUP_CLEANUP",
             "Refusing to remove a directory outside the backup temporary directory.",

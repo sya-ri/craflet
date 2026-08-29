@@ -96,6 +96,46 @@ export function installationFingerprint(
     });
 }
 
+async function assertDeploymentRecovered(project: ProjectContext) {
+    if (await exists(path.join(project.dir, ".craflet/deploy.json")))
+        throw new CrafletError(
+            "RECOVERY_REQUIRED",
+            "A deployment must be recovered before installing.",
+            4,
+        );
+}
+
+function assertKnownPluginUpdates(
+    manifest: ProjectManifest,
+    options: InstallOptions,
+): void {
+    for (const name of options.updatePlugins ?? [])
+        if (!Object.hasOwn(manifest.plugins, name))
+            throw new CrafletError(
+                "PLUGIN_UNKNOWN",
+                `Unknown managed plugin: ${name}`,
+                2,
+            );
+}
+
+function assertFrozenPluginSet(
+    manifest: ProjectManifest,
+    old: ProjectLock | undefined,
+    frozen: boolean | undefined,
+): void {
+    if (
+        frozen &&
+        Object.keys(old?.plugins ?? {}).some(
+            (name) => !Object.hasOwn(manifest.plugins, name),
+        )
+    )
+        throw new CrafletError(
+            "FROZEN_LOCK",
+            "Removed plugins require a lockfile update.",
+            2,
+        );
+}
+
 async function planInstallation(
     project: ProjectContext,
     store: ArtifactStore,
@@ -108,12 +148,7 @@ async function planInstallation(
     state: ProjectState;
     changed: boolean;
 }> {
-    if (await exists(path.join(project.dir, ".craflet/deploy.json")))
-        throw new CrafletError(
-            "RECOVERY_REQUIRED",
-            "A deployment must be recovered before installing.",
-            4,
-        );
+    await assertDeploymentRecovered(project);
     const manifest = structuredClone(project.manifest);
     const context = artifactContext(project, options);
     const originalServer = serverSource(manifest);
@@ -148,13 +183,7 @@ async function planInstallation(
         server: stableStringify(parseSource(serverSource(manifest))),
         plugins: {},
     };
-    for (const name of options.updatePlugins ?? [])
-        if (!Object.hasOwn(manifest.plugins, name))
-            throw new CrafletError(
-                "PLUGIN_UNKNOWN",
-                `Unknown managed plugin: ${name}`,
-                2,
-            );
+    assertKnownPluginUpdates(manifest, options);
     for (const [name, input] of Object.entries(manifest.plugins)) {
         portablePluginJarName(name);
         options.signal?.throwIfAborted();
@@ -205,17 +234,7 @@ async function planInstallation(
             parseSource(manifest.plugins[name] ?? input),
         );
     }
-    if (
-        options.frozen &&
-        Object.keys(old?.plugins ?? {}).some(
-            (name) => !Object.hasOwn(plugins, name),
-        )
-    )
-        throw new CrafletError(
-            "FROZEN_LOCK",
-            "Removed plugins require a lockfile update.",
-            2,
-        );
+    assertFrozenPluginSet(manifest, old, options.frozen);
     validatePluginSet(
         Object.values(plugins).flatMap((item) =>
             item.identity ? [item.identity] : [],
@@ -288,12 +307,7 @@ async function previewInstallation(
     options: InstallOptions,
 ): Promise<InstallResult> {
     options.signal?.throwIfAborted();
-    if (await exists(path.join(project.dir, ".craflet/deploy.json")))
-        throw new CrafletError(
-            "RECOVERY_REQUIRED",
-            "A deployment must be recovered before installing.",
-            4,
-        );
+    await assertDeploymentRecovered(project);
     const request = stableStringify(
         parseSource(serverSource(project.manifest)),
     );
@@ -308,13 +322,7 @@ async function previewInstallation(
         unresolved.push("server");
     const plugins: ProjectLock["plugins"] = {};
     const requests: ProjectLock["requests"] = { server: request, plugins: {} };
-    for (const name of options.updatePlugins ?? [])
-        if (!Object.hasOwn(project.manifest.plugins, name))
-            throw new CrafletError(
-                "PLUGIN_UNKNOWN",
-                `Unknown managed plugin: ${name}`,
-                2,
-            );
+    assertKnownPluginUpdates(project.manifest, options);
     for (const [name, source] of Object.entries(project.manifest.plugins)) {
         portablePluginJarName(name);
         const input = stableStringify(parseSource(source));
@@ -351,17 +359,7 @@ async function previewInstallation(
             plugins[name] = artifact;
         }
     }
-    if (
-        options.frozen &&
-        Object.keys(old?.plugins ?? {}).some(
-            (name) => !Object.hasOwn(project.manifest.plugins, name),
-        )
-    )
-        throw new CrafletError(
-            "FROZEN_LOCK",
-            "Removed plugins require a lockfile update.",
-            2,
-        );
+    assertFrozenPluginSet(project.manifest, old, options.frozen);
     if (
         Object.keys(plugins).length ===
         Object.keys(project.manifest.plugins).length
