@@ -67,7 +67,7 @@ INSTALLATION_ID = "177af4a4-f3d8-4be7-903e-e4b143dbb97d"
 NEXT_INSTALLATION_ID = "83cd83c0-ea08-49de-a1e1-86c7eb52d1d8"
 
 INIT_COMMAND = (
-    "craflet init survival --name survival --type paper "
+    "craflet init --name survival --type paper "
     "--version 26.2 --build 120 --yes"
 )
 INIT_RESULT = [
@@ -357,7 +357,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         render(
             font,
             "craflet - Create a Paper server",
-            [f"$ {INIT_COMMAND}", *INIT_RESULT, "$ cd survival"],
+            [f"$ {INIT_COMMAND}", *INIT_RESULT],
         ),
         1600,
     )
@@ -367,7 +367,6 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         font,
         "craflet - Resolve the server JAR",
         INSTALL_COMMAND,
-        prefix=["$ cd survival"],
         step=4,
     )
     add_frame(
