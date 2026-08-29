@@ -13,6 +13,7 @@ import { pathToFileURL } from "node:url";
 import {
     initProject,
     loadProject,
+    NodeArtifactStore,
     NodeBackupService,
     NodeDeploymentManager,
     NodeRecoveryGroup,
@@ -21,9 +22,13 @@ import {
     readState,
     writeYaml,
 } from "@craflet/adapters";
-import { type BackupMetadata, CrafletError, parseSource } from "@craflet/core";
+import {
+    type BackupMetadata,
+    CrafletError,
+    parseSource,
+    stableStringify,
+} from "@craflet/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NodeArtifactStore } from "../../packages/adapters/src/filesystem/artifact-store.js";
 import { runCli } from "../../packages/cli/src/application.js";
 import { artifactJar, artifactZip } from "./artifacts-fixture.js";
 
@@ -481,8 +486,8 @@ describe("CLI artifact and pending contracts", () => {
         const lock = await readLock(configured.lockRoot);
         const locked = lock.projects[configured.lockKey];
         if (!locked) throw new Error("Expected the project lock slice");
-        locked.requests.server = "paper:1.21.11@120";
-        locked.requests.plugins.Example = "modrinth:example@opaque-current-id";
+        locked.requests.server = stableStringify(serverSource);
+        locked.requests.plugins.Example = stableStringify(pluginSource);
         locked.server.source = serverSource;
         locked.server.version = "1.21.11";
         const plugin = locked.plugins.Example;
@@ -493,6 +498,37 @@ describe("CLI artifact and pending contracts", () => {
             path.join(configured.lockRoot, "craflet-lock.yaml"),
             lock,
         );
+
+        const matchingList = await command(["list"], project, false);
+        expect(matchingList.output).toContain(
+            "Example: requested modrinth@Example release 1.0 | active - | pending 1.0 | locked Example release 1.0",
+        );
+        expect(matchingList.output).not.toContain("opaque-current-id");
+        expect(matchingList.output).not.toContain(root);
+
+        await writeYaml(path.join(project, "craflet.yaml"), {
+            ...configured.manifest,
+            server: { ...configured.manifest.server, source: serverSource },
+            plugins: {
+                Example: {
+                    ...pluginSource,
+                    version: "opaque-stale-request",
+                },
+            },
+        });
+        const staleList = await command(["list"], project, false);
+        expect(staleList.output).toContain(
+            "Example: requested modrinth | active - | pending 1.0 | locked Example release 1.0",
+        );
+        expect(staleList.output).not.toContain("opaque-stale-request");
+        expect(staleList.output).not.toContain("opaque-current-id");
+        expect(staleList.output).not.toContain(root);
+
+        await writeYaml(path.join(project, "craflet.yaml"), {
+            ...configured.manifest,
+            server: { ...configured.manifest.server, source: serverSource },
+            plugins: { Example: pluginSource },
+        });
         vi.spyOn(NodeArtifactStore.prototype, "latest").mockImplementation(
             async (input) => {
                 const source = parseSource(input);
@@ -1223,8 +1259,13 @@ describe("CLI routing to backup and lifecycle ports", () => {
         const execution = await command(["-r", "restart"], root);
         expect(execution.code).toBe(4);
         expect(execution.reply.result).toEqual([
-            expect.objectContaining({ project: "alpha" }),
-            expect.objectContaining({ ok: false, code: "STOP_TIMEOUT" }),
+            { project: "alpha", result: { status: "running" } },
+            {
+                project: "beta",
+                ok: false,
+                code: "STOP_TIMEOUT",
+                message: "Stop was not confirmed.",
+            },
         ]);
         vi.spyOn(NodeDeploymentManager.prototype, "stop").mockImplementation(
             async function (this: NodeDeploymentManager) {
@@ -1236,6 +1277,29 @@ describe("CLI routing to backup and lifecycle ports", () => {
         const stopped = await command(["-r", "stop"], root);
         expect(stopped.code).toBe(4);
         expect(stopped.output).not.toContain("do-not-print-this-secret");
+    });
+    it("rethrows recursive stop cancellation without touching later projects", async () => {
+        await initializeWorkspaceProjects([
+            { name: "alpha" },
+            { name: "beta" },
+            { name: "gamma" },
+        ]);
+        const stopped: string[] = [];
+        vi.spyOn(NodeDeploymentManager.prototype, "stop").mockImplementation(
+            async function (this: NodeDeploymentManager) {
+                const name = this.context.manifest.name;
+                stopped.push(name);
+                if (name === "beta")
+                    throw new DOMException("Cancelled", "AbortError");
+                return { status: "stopped" };
+            },
+        );
+
+        const execution = await command(["-r", "stop"], root);
+
+        expect(execution.code).toBe(130);
+        expect(execution.reply.error?.code).toBe("CANCELLED");
+        expect(stopped).toEqual(["alpha", "beta"]);
     });
     it("preserves deploy apply results, sanitizes failures and rethrows cancellation", async () => {
         await initializeWorkspaceProjects([
@@ -1344,6 +1408,61 @@ describe("CLI routing to backup and lifecycle ports", () => {
         expect(single.code).toBe(4);
         expect(single.reply.error?.code).toBe("GROUP_RECOVERY_FAILED");
         expect(groupRecover).toHaveBeenCalledTimes(2);
+    });
+    it("drops partial group recovery rows when a later member fails preliminary recovery", async () => {
+        await initializeWorkspaceProjects([
+            { name: "alpha" },
+            { name: "beta", group: "shared" },
+            { name: "charlie", group: "shared" },
+            { name: "echo", group: "shared" },
+            { name: "delta" },
+        ]);
+        await mkdir(
+            path.join(root, "servers", "charlie", ".craflet", "runner.json"),
+            { recursive: true },
+        );
+        await mkdir(path.join(root, ".craflet"), { recursive: true });
+        await writeFile(
+            path.join(root, ".craflet", "group-restore.json"),
+            "{}\n",
+        );
+        const checked: string[] = [];
+        const originalStatus = NodeServerController.prototype.status;
+        vi.spyOn(NodeServerController.prototype, "status").mockImplementation(
+            async function (this: NodeServerController) {
+                checked.push(path.basename(this.projectDir));
+                return originalStatus.call(this);
+            },
+        );
+        vi.spyOn(NodeDeploymentManager.prototype, "recover").mockResolvedValue({
+            recovered: false,
+        });
+        const groupRecover = vi
+            .spyOn(NodeRecoveryGroup.prototype, "recover")
+            .mockResolvedValue(false);
+
+        const execution = await command(["-r", "recover", "--unlock"], root);
+
+        expect(execution.code).toBe(4);
+        expect(execution.reply.result).toEqual([
+            expect.objectContaining({ project: "alpha" }),
+            expect.objectContaining({ project: "delta" }),
+            {
+                group: "shared",
+                ok: false,
+                code: "UNKNOWN_PROCESS",
+                message:
+                    "The runner ownership record is invalid; no locks were removed.",
+            },
+        ]);
+        for (const name of ["beta", "charlie", "echo"])
+            expect(execution.reply.result).not.toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ project: name }),
+                ]),
+            );
+        expect(checked).toEqual(["alpha", "beta", "delta"]);
+        expect(groupRecover).not.toHaveBeenCalled();
     });
     it("preserves successful discards and skips the rest of a failed recovery group", async () => {
         await initializeWorkspaceProjects([

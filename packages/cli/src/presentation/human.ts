@@ -79,8 +79,7 @@ function requestedLabel(value: unknown, displayVersion?: unknown): string {
     if (source) {
         const provider = text(source.provider, "declared source");
         if (provider === "file") return "local file";
-        const version =
-            optionalText(displayVersion) ?? optionalText(source.version);
+        const version = optionalText(displayVersion);
         return version ? `${provider}@${version}` : provider;
     }
     if (typeof value !== "string") return "not declared";
@@ -91,11 +90,7 @@ function requestedLabel(value: unknown, displayVersion?: unknown): string {
     );
     const resolved = optionalText(displayVersion);
     if (resolved) return `${provider}@${resolved}`;
-    const at = value.lastIndexOf("@");
-    if (at < 0) return provider;
-    const hash = value.indexOf("#", at);
-    const version = text(value.slice(at + 1, hash < 0 ? undefined : hash));
-    return `${provider}@${version}`;
+    return provider;
 }
 
 function boundedLines(
@@ -697,7 +692,7 @@ function renderBackup(
     const item = record(result);
     if (command === "backup plan") return renderBackupPlan(result);
     if (command === "backup setup")
-        return `${dryRun ? "Would register" : "Registered"} backup repository "${text(item?.alias)}" at ${text(item?.path)}.`;
+        return `${dryRun ? "Would configure" : "Configured"} backup repository "${text(item?.alias)}" at ${text(item?.path)}.`;
     if (command === "backup list") {
         const snapshots = list(result)
             .map(record)
@@ -882,12 +877,12 @@ function renderRecovery(result: unknown, dryRun: boolean): string {
     const failures = rows.filter((row) => row?.ok === false).length;
     const lines = [
         dryRun
-            ? `Recovery preview produced ${rows.length} ${plural(rows.length, "result")}; ${changed} would require work${failures ? ` and ${failures} failed inspection` : ""}.`
+            ? `Recovery preview produced ${rows.length} project/group ${plural(rows.length, "report")}; ${changed} would require work${failures ? ` and ${failures} failed inspection` : ""}.`
             : failures
-              ? `Recovery produced ${rows.length - failures} successful ${plural(rows.length - failures, "result")}; ${failures} failed.`
+              ? `Recovery produced ${rows.length - failures} successful project/group ${plural(rows.length - failures, "report")}; ${failures} failed.`
               : changed
-                ? `Recovered interrupted state in ${changed} of ${rows.length} ${plural(rows.length, "result")}.`
-                : `Checked ${rows.length} recovery ${plural(rows.length, "result")}; no recovery was needed.`,
+                ? `Recovered interrupted state in ${changed} of ${rows.length} project/group ${plural(rows.length, "report")}.`
+                : `Checked ${rows.length} project/group recovery ${plural(rows.length, "report")}; no recovery was needed.`,
     ];
     for (const row of rows) {
         if (row?.ok === false) {
@@ -918,10 +913,16 @@ function renderDeployApply(result: unknown, dryRun: boolean): string {
         return dryRun
             ? "No deployment application was selected; runtime files were not changed."
             : "No deployment application was selected.";
+    const failures = wrappers.filter((wrapper) => wrapper?.ok === false).length;
+    const successes = wrappers.length - failures;
     const lines = [
         dryRun
-            ? `Deployment application preview for ${wrappers.length} ${plural(wrappers.length, "recovery unit")}; runtime files were not changed.`
-            : `Deployment application completed for ${wrappers.length} ${plural(wrappers.length, "recovery unit")}. No server was started.`,
+            ? failures
+                ? `Deployment application preview: ${successes} ${plural(successes, "recovery unit")} could be applied; ${failures} failed. Runtime files were not changed.`
+                : `Deployment application preview for ${successes} ${plural(successes, "recovery unit")}; runtime files were not changed.`
+            : failures
+              ? `Deployment application completed for ${successes} ${plural(successes, "recovery unit")}; ${failures} failed. No server was started.`
+              : `Deployment application completed for ${successes} ${plural(successes, "recovery unit")}. No server was started.`,
     ];
     for (const wrapper of wrappers) {
         const label = text(wrapper?.project ?? wrapper?.group, "Recovery unit");
@@ -1033,14 +1034,14 @@ function renderSimple(
         const projects = list(result)
             .map(record)
             .filter((entry) => entry !== undefined);
-        if (!projects.length) return "No deployment plans were found.";
+        if (!projects.length) return "No deployment previews were found.";
         return [
-            `Deployment plan for ${projects.length} ${plural(projects.length, "project")}:`,
+            `Deployment preview for ${projects.length} ${plural(projects.length, "project")}:`,
             ...projects.flatMap((project) =>
                 renderDeploymentPlan(
                     project,
                     text(project.project, "Project"),
-                    false,
+                    true,
                 ),
             ),
         ].join("\n");

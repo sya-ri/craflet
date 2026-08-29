@@ -96,26 +96,23 @@ export function registerRuntimeCommands(
                         });
                     }
                 } catch (error) {
-                    if (
-                        context.abort.signal.aborted ||
-                        (error instanceof CrafletError &&
-                            error.code === "CANCELLED")
-                    )
+                    if (isCancellation(error, context.abort.signal))
                         throw error;
                     if (batches.length === 1) throw error;
                     process.exitCode = 4;
-                    results.push({
-                        group: batch.group ?? batch.projects[0]?.manifest.name,
-                        ok: false,
-                        code:
-                            error instanceof CrafletError
-                                ? error.code
-                                : "OPERATION_FAILED",
-                        message:
-                            error instanceof CrafletError
-                                ? error.message
-                                : "Operation failed; inspect this recovery unit's doctor and logs.",
-                    });
+                    results.push(
+                        partialFailure(
+                            error,
+                            batch.group
+                                ? { group: batch.group }
+                                : {
+                                      project:
+                                          batch.projects[0]?.manifest.name ??
+                                          "Selected project",
+                                  },
+                            "Operation failed; inspect this recovery unit's doctor and logs.",
+                        ),
+                    );
                 }
             }
             return results;

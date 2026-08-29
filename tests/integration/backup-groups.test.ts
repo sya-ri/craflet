@@ -882,7 +882,14 @@ describe("group lifecycle coordinates real backup and deployment state", () => {
         const fixture = await backupGroupFixture();
         const group = new NodeRecoveryGroup(fixture.batch, fixture.store);
         const controlled = controlledStatuses(group, ["running", "running"]);
-        expect(await group.operate("start")).toHaveLength(2);
+        expect(await group.operate("start")).toEqual(
+            fixture.projects.map((project) => ({
+                project: project.manifest.name,
+                status: expect.objectContaining({
+                    status: "running",
+                }),
+            })),
+        );
         expect(
             controlled.starts.every((start) => start.mock.calls.length === 0),
         ).toBe(true);

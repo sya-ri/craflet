@@ -609,12 +609,12 @@ describe("human CLI result presentation", () => {
             render("backup setup", {
                 alias: "main",
                 path: "/backup",
-                initialize: true,
+                id: "repository-id",
             }),
-        ).toContain('Registered backup repository "main" at /backup.');
+        ).toContain('Configured backup repository "main" at /backup.');
         expect(
             render("backup setup", { alias: "main", path: "/backup" }, true),
-        ).toContain("Would register");
+        ).toContain("Would configure");
         expect(render("backup list", [])).toContain("No snapshots were found");
         expect(
             render("backup list", [
@@ -631,7 +631,19 @@ describe("human CLI result presentation", () => {
             }),
         ).not.toContain("not-rendered");
         expect(render("backup diff", [])).toContain("no reported differences");
-        expect(render("backup diff", [{}])).toContain("1 backup difference");
+        expect(
+            render("backup diff", [{ message_type: "statistics" }]),
+        ).toContain("no reported differences");
+        expect(
+            render("backup diff", [
+                {
+                    message_type: "change",
+                    modifier: "M",
+                    path: "runtime/world/level.dat",
+                },
+                { message_type: "statistics" },
+            ]),
+        ).toContain("1 backup difference");
         expect(render("backup check", { checked: true })).toContain("passed");
         expect(
             render("backup restore", {
@@ -814,11 +826,29 @@ describe("human CLI result presentation", () => {
             pendingDiscarded: true,
             cleanupRequired: "/srv/network/.craflet/restore-staging",
         });
+        const groupPreview = render(
+            "backup apply",
+            {
+                group: "network",
+                databases: [],
+                changes: [
+                    {
+                        kind: "file",
+                        target: "proxy/runtime/config.toml",
+                        before: "old-hash",
+                        after: "new-hash",
+                    },
+                ],
+            },
+            true,
+        );
 
         expect(preview).toContain(
             "Restore application preview for alpha: 1 file, 1 database, 2 planned changes.",
         );
         expect(preview).toContain("file create: runtime/world/level.dat");
+        expect(groupPreview).toContain("group file changes are listed below");
+        expect(groupPreview).not.toContain("0 files");
         expect(preview).toContain("database replace: main");
         expect(preview).toContain(
             "Still checked during apply: Exact JAR cache availability is checked during apply.",
@@ -959,8 +989,8 @@ describe("human CLI result presentation", () => {
             },
         ]);
 
-        expect(planned).toContain("Deployment plan for 1 project:");
-        expect(planned).toContain("alpha: deployment state");
+        expect(planned).toContain("Deployment preview for 1 project:");
+        expect(planned).toContain("alpha: deployment preview");
         expect(planned).toContain("Runtime: stopped");
         expect(planned).toContain("Active installation: active-1");
         expect(planned).toContain("Pending installation: pending-2");
@@ -1004,13 +1034,14 @@ describe("human CLI result presentation", () => {
         );
 
         expect(output).toContain(
-            "Recovery preview produced 3 results; 2 would require work.",
+            "Recovery preview produced 3 project/group reports; 2 would require work.",
         );
         expect(output).toContain(
             "alpha: would recover declarations, deployment.",
         );
         expect(output).toContain("network: would recover restore.");
         expect(output).toContain("beta: no recovery needed.");
+        expect(output).not.toContain("recovery unit");
         expect(output).not.toContain("Recovered interrupted state");
         expect(render("recover", [])).toBe(
             "No interrupted operation required recovery.",
@@ -1018,7 +1049,7 @@ describe("human CLI result presentation", () => {
     });
 
     it("keeps successful batch results visible beside later failures", () => {
-        const deploy = render("deploy apply", [
+        const deployResults = [
             { project: "alpha", result: deploymentPlan() },
             {
                 project: "beta",
@@ -1026,8 +1057,17 @@ describe("human CLI result presentation", () => {
                 code: "DEPLOY_FAILED",
                 message: "Apply failed safely.",
             },
-        ]);
+        ];
+        const deploy = render("deploy apply", deployResults);
+        const deployPreview = render("deploy apply", deployResults, true);
         expect(deploy).toContain("alpha: deployment state");
+        expect(deploy).toContain(
+            "Deployment application completed for 1 recovery unit; 1 failed. No server was started.",
+        );
+        expect(deployPreview).toContain(
+            "Deployment application preview: 1 recovery unit could be applied; 1 failed. Runtime files were not changed.",
+        );
+        expect(deployPreview).toContain("alpha: deployment preview");
         expect(deploy).toContain(
             "beta: failed [DEPLOY_FAILED]. Apply failed safely.",
         );
@@ -1053,7 +1093,9 @@ describe("human CLI result presentation", () => {
                 message: "Inspect the journal.",
             },
         ]);
-        expect(recovered).toContain("Recovery produced 1 successful result");
+        expect(recovered).toContain(
+            "Recovery produced 1 successful project/group report",
+        );
         expect(recovered).toContain("network: failed [RECOVERY_FAILED]");
 
         const backup = render("backup create", [
