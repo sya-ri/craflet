@@ -12,3 +12,4 @@ artifacts/
 .env.*
 !.env.example
 work/
+packages/cli/docs/

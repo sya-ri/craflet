@@ -2,6 +2,8 @@ import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import type { ServerStatus } from "@craflet/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createOwnedEulaOperationJournal } from "../../packages/adapters/src/filesystem/eula.js";
+import { ensureUserEulaConsent } from "../../packages/adapters/src/filesystem/eula-consent.js";
 import {
     collectGroupBackupMetadata,
     createGroupBackupService,
@@ -20,6 +22,7 @@ import {
     readState,
     saveState,
 } from "../../packages/adapters/src/filesystem/state.js";
+import * as java from "../../packages/adapters/src/runtime/java.js";
 import {
     cleanupBackupTestDirectories,
     writeBackupTestFile,
@@ -41,10 +44,20 @@ function controlledStatuses(
     const current = [...initial];
     const stops = group.managers.map((manager, index) => {
         vi.spyOn(manager.controller, "status").mockImplementation(
-            async (): Promise<ServerStatus> => ({
-                status: current[index] ?? "stopped",
-                clean: true,
-            }),
+            async (): Promise<ServerStatus> => {
+                const status = current[index] ?? "stopped";
+                return {
+                    status,
+                    ...(status === "running"
+                        ? {
+                              activeId: required(
+                                  (await readState(manager.context.dir)).active,
+                              ).id,
+                          }
+                        : {}),
+                    clean: true,
+                };
+            },
         );
         return vi
             .spyOn(manager.controller, "stop")
@@ -386,6 +399,11 @@ describe("group lifecycle coordinates real backup and deployment state", () => {
     it("resumes only previously running members with their fixed active version and preserves pending", async () => {
         const fixture = await backupGroupFixture();
         await fixture.stageNext();
+        await writeBackupTestFile(
+            fixture.projects[0].dir,
+            "runtime/eula.txt",
+            "eula=true\n",
+        );
         const states = await Promise.all(
             fixture.projects.map((project) => readState(project.dir)),
         );
@@ -408,6 +426,54 @@ describe("group lifecycle coordinates real backup and deployment state", () => {
         ).toEqual(states);
         expect(fixture.engine.snapshots.size).toBe(1);
     });
+
+    it.each(["missing", "changed"] as const)(
+        "materializes a %s Paper EULA from saved user consent before resuming a group member",
+        async (kind) => {
+            const fixture = await backupGroupFixture();
+            await ensureUserEulaConsent(fixture.home, async () => undefined);
+            const eulaFile = path.join(
+                fixture.projects[0].dir,
+                "runtime/eula.txt",
+            );
+            if (kind === "missing") await rm(eulaFile, { force: true });
+            else
+                await writeBackupTestFile(
+                    fixture.projects[0].dir,
+                    "runtime/eula.txt",
+                    "# changed by the server\neula=false\n",
+                );
+            const request = vi.fn(async () => {
+                throw new Error("Saved consent must not prompt again");
+            });
+            const group = new NodeRecoveryGroup(
+                fixture.batch,
+                fixture.store,
+                undefined,
+                { requestEulaConsent: request },
+            );
+            const controlled = controlledStatuses(group, [
+                "running",
+                "stopped",
+            ]);
+            const activeId = required(
+                (await readState(fixture.projects[0].dir)).active,
+            ).id;
+            const spawn = vi.spyOn(required(group.managers[0]), "spawnActive");
+
+            await expect(group.createBackup()).resolves.toMatchObject({
+                resumed: [fixture.projects[0].lockKey],
+            });
+
+            expect(request).not.toHaveBeenCalled();
+            expect(spawn).toHaveBeenCalledWith(activeId);
+            expect(controlled.starts[0]).toHaveBeenCalledWith(activeId);
+            const materialized = await readFile(eulaFile, "utf8");
+            expect(materialized).toContain("eula=true");
+            if (kind === "changed")
+                expect(materialized).toContain("# changed by the server");
+        },
+    );
 
     it("keeps the entire group stopped when snapshot creation fails and never applies pending", async () => {
         const fixture = await backupGroupFixture();
@@ -611,6 +677,207 @@ describe("group lifecycle coordinates real backup and deployment state", () => {
         await rm(file);
     });
 
+    it("records shared consent before a group restart and materializes each Paper EULA only before spawn", async () => {
+        const fixture = await backupGroupFixture();
+        vi.spyOn(java, "inspectJava").mockResolvedValue({
+            executable: "fixture-java",
+            major: 25,
+            diagnostics: [],
+        });
+        const request = vi.fn(async () => {
+            for (const project of fixture.projects)
+                expect(
+                    await exists(path.join(project.dir, "runtime/eula.txt")),
+                ).toBe(false);
+        });
+        const group = new NodeRecoveryGroup(
+            fixture.batch,
+            fixture.store,
+            undefined,
+            { requestEulaConsent: request },
+        );
+        const controlled = controlledStatuses(group, ["running", "running"]);
+        await group.operate("restart", true);
+        expect(request).toHaveBeenCalledOnce();
+        expect(
+            controlled.stops.every((stop) => stop.mock.calls.length === 1),
+        ).toBe(true);
+        expect(
+            controlled.starts.every((start) => start.mock.calls.length === 1),
+        ).toBe(true);
+        for (const project of fixture.projects)
+            expect(
+                await readFile(
+                    path.join(project.dir, "runtime/eula.txt"),
+                    "utf8",
+                ),
+            ).toBe("eula=true\n");
+        expect(await exists(path.join(fixture.home, "eula.json"))).toBe(true);
+    });
+
+    it.each([
+        { action: "start" as const, initial: ["stopped", "stopped"] as const },
+        {
+            action: "restart" as const,
+            initial: ["running", "running"] as const,
+        },
+    ])(
+        "applies pending Paper installations and starts the group during $action",
+        async ({ action, initial }) => {
+            const fixture = await backupGroupFixture();
+            await fixture.stageNext();
+            await ensureUserEulaConsent(fixture.home, async () => undefined);
+            vi.spyOn(java, "inspectJava").mockResolvedValue({
+                executable: "fixture-java",
+                major: 25,
+                diagnostics: [],
+            });
+            const request = vi.fn(async () => {
+                throw new Error("Saved consent must not prompt again");
+            });
+            const group = new NodeRecoveryGroup(
+                fixture.batch,
+                fixture.store,
+                undefined,
+                { requestEulaConsent: request },
+            );
+            const controlled = controlledStatuses(group, [...initial]);
+            const pendingIds = await Promise.all(
+                fixture.projects.map(
+                    async (project) =>
+                        required((await readState(project.dir)).pending).id,
+                ),
+            );
+
+            await expect(group.operate(action)).resolves.toHaveLength(2);
+
+            expect(request).not.toHaveBeenCalled();
+            expect(controlled.current).toEqual(["running", "running"]);
+            expect(
+                controlled.starts.every(
+                    (start, index) =>
+                        start.mock.calls[0]?.[0] === pendingIds[index],
+                ),
+            ).toBe(true);
+            for (const project of fixture.projects) {
+                expect(
+                    await readFile(
+                        path.join(project.dir, "runtime/eula.txt"),
+                        "utf8",
+                    ),
+                ).toBe("eula=true\n");
+                expect((await readState(project.dir)).pending).toBeUndefined();
+            }
+            expect(
+                await exists(
+                    path.join(
+                        fixture.workspace,
+                        ".craflet/group-operation.json",
+                    ),
+                ),
+            ).toBe(false);
+        },
+    );
+
+    it("verifies an owned group journal larger than the EULA file limit by exact digest", async () => {
+        const fixture = await backupGroupFixture();
+        await ensureUserEulaConsent(fixture.home, async () => undefined);
+        const group = new NodeRecoveryGroup(fixture.batch, fixture.store);
+        const controlled = controlledStatuses(group, ["stopped", "stopped"]);
+        const manager = required(group.managers[0]);
+        const activeId = required(
+            (await readState(fixture.projects[0].dir)).active,
+        ).id;
+        const content = `${JSON.stringify(
+            {
+                schemaVersion: 1,
+                group: "network",
+                phase: "spawned",
+                members: Array.from({ length: 700 }, (_, index) => ({
+                    key: `servers/member-${index}`,
+                    activeId: "a".repeat(64),
+                    nextId: "b".repeat(64),
+                })),
+            },
+            null,
+            4,
+        )}\n`;
+        expect(Buffer.byteLength(content)).toBeGreaterThan(64 * 1024);
+        const journalFile = path.join(
+            fixture.workspace,
+            ".craflet/group-operation.json",
+        );
+        const owned = createOwnedEulaOperationJournal(journalFile, content);
+        const tampered = content.replace(
+            '"phase": "spawned"',
+            '"phase": "stopped"',
+        );
+        expect(tampered).not.toBe(content);
+        expect(Buffer.byteLength(tampered)).toBe(Buffer.byteLength(content));
+        await writeBackupTestFile(
+            fixture.workspace,
+            ".craflet/group-operation.json",
+            tampered,
+        );
+
+        await expect(
+            manager.spawnActive(activeId, owned),
+        ).rejects.toMatchObject({ code: "RECOVERY_REQUIRED" });
+        expect(controlled.starts[0]).not.toHaveBeenCalled();
+
+        await writeBackupTestFile(
+            fixture.workspace,
+            ".craflet/group-operation.json",
+            content,
+        );
+        await expect(
+            manager.spawnActive(activeId, owned),
+        ).resolves.toMatchObject({ status: "running", activeId });
+        expect(controlled.starts[0]).toHaveBeenCalledWith(activeId);
+        expect(
+            await readFile(
+                path.join(fixture.projects[0].dir, "runtime/eula.txt"),
+                "utf8",
+            ),
+        ).toBe("eula=true\n");
+    });
+
+    it("starts stopped Paper members without rewriting a running member's EULA", async () => {
+        const fixture = await backupGroupFixture();
+        await ensureUserEulaConsent(fixture.home, async () => undefined);
+        vi.spyOn(java, "inspectJava").mockResolvedValue({
+            executable: "fixture-java",
+            major: 25,
+            diagnostics: [],
+        });
+        const request = vi.fn(async () => {
+            throw new Error("Saved consent must not prompt again");
+        });
+        const group = new NodeRecoveryGroup(
+            fixture.batch,
+            fixture.store,
+            undefined,
+            { requestEulaConsent: request },
+        );
+        const controlled = controlledStatuses(group, ["running", "stopped"]);
+
+        await expect(group.operate("start")).resolves.toHaveLength(2);
+
+        expect(request).not.toHaveBeenCalled();
+        expect(controlled.current).toEqual(["running", "running"]);
+        expect(
+            await exists(
+                path.join(fixture.projects[0].dir, "runtime/eula.txt"),
+            ),
+        ).toBe(false);
+        expect(
+            await readFile(
+                path.join(fixture.projects[1].dir, "runtime/eula.txt"),
+                "utf8",
+            ),
+        ).toBe("eula=true\n");
+    });
+
     it("starts existing active installations without applying pending and requires restart for mixed running state", async () => {
         const fixture = await backupGroupFixture();
         const group = new NodeRecoveryGroup(fixture.batch, fixture.store);
@@ -626,6 +893,12 @@ describe("group lifecycle coordinates real backup and deployment state", () => {
         });
         for (const manager of group.managers)
             vi.spyOn(manager, "preflight").mockResolvedValue(undefined);
+        for (const project of fixture.projects)
+            await writeBackupTestFile(
+                project.dir,
+                "runtime/eula.txt",
+                "eula=true\n",
+            );
         await group.operate("restart", true);
         expect(fixture.engine.snapshots.size).toBe(0);
         expect(controlled.current).toEqual(["running", "running"]);

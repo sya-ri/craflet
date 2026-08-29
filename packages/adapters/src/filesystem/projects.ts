@@ -17,6 +17,11 @@ import {
 import { type } from "arktype";
 import picomatch from "picomatch";
 import { Document, parseDocument } from "yaml";
+import {
+    ensureUserEulaConsent,
+    type RequestEulaConsent,
+} from "./eula-consent.js";
+import { proposedEulaDocument } from "./eula-file.js";
 import { assertNoSymlinks, atomicWrite, exists } from "./io.js";
 
 export interface ProjectContext {
@@ -274,15 +279,33 @@ export async function initProject(
         build?: string;
         source?: SourceInput;
         dryRun?: boolean;
+        eula?: {
+            home: string;
+            requestConsent: RequestEulaConsent;
+            signal?: AbortSignal;
+        };
     },
 ): Promise<ProjectManifest> {
     const file = path.join(dir, "craflet.yaml");
-    if (await exists(file))
-        throw new CrafletError(
-            "PROJECT_EXISTS",
-            "craflet.yaml already exists; it will not be overwritten.",
-            3,
-        );
+    const assertAvailable = async () => {
+        if (await exists(file))
+            throw new CrafletError(
+                "PROJECT_EXISTS",
+                "craflet.yaml already exists; it will not be overwritten.",
+                3,
+            );
+        await assertNoSymlinks(dir);
+        for (const child of ["config", "runtime", "shared-data", ".gitignore"])
+            await assertNoSymlinks(dir, child);
+    };
+    if (options.dryRun) {
+        if (await exists(file))
+            throw new CrafletError(
+                "PROJECT_EXISTS",
+                "craflet.yaml already exists; it will not be overwritten.",
+                3,
+            );
+    } else await assertAvailable();
     const defaults = newProject(options.name, options.kind, options.version);
     if (options.source !== undefined) parseSource(options.source);
     const manifest = validateProject({
@@ -294,10 +317,23 @@ export async function initProject(
             ...(options.source !== undefined ? { source: options.source } : {}),
         },
     });
+    if (options.kind === "paper" && options.eula)
+        await ensureUserEulaConsent(
+            options.eula.home,
+            options.eula.requestConsent,
+            {
+                ...(options.dryRun !== undefined
+                    ? { dryRun: options.dryRun }
+                    : {}),
+                ...(options.eula.signal ? { signal: options.eula.signal } : {}),
+                document: proposedEulaDocument(
+                    path.join(dir, "runtime/eula.txt"),
+                ),
+            },
+        );
     if (!options.dryRun) {
-        await assertNoSymlinks(dir);
-        for (const child of ["config", "runtime", "shared-data", ".gitignore"])
-            await assertNoSymlinks(dir, child);
+        // Consent can remain open indefinitely, so revalidate before any project write.
+        await assertAvailable();
         for (const child of ["config", "runtime", "shared-data"])
             await mkdir(path.join(dir, child), { recursive: true });
         await writeYaml(file, manifest);

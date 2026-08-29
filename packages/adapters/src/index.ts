@@ -4,6 +4,18 @@ export * from "./filesystem/cache.js";
 export * from "./filesystem/config.js";
 export * from "./filesystem/deployment.js";
 export * from "./filesystem/doctor.js";
+export {
+    type EulaDocument,
+    ensureRuntimeEulaConsent,
+    hasAcceptedEula,
+    readEulaDocument,
+    readEulaText,
+} from "./filesystem/eula.js";
+export {
+    ensureUserEulaConsent,
+    type RequestEulaConsent,
+    type UserEulaConsentOptions,
+} from "./filesystem/eula-consent.js";
 export * from "./filesystem/group-restore.js";
 export * from "./filesystem/groups.js";
 export * from "./filesystem/host.js";

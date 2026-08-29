@@ -93,12 +93,48 @@ describe("real servers through the packaged CLI", () => {
         it(`${label} stages upgrades, backs up active bytes, and applies restored data with the original plugin`, async () => {
             if (kind === "paper") requirePaperEula();
             const directory = path.join(suite.root, `single-${kind}`);
+            const homeEulaFile = path.join(suite.home, "eula.json");
+            if (kind === "paper") {
+                await expect(stat(homeEulaFile)).rejects.toMatchObject({
+                    code: "ENOENT",
+                });
+                await cliError(
+                    suite,
+                    suite.root,
+                    [
+                        "init",
+                        directory,
+                        "--name",
+                        `single-${kind}`,
+                        "--type",
+                        kind,
+                        "--version",
+                        suite.fixtures.servers.paper.version,
+                    ],
+                    "CONFIRMATION_REQUIRED",
+                );
+                await expect(
+                    stat(path.join(directory, "craflet.yaml")),
+                ).rejects.toMatchObject({ code: "ENOENT" });
+                await expect(stat(homeEulaFile)).rejects.toMatchObject({
+                    code: "ENOENT",
+                });
+            }
             const project = await initRealProject(
                 suite,
                 directory,
                 kind,
                 `single-${kind}`,
             );
+            const eulaFile = path.join(directory, "runtime", "eula.txt");
+            if (kind === "paper") {
+                expect(
+                    JSON.parse(await readFile(homeEulaFile, "utf8")),
+                ).toMatchObject({ accepted: true });
+                await expect(stat(eulaFile)).rejects.toMatchObject({
+                    code: "ENOENT",
+                });
+            }
             await setupRealBackup(
                 suite,
                 directory,
@@ -135,24 +171,24 @@ describe("real servers through the packaged CLI", () => {
             ]);
 
             if (kind === "paper") {
-                await cliError(
-                    suite,
-                    directory,
-                    ["--yes", "start"],
-                    "EULA_REQUIRED",
-                );
+                await expect(stat(eulaFile)).rejects.toMatchObject({
+                    code: "ENOENT",
+                });
+                await cli(suite, directory, ["--dry-run", "start"]);
+                await expect(stat(eulaFile)).rejects.toMatchObject({
+                    code: "ENOENT",
+                });
                 expect(
                     (await cli<ServerStatus>(suite, directory, ["status"]))
                         .status,
                 ).toBe("stopped");
-                // This is guarded by explicit test-user acceptance, not --yes.
-                await writeFile(
-                    path.join(directory, "runtime", "eula.txt"),
-                    "eula=true\n",
-                    "utf8",
-                );
             }
+            // Paper reuses the test user's saved consent without another prompt.
             await cli(suite, directory, ["start"]);
+            if (kind === "paper")
+                expect(await readFile(eulaFile, "utf8")).toMatch(
+                    /^\s*eula\s*=\s*true\s*$/m,
+                );
             const firstStatus = await cli<ServerStatus>(suite, directory, [
                 "status",
             ]);
@@ -627,7 +663,20 @@ describe("real servers through the packaged CLI", () => {
                     ),
                 ).toBe(originalPlayerState);
             }
+            const restoredEula =
+                kind === "paper"
+                    ? {
+                          bytes: await readFile(eulaFile),
+                          mtimeMs: (await stat(eulaFile)).mtimeMs,
+                      }
+                    : undefined;
             await cli(suite, directory, ["start", "--active"]);
+            if (restoredEula) {
+                expect(await readFile(eulaFile)).toEqual(restoredEula.bytes);
+                expect((await stat(eulaFile)).mtimeMs).toBe(
+                    restoredEula.mtimeMs,
+                );
+            }
             expect(
                 (await cli<ServerStatus>(suite, directory, ["status"])).status,
             ).toBe("running");

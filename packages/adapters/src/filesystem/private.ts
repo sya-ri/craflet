@@ -1,9 +1,11 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir } from "node:fs/promises";
+import { chmod, lstat, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { CrafletError } from "@craflet/core";
 import { assertNoSymlinks } from "./io.js";
+
+const execFileAsync = promisify(execFile);
 
 const privateDirectoryScript = `
 $ErrorActionPreference = 'Stop'
@@ -19,24 +21,58 @@ $acl.AddAccessRule($rule)
 [System.IO.Directory]::SetAccessControl($env:CRAFLET_PRIVATE_DIRECTORY, $acl)
 `;
 
+const privateFileScript = `
+$ErrorActionPreference = 'Stop'
+$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$acl = [System.IO.File]::GetAccessControl($env:CRAFLET_PRIVATE_FILE, [System.Security.AccessControl.AccessControlSections]::Access -bor [System.Security.AccessControl.AccessControlSections]::Owner)
+$owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier])
+if ($owner.Value -ne $sid.Value) { exit 7 }
+$rules = $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
+$allowed = $false
+foreach ($rule in $rules) {
+    if ($rule.IdentityReference.Value -ne $sid.Value) { exit 8 }
+    if ($rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) { exit 9 }
+    if (($rule.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::Read) -ne 0) { $allowed = $true }
+}
+if (-not $allowed) { exit 10 }
+`;
+
+function windowsPowerShell(): string {
+    return path.join(
+        process.env.SystemRoot ?? "C:\\Windows",
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+    );
+}
+
 export async function ensurePrivateDirectory(directory: string): Promise<void> {
     const absolute = path.resolve(directory);
     await assertNoSymlinks(absolute);
     await mkdir(absolute, { recursive: true, mode: 0o700 });
     if (process.platform !== "win32") {
+        if (process.platform === "darwin") {
+            try {
+                await execFileAsync("/bin/chmod", ["-N", absolute], {
+                    timeout: 15000,
+                    maxBuffer: 4096,
+                    env: { ...process.env, LC_ALL: "C" },
+                });
+            } catch {
+                throw new CrafletError(
+                    "PRIVATE_DIRECTORY",
+                    "Could not remove extended access rules from the managed directory.",
+                    3,
+                );
+            }
+        }
         await chmod(absolute, 0o700);
         return;
     }
     try {
-        const powershell = path.join(
-            process.env.SystemRoot ?? "C:\\Windows",
-            "System32",
-            "WindowsPowerShell",
-            "v1.0",
-            "powershell.exe",
-        );
-        await promisify(execFile)(
-            powershell,
+        await execFileAsync(
+            windowsPowerShell(),
             [
                 "-NoLogo",
                 "-NoProfile",
@@ -57,6 +93,76 @@ export async function ensurePrivateDirectory(directory: string): Promise<void> {
         throw new CrafletError(
             "PRIVATE_DIRECTORY",
             "Could not restrict the managed directory to the current user.",
+            3,
+        );
+    }
+}
+
+export async function assertPrivateFile(file: string): Promise<void> {
+    const absolute = path.resolve(file);
+    await assertNoSymlinks(absolute);
+    const info = await lstat(absolute);
+    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1)
+        throw new CrafletError(
+            "PRIVATE_FILE",
+            "The managed private file is not a singly linked regular file.",
+            3,
+        );
+    if (process.platform !== "win32") {
+        const currentUser = process.getuid?.();
+        if (
+            (currentUser !== undefined && info.uid !== currentUser) ||
+            (info.mode & 0o077) !== 0
+        )
+            throw new CrafletError(
+                "PRIVATE_FILE",
+                "The managed private file is not owned exclusively by the current user.",
+                3,
+            );
+        if (process.platform === "darwin") {
+            try {
+                const { stdout } = await execFileAsync(
+                    "/bin/ls",
+                    ["-lde", absolute],
+                    {
+                        timeout: 15000,
+                        maxBuffer: 64 * 1024,
+                        env: { ...process.env, LC_ALL: "C" },
+                    },
+                );
+                if (/^\s*\d+:/m.test(String(stdout)))
+                    throw new Error("Extended ACL present");
+            } catch {
+                throw new CrafletError(
+                    "PRIVATE_FILE",
+                    "The managed private file has extended access rules or cannot be inspected safely.",
+                    3,
+                );
+            }
+        }
+        return;
+    }
+    try {
+        await execFileAsync(
+            windowsPowerShell(),
+            [
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-EncodedCommand",
+                Buffer.from(privateFileScript, "utf16le").toString("base64"),
+            ],
+            {
+                windowsHide: true,
+                timeout: 15000,
+                maxBuffer: 4096,
+                env: { ...process.env, CRAFLET_PRIVATE_FILE: absolute },
+            },
+        );
+    } catch {
+        throw new CrafletError(
+            "PRIVATE_FILE",
+            "The managed private file is not owned exclusively by the current user.",
             3,
         );
     }

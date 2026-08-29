@@ -632,6 +632,7 @@ export async function initRealProject(
     await cli(suite, suite.root, [
         "init",
         directory,
+        ...(kind === "paper" ? ["--yes"] : []),
         "--name",
         name,
         "--type",

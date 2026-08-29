@@ -88,7 +88,17 @@ the intended filesystem failure.
 Create projects, worlds, homes, database files, and backup repositories only in an
 isolated test temporary directory. Paper may require additional network access
 on its first launch; these plugin fixtures do not imply a fully offline server
-bootstrap. Explicit user acceptance is required before any test sets `eula=true`.
+bootstrap. Paper initialization asks for EULA acceptance when needed and records
+consent for the current OS user in `CRAFLET_HOME/eula.json`; startup reuses a valid
+record. The Paper scenario checks the mandatory `CRAFLET_E2E_EULA=true` test-user
+consent guard before any accepting command. On its fresh test home, plain JSON
+`init` must fail with `CONFIRMATION_REQUIRED` without creating a manifest or
+consent record. The explicitly authorized `init --yes` records acceptance in the
+home only. Initialization, installation, and `start --dry-run` must leave runtime
+`eula.txt` absent; plain `start` then uses the remembered consent to write
+`eula=true` and launch Paper through the actual CLI. The existing later
+`start --active` must run without renewed consent and preserve the accepted
+runtime file's bytes and modification time.
 
 Recent Paper versions generate `management-server-secret` in `server.properties`.
 Use `${secret:TEST_MANAGEMENT_SECRET}` in the test's base config, map it to the

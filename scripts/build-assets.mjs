@@ -20,6 +20,11 @@ execFileSync(
 );
 await copyFile(path.join(root, "LICENSE"), path.join(cli, "LICENSE"));
 await copyFile(path.join(root, "README.md"), path.join(cli, "README.md"));
+await mkdir(path.join(cli, "docs/assets"), { recursive: true });
+await copyFile(
+    path.join(root, "docs/assets/craflet-demo.gif"),
+    path.join(cli, "docs/assets/craflet-demo.gif"),
+);
 
 const visited = new Set();
 const licenses = [];

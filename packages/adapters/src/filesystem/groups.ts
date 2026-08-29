@@ -22,6 +22,11 @@ import {
 } from "../restic/backup-service.js";
 import { pathsOverlap } from "./backup-files.js";
 import { NodeDeploymentManager } from "./deployment.js";
+import {
+    createOwnedEulaOperationJournal,
+    type OwnedEulaOperationJournal,
+} from "./eula.js";
+import type { RequestEulaConsent } from "./eula-consent.js";
 import { backupService, readRepositories } from "./host.js";
 import {
     assertNoSymlinks,
@@ -535,7 +540,11 @@ export class NodeRecoveryGroup {
         readonly batch: BackupBatch,
         readonly store: ArtifactStore,
         readonly runnerEntry?: string,
-        readonly options: { offline?: boolean; signal?: AbortSignal } = {},
+        readonly options: {
+            offline?: boolean;
+            signal?: AbortSignal;
+            requestEulaConsent?: RequestEulaConsent;
+        } = {},
     ) {
         if (!batch.group || !batch.projects[0])
             throw new CrafletError(
@@ -603,7 +612,7 @@ export class NodeRecoveryGroup {
                                     "The group member has no active installation.",
                                     3,
                                 );
-                            return manager.controller.start(activeId);
+                            return manager.spawnActive(activeId);
                         },
                     }),
                 );
@@ -663,6 +672,7 @@ export class NodeRecoveryGroup {
                 for (const [index, manager] of this.managers.entries())
                     await manager.preflight(
                         Boolean(!activeOnly && states[index]?.pending),
+                        action !== "apply",
                     );
                 const backup = pending ? this.backup() : undefined;
                 if (backup) {
@@ -673,6 +683,7 @@ export class NodeRecoveryGroup {
                     for (const [index, manager] of this.managers.entries())
                         if (statuses[index]?.status === "running")
                             await manager.controller.stop();
+                let ownedJournal: OwnedEulaOperationJournal | undefined;
                 if (pending) {
                     for (const manager of this.managers)
                         assertStopped(
@@ -702,10 +713,18 @@ export class NodeRecoveryGroup {
                     );
                     for (const manager of this.managers)
                         await manager.applyPrepared();
-                    await writeJson(this.journalFile, {
+                    const ready = {
                         ...journal,
                         phase: action === "apply" ? "applied" : "spawned",
-                    });
+                    } as const;
+                    await writeJson(this.journalFile, ready);
+                    if (action !== "apply") {
+                        const content = `${JSON.stringify(ready, null, 4)}\n`;
+                        ownedJournal = createOwnedEulaOperationJournal(
+                            this.journalFile,
+                            content,
+                        );
+                    }
                 }
                 const result = [];
                 if (action !== "apply")
@@ -720,7 +739,10 @@ export class NodeRecoveryGroup {
                             );
                         result.push({
                             project: manager.context.manifest.name,
-                            status: await manager.controller.start(active.id),
+                            status: await manager.spawnActive(
+                                active.id,
+                                ownedJournal,
+                            ),
                         });
                     }
                 if (pending) await rm(this.journalFile);

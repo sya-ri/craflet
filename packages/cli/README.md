@@ -1,66 +1,81 @@
 # Craflet
 
-Minecraft サーバーの JAR、設定、運転、バックアップを管理する CLI です。サーバーを動かすホストで実行し、リモート操作には通常の SSH を利用します。Linux / Windows / macOS、Paper / Velocity が対象です。
+Manage Paper and Velocity server JARs, plugins, configuration, and backups. Keep your intended setup in Git, capture changes made by the server, and apply updates during a managed start or restart.
 
-## 導入
+Craflet runs on the server host and targets Linux, Windows, and macOS. For remote servers, install it on that host and connect with your usual SSH client.
 
-Node.js 24.20.0 以降と、対象サーバーが必要とする Java を用意してください。Java の自動導入、SSH 接続、OS サービスの登録は行いません。npm パッケージはまだ公開していません。リポジトリからビルドした tarball で導入できます。
+## See Craflet in action
+
+![Craflet terminal demo showing Paper setup, EULA review, installation, startup, status, and graceful shutdown](docs/assets/craflet-demo.gif)
+
+## Installation
+
+You need **Node.js 24.20.0 or later** and the Java version required by your server. Make Java available on `PATH`, or set an absolute `java.command` in `craflet.yaml`. Craflet does not install Java, establish SSH connections, or register OS services.
+
+> The first npm release is pending; the npm/npx commands below will be available after publication.
+
+Install the CLI globally:
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm build
-pnpm --dir packages/cli pack --pack-destination ../../artifacts
-npm install --global ./artifacts/craflet-0.1.0.tgz
+npm install --global craflet
 craflet --help
 ```
 
-利用者に pnpm や TypeScript は不要です。公開時は `npx craflet` にも対応する自己完結した配布物になります。CLI と runner は独立した ESM bundle です。runner は Craflet の管理領域へハッシュ付きで保存してから起動します。
+Or use `npx craflet --help` without a global installation. The examples below use `craflet`; you can use `npx craflet` instead.
 
-## 最初のプロジェクト
+## Start your first server
+
+For Paper, first read the [Minecraft EULA](https://www.minecraft.net/eula). **Only if you accept it**, create the project and explicitly record consent:
 
 ```sh
-craflet init my-server --name survival --type paper --version 26.2
+craflet init my-server --name survival --type paper --version 26.2 --yes
 cd my-server
 craflet install
 craflet doctor
-```
-
-Paper を起動する前に [Minecraft EULA](https://www.minecraft.net/eula) を読み、同意する場合だけ自分で `runtime/eula.txt` に `eula=true` を記載してください。`--yes` で EULA に同意したことにはなりません。
-
-```sh
 craflet start
 craflet status
-craflet logs --follow
-craflet stop
 ```
 
-`run` はログを表示しながら待機し、Ctrl-C で正常停止を要求します。`console` の切断、`logs --follow` の Ctrl-C ではサーバーを停止しません。停止タイムアウトや起動確認の失敗では自動で強制終了しません。プロセスを識別できない場合は `unknown` になります。
+Omit `--yes` from `init` to review the EULA preview in an interactive terminal pager, then choose Agree or Decline. Decline is the default. If an unaccepted Paper project already exists, launching it with `start`, `run`, or `restart` presents the same pager; pass `--yes` to that launch command to accept explicitly without the UI.
 
-## 宣言と JAR
+Consent is saved for the current OS user and host in `CRAFLET_HOME/eula.json`, under `~/.craflet` by default. A valid saved record avoids prompts for future Paper projects and starts that use the same Craflet home. At start, Craflet materializes `runtime/eula.txt`; a project where that file already records acceptance also bypasses the prompt. Changing `CRAFLET_HOME` creates a separate consent scope.
 
-```yaml
-schemaVersion: 1
-name: survival
-server:
-    type: paper
-    version: "26.2"
-    build: latest
-plugins:
-    MyPlugin: file:../build/MyPlugin.jar
-backup:
-    repository: main
-    files:
-        - runtime/**
-        - shared-data/**
-        - "!**/*.[jJ][aA][rR]"
-        - "!runtime/logs/**"
-        - "!runtime/crash-reports/**"
-        - "!runtime/libraries/**"
-        - "!runtime/cache/**"
-        - "!runtime/versions/**"
-```
+In CI, JSON output, or another non-interactive environment, fresh Paper consent requires `--yes` on `init` or on the `start`, `run`, or `restart` command that launches it; otherwise the command fails without opening the UI. `--dry-run` never records consent. `install` does not accept the EULA. Velocity does not use this flow; create a proxy with `--type velocity` and its proxy version in `--version`.
 
-`init` は安定したプロジェクト UUID も生成します。プラグインのキーは `add` が JAR の `plugin.yml` / `paper-plugin.yml` の名前、または `velocity-plugin.json` の ID から取得します。JAR を実行して識別することはありません。
+A pristine standalone server does not need a backup repository for its first start. Applying pending changes to an existing installation or runtime data requires a configured, usable [backup repository](#backups).
+
+Already have a server? Stop it first. `craflet import --help` explains how to copy it into a new project while leaving the original files unchanged.
+
+### Everyday commands
+
+| Command | Purpose |
+| --- | --- |
+| `craflet status` | Check the managed process. |
+| `craflet logs --follow` | Follow its logs. |
+| `craflet console` | Open an interactive console. |
+| `craflet stop` | Request shutdown and verify that Java exits. |
+| `craflet restart` | Restart, applying prepared changes when present. |
+| `craflet run` | Start and stay attached to the logs. |
+
+Ctrl-C in `run` requests a graceful shutdown. Disconnecting `console` or interrupting `logs --follow` does not stop the server. Timeouts do not automatically force termination; an unidentifiable process is reported as `unknown`.
+
+## Project files
+
+| Path | What it contains |
+| --- | --- |
+| `craflet.yaml` | Server, plugin, Java, secret-reference, and backup settings. |
+| `craflet-lock.yaml` | Resolved versions, sources, sizes, and SHA-256 hashes. |
+| `config/` | Base configuration to review and keep in Git. |
+| `runtime/` | Working server files, worlds, and plugin data. |
+| `.craflet/` | Local installation state, pending changes, and recovery journals. |
+
+Keep the declarations, lock, and reviewed base configuration in Git. Keep runtime data, local state, and actual secrets out of Git. Craflet does not automatically commit or push.
+
+## Plugins and updates
+
+`add` reads the plugin's name from `plugin.yml` or `paper-plugin.yml`, or its ID from `velocity-plugin.json`. It does not execute the JAR. Use `craflet inspect ../build/MyPlugin.jar` to inspect a local JAR first; `craflet list` shows the names to use in later commands.
+
+Supported source forms:
 
 ```text
 modrinth:<project>@<version>
@@ -71,31 +86,50 @@ file:../build/MyPlugin.jar
 file:../build/MyPlugin-*.jar
 ```
 
-ローカル glob は一致が一つの場合だけ使えます。相対パスは各 `craflet.yaml` 基準です。複雑な値は `{ provider: file, path: ../build/MyPlugin.jar }` のような構造化 YAML でも指定できます。取得元が認証、外部リンク、配布制限などで自動取得できない場合は、理由を表示して `file:` での導入を案内します。
+A local glob must match exactly one file. Relative paths are based on the directory containing `craflet.yaml`. Structured YAML such as `{ provider: file, path: ../build/MyPlugin.jar }` is also supported. If a provider requires unsupported authentication, an external download, or restricted distribution, Craflet explains the limitation and directs you to `file:`.
 
-`craflet-lock.yaml` は実際の版、取得元、サイズ、SHA-256 を固定します。`install` は既存 lock を再現し、`update` は明示的に新版を選びます。ローカル JAR の再取り込みにも `update` を使用します。一般の更新で Minecraft のバージョンは変えません。
-
-JAR はバックアップから復元せず、lock が指す同一ハッシュのキャッシュまたは取得元から復元します。自作 JAR の旧版も、再入手できる場所に保管してください。旧版のキャッシュを削除し、元の `file:` も新版で置き換えた場合、その旧版を含むバックアップの適用は停止前に拒否します。異なるバイト列を同じ版として代用しません。
+Once backups are configured, a typical update looks like this. Replace `MyPlugin` with the name reported by `list`:
 
 ```sh
 craflet add file:../build/MyPlugin.jar
+craflet list
 craflet outdated
 craflet update MyPlugin
 craflet deploy plan
 craflet restart
 ```
 
-`add` / `remove` / `install` / `update` は **pending の準備だけ**を行い、起動中の JAR は変更しません。次回の `start` / `run` / `restart` が停止確認、設定再確認、バックアップ後にコピーで適用します。`--active` は pending を適用しません。`deploy apply` は停止が必須で、適用後に起動しません。`remove` でプラグインの保存データは削除されません。
+`install` reproduces existing lock entries; `install --frozen-lockfile` refuses missing or outdated entries. `update` selects new versions and also imports changed local JARs. Use `update --server` for server builds or `update --all` for plugins and the server. Routine updates do not change the declared Minecraft version. A plugin identity change is rejected rather than silently renamed.
 
-## 設定と秘密情報
+### Pending and active installations
 
-`config/` の相対パスがそのまま `runtime/` の相対パスになります。通常 `craflet.yaml` に config セクションは不要です。
+**Active** is the deployed installation. **Pending** is the prepared set of JARs and configuration for a later deployment. `add`, `remove`, `install`, and `update` prepare pending changes without replacing running JARs.
+
+`start`, `run`, and `restart` apply pending changes by copying files after confirming shutdown, rechecking configuration, and taking the required backup. `--active` uses the current active installation without applying pending changes. `deploy apply` requires a stopped server and leaves it stopped; `deploy discard` discards pending changes. Removing a plugin does not delete its stored data.
+
+## Configuration and secrets
+
+`config/` mirrors paths under `runtime/`; per-file mappings in `craflet.yaml` are unnecessary:
 
 ```text
 config/server.properties             -> runtime/server.properties
 config/config/paper-global.yml       -> runtime/config/paper-global.yml
 config/plugins/MyPlugin/config.yml   -> runtime/plugins/MyPlugin/config.yml
 ```
+
+**Register secrets before capturing files that contain them.** Paper can generate `management-server-secret` in `runtime/server.properties` even when its management server is disabled. Before the initial capture, securely copy that exact value into a private file outside Git and register its path, for example:
+
+```yaml
+secrets:
+    PAPER_MANAGEMENT_SECRET:
+        file: /private/paper-management-secret
+```
+
+Use a private path appropriate for your host; the file should contain only the secret value. An `env: ENVIRONMENT_VARIABLE_NAME` reference is also supported, provided the variable is available whenever Craflet needs it. **Craflet does not automatically load `.env` files.**
+
+Captured values become `${secret:NAME}` references. Pending state, diffs, and observation baselines also use references. Known server secret fields with unregistered plaintext values are rejected, but Craflet cannot discover every plugin's secret fields. Review files before committing. The runtime and restored data can contain real secrets and must remain protected.
+
+After registering the necessary secrets, capture configuration deliberately:
 
 ```sh
 craflet config list --candidates
@@ -104,109 +138,106 @@ craflet config track plugins/MyPlugin/config.yml
 craflet config diff
 craflet config capture
 craflet install
-craflet restart
 ```
 
-初回 capture は既存の標準設定、ops、whitelist を候補にします。ban リストは `--include-bans` で選択します。プラグイン内の YAML を無差別に設定として取り込みません。二回目以降は追跡中のファイルが対象です。原本、前回の観測、runtime を比較し、競合時には原本を変更しません。
+Initial capture considers existing standard server files, operator lists, and whitelists. Ban lists require `--include-bans`. Arbitrary plugin YAML is not automatically tracked; configuration commands operate on one project at a time.
 
-原本を編集した後は `install` で設定も pending に準備してください。準備後に runtime が変更された場合は適用を拒否するため、`config diff` / `config capture` で確認してから再度 `install` します。
+Capture compares the base configuration, its previous observation, and the current runtime. Conflicting files are left unchanged. Review a conflict before choosing `config resolve <path> --use base` or `--use runtime`. After editing or capturing the base, run `install` to prepare it for deployment. If runtime files change after preparation, applying the pending installation is refused until you review and prepare again.
 
-秘密値の必要な箇所には `${secret:NAME}` を置きます。宣言には参照だけを記載します。
+Unchanged files retain their original text. Managed configuration is not run through a source formatter. Comments in modified TOML files are not currently preserved.
 
-```yaml
-secrets:
-    RCON_PASSWORD:
-        env: MINECRAFT_RCON_PASSWORD
-    FORWARDING_SECRET:
-        file: /private/velocity-secret
-```
+## Backups
 
-capture / diff / pending / 観測基準は秘密参照へ戻します。既知のサーバー秘密フィールドを未登録の平文で取り込む操作は拒否します。プラグイン独自の秘密フィールドをすべて自動発見できるわけではありません。Git に追加する前に原本を確認してください。実際の runtime と暗号化前の復元先には実値が必要なので、アクセス権を制限します。管理対象ファイルに Biome は適用しません。変更なしなら原文を保持します。変更した TOML は現状コメントを保持できません。
+Backups use encrypted restic repositories in an explicitly registered local directory or mounted NAS location. Choose an absolute destination outside the runtime and staging directories, with an existing parent. For a new repository, the destination must be empty or absent.
 
-## バックアップ
-
-保存先は、明示登録したローカルディレクトリかマウント済み NAS です。暗号化パスワードは環境変数か秘密ファイルで渡します。
+Set `CRAFLET_BACKUP_PASSWORD` securely in your environment before these commands, or use `--password-file` with a private file. Only the reference is saved, so it must remain available in later sessions. Replace the example paths with paths on your host, such as `C:\Backups\survival` on Windows.
 
 ```sh
-craflet backup setup main --path /mnt/backups/survival --password-env CRAFLET_BACKUP_PASSWORD --init --yes
+craflet backup setup main --path /mnt/backups/survival --password-env CRAFLET_BACKUP_PASSWORD --init
 craflet backup plan
 craflet backup create
 craflet backup list
 craflet backup check --read-data
-craflet backup restore <snapshot-id> --to /restore/survival
-craflet backup apply /restore/survival --yes
 ```
 
-既存のリポジトリの登録では `--init` を付けません。登録した実パスとリポジトリ ID を照合し、保存先が消えても別の場所や空の NAS マウントポイントに新規保存しません。restic は固定した公式配布物のハッシュを検証し、**サーバーを停止する前に**準備します。
+Omit `--init` when registering an existing repository. Craflet checks the registered path and repository ID; a missing destination does not silently redirect backups or initialize an empty NAS mount point. It prepares and verifies restic before stopping the server.
 
-`backup.files` は `craflet.yaml` 基準です。通常パターンで包含、`!` で除外し、後の一致が優先します。再包含は後ろに通常パターンを書きます。`!!` と `.gitignore` は使用しません。自作を含む全 JAR は初期設定で除外されます。world、プレイヤー、プラグインデータ、runtime 設定など運用中のデータを保存します。symlink は追いません。外部データは明示指定してください。
+A cold backup stops the server, saves the selected data, then resumes only servers that were previously running, using the same active installation. It never applies pending updates. Use `backup create --leave-stopped` to keep the server stopped. Failed checks before shutdown leave it running; a failed backup after shutdown leaves it stopped.
 
-保存成功後は元から稼働していたサーバーだけを同じ active で再開し、pending は適用しません。停止前の検査に失敗した場合は稼働を維持し、停止後の保存に失敗した場合は停止を維持します。グループの再開に一部失敗した場合は、既に再開したサーバーも含めて個別の状態を報告します。`restore` は空の別ディレクトリへ展開します。`apply` はハッシュ、対象、事前バックアップを確認して反映し、起動しません。追加データ root と DB の反映には `--map root-id=absolute-path` と `--database id` による明示指定が必要です。復元しても YAML、共有 lock、過去の pending は反映しません。
+Edit the generated `backup.files` list to select data. Patterns are relative to `craflet.yaml`: normal patterns include, `!` patterns exclude, and the last match wins. Use a later normal pattern to re-include files; `!!` and `.gitignore` are not used. Defaults include runtime and shared data while excluding all JARs, including custom JARs, plus logs and downloaded caches. Symlinks are not followed; external data needs explicit inclusion.
 
-SQLite は `backup.databases` に `id` / `kind: sqlite` / `path: runtime/...db` を宣言できます。MySQL / MariaDB は host / port / database / user / password 参照と、対応する dump/client コマンドが必要です。対応するテーブルは InnoDB に限定し、loopback 以外への接続には `sslCa` を指定します。共有 DB の writer を Craflet の管理外から停止できることまでは保証しません。外部 writer がある場合、運用側で停止・整合性を確保してください。
+SQLite can be declared under `backup.databases` with `id`, `kind: sqlite`, and `path`. MySQL and MariaDB also need connection settings, a password reference, and matching dump/client commands. They support InnoDB tables only and require `sslCa` for connections outside loopback. You must stop any database writers that Craflet does not manage.
+
+### Restore safely
+
+First extract a snapshot into a separate empty directory. Inspect it before applying it to the server:
+
+```sh
+craflet backup restore <snapshot-id> --to /restore/survival
+craflet backup apply /restore/survival --dry-run
+craflet backup apply /restore/survival
+```
+
+`apply` verifies the files and targets, stops the server, and takes a backup before replacing data. It restores the snapshot's active installation, leaves the server stopped, and clears pending. Current YAML declarations and the shared lock remain unchanged, so desired and restored active may differ. Inspect the result and use `craflet start --active` to launch the restored installation. Additional data roots require `--map root-id=absolute-path`; database restores require `--database id`.
+
+JARs are recovered from the cache or source with the exact hash recorded for the snapshot. **Keep older custom JARs retrievable.** If an old cached JAR was deleted and its `file:` source was replaced, restoration is rejected before shutdown rather than substituting newer bytes.
+
+`backup prune` and `cache prune` preview deletions by default; deletion requires `--apply`. Cache pruning protects registered locks, active and pending installations, and operations in progress. The shared JAR cache lives under `~/.craflet/cache/artifacts/sha256/`; set `CRAFLET_HOME` to use another home directory.
+
+## Multiple servers
+
+Group independent projects in `craflet-workspace.yaml`:
 
 ```yaml
-backup:
-    repository: main
-    group: network
-    files:
-        - runtime/**
-        - "!**/*.[jJ][aA][rR]"
-    databases:
-        - id: permissions
-          kind: mysql
-          host: 127.0.0.1
-          database: minecraft
-          user: backup_operator
-          password:
-              env: MINECRAFT_DB_PASSWORD
+schemaVersion: 1
+projects:
+    - servers/*
 ```
 
-同じ DB を利用する workspace の全サーバーに同じ `backup.group` を指定します。共有 DB の設定・リポジトリ・保持方針が一致することを検査し、全サーバー停止後に一つの snapshot を作成します。`start` / `restart` / `deploy apply` / `backup create` / `backup apply` など、本番を操作する際はグループ全員の選択が必要です。`update` / `install` などの pending 準備は一部だけでも行え、別ディレクトリへの `backup restore` も本番には影響しません。グループの `backup apply` は全サーバーを一括で扱い、共有データと DB は一度だけ反映します。
-
-配置や復元が中断された場合は `doctor` と `recover --dry-run` で確認してから `recover` を実行します。終了した操作のロックだけを除去するには `recover --unlock` を使います。PID だけで稼働中 Java を強制終了する機能ではありません。SQL の復元が途中で失敗した場合は自動で同じ SQL を再実行せず、事前 snapshot の ID を操作記録の `backupId` に残し、手動での DB 復旧を要求します。
-
-`backup prune` と `cache prune` は既定で予定表示のみです。削除には `--apply` が必要です。JAR キャッシュは `~/.craflet/cache/artifacts/sha256/` に共有し、`CRAFLET_HOME` で変更できます。キャッシュ削除は登録済みの lock / active / pending と進行中操作を保護します。
-
-## workspace とコマンド
-
-`craflet-workspace.yaml` に `schemaVersion: 1` と `projects: ["servers/*"]` を指定します。lock は共有しますが、各サーバーのバージョンは独立です。`-r` / `--filter <name-or-path-pattern>` で対象を選択します。0 件はエラーです。宣言の確定は一つの操作記録で管理し、運転の部分失敗は個別結果と終了コードで示します。
-
-| 分類 | コマンド |
-| --- | --- |
-| 準備 | init, import, workspace init/list, validate, doctor |
-| JAR | inspect, add, remove, list, install, outdated, update |
-| 適用 | deploy plan/apply/discard, recover |
-| 運転 | run, start, stop, restart, status, logs, console, command |
-| 設定 | config list/track/untrack/diff/capture/resolve |
-| 保存 | backup setup/plan/create/list/show/diff/check/restore/apply/prune |
-| 保守 | cache info/verify/prune, tools prepare restic |
-
-`--json` は構造化結果、`--dry-run` は予定、`--offline` はネットワークを使わない取得、`--yes` は明示操作の対話確認を省略するために使います。安全検査は省略しません。詳細は各コマンドの `--help` を参照してください。自動 commit / push、npm 公開は行いません。
-
-## 開発と検証
-
-開発環境は mise.toml / .node-version / packageManager で固定します。依存は exact pin、入力検証は ArkType、Biome は 4 スペースで他の整形ルールは基本設定です。`core` は I/O を持たず、adapters と CLI を経由して実行します。
+Each server has its own `craflet.yaml` and versions, with one shared workspace lock. Use `workspace list`, `-r` to select all projects, or `--filter <name-or-path-pattern>` to select a subset. An empty selection is an error.
 
 ```sh
-pnpm check
-pnpm typecheck
-pnpm test
-pnpm test:integration
-pnpm test:coverage
-pnpm check:architecture
-pnpm build
-pnpm test:package
-pnpm verify
+craflet workspace list
+craflet -r status
+craflet --filter survival outdated
 ```
 
-実サーバー fixture は公式配布の ID と SHA-256 を `tests/fixtures/` の lock で固定し、専用の Bukkit / Paper / Velocity プラグインを JDK 25 でビルドします。
+If servers share a database, assign the same `backup.group` to every writer in the workspace. Matching database, repository, and retention settings are required. The group stops all members before taking one snapshot; shared data and databases are restored only once.
+
+Select every group member for `start`, `restart`, `deploy apply`, `backup create`, and `backup apply`, and configure the group's backup repository before its first start. `install` and `update` may prepare only a subset. Restoring into a separate directory does not alter the live servers. Partial runtime failures are reported per server rather than hidden.
+
+## Troubleshooting and recovery
+
+`validate` checks declarations and managed metadata. `doctor` diagnoses Java, configuration, runtime state, and backup prerequisites without starting the server or changing files. It cannot fully validate every plugin's configuration.
+
+If deployment or restoration is interrupted:
 
 ```sh
-node tests/fixtures/build.mjs --with-servers --verify-reproducible
-pnpm test:e2e
+craflet doctor
+craflet recover --dry-run
+craflet recover
 ```
 
-Paper E2E にはテスト用サーバーについての明示 EULA 同意が必要です。同意した実行者だけが `CRAFLET_E2E_EULA=true` を設定してください。同意や Java がない場合を成功扱いの skip にしません。テストは専用ディレクトリ、ポート、`CRAFLET_HOME` を使い、本番データやユーザーの共通キャッシュを利用しません。
+Inspect the proposed recovery before applying it. `recover --unlock` removes only locks belonging to operations that have ended; it does not kill Java based solely on a PID. If an SQL restore fails partway through, Craflet refuses automatic replay, records the earlier snapshot as `backupId` in the operation journal, and requires manual database recovery.
 
-PR の CI は Linux / Windows / macOS の実サーバー試験と、Linux の専用 MySQL / MariaDB サービス試験を必須にします。EULA に同意したリポジトリ管理者は Actions の repository variable `CRAFLET_E2E_EULA` を `true` に設定してください。実際に通過した tarball が試験対象です。ローカルで同じ経路を試すには `pnpm build` / `pnpm test:package` の後、`CRAFLET_E2E_PACKAGE=artifacts/craflet-0.1.0.tgz` を設定して `pnpm test:e2e` を実行します。
+Use `--json` for structured output, `--dry-run` to preview changes, and `--offline` for artifact retrieval without network access. `--yes` skips interactive confirmation for an explicitly requested operation but never bypasses safety checks. For an unaccepted Paper server, it records EULA consent only when used with `init` or a launch command (`start`, `run`, or `restart`). Run `craflet --help` or a command's `--help` for its complete options.
+
+## Agent skill
+
+This repository includes a distributable Craflet agent skill at `skills/craflet`. It teaches compatible AI tools the project model, CLI workflows, EULA boundaries, backup rules, and recovery invariants.
+
+Preview it with `gh skill`:
+
+```sh
+gh skill preview sya-ri/craflet skills/craflet
+```
+
+Or install only this skill with `npx skills`:
+
+```sh
+npx skills add sya-ri/craflet --skill craflet
+```
+
+Restart the agent tool after installation so it reloads available skills.
+
+For contribution instructions, see [CONTRIBUTING.md](https://github.com/sya-ri/craflet/blob/master/CONTRIBUTING.md).

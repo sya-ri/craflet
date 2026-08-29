@@ -103,6 +103,7 @@ try {
     const allowed = new Set([
         "package.json",
         "dist",
+        "docs",
         "README.md",
         "LICENSE",
         "THIRD_PARTY_NOTICES.md",
@@ -119,6 +120,20 @@ try {
     assert.match(
         await readFile(path.join(installed, "THIRD_PARTY_NOTICES.md"), "utf8"),
         /arktype@2\.2\.3/,
+    );
+    assert.equal(
+        await readFile(path.join(installed, "README.md"), "utf8"),
+        await readFile(path.join(root, "README.md"), "utf8"),
+        "The tarball must contain the current user-facing README.",
+    );
+    assert.deepEqual(await readdir(path.join(installed, "docs")), ["assets"]);
+    assert.deepEqual(await readdir(path.join(installed, "docs/assets")), [
+        "craflet-demo.gif",
+    ]);
+    assert.deepEqual(
+        await readFile(path.join(installed, "docs/assets/craflet-demo.gif")),
+        await readFile(path.join(root, "docs/assets/craflet-demo.gif")),
+        "The tarball must contain the exact README terminal demo.",
     );
     const entry = path.join(installed, "dist/cli.mjs");
     assert.match(run(process.execPath, [entry, "--help"]), /backup/);

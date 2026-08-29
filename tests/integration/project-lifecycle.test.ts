@@ -1,6 +1,9 @@
+import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
+    chmod,
     copyFile,
+    link,
     mkdir,
     mkdtemp,
     readdir,
@@ -15,6 +18,7 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import {
     type ArtifactContext,
     type ArtifactStore,
@@ -35,6 +39,11 @@ import {
 } from "../../packages/adapters/src/filesystem/cache.js";
 import { NodeConfigManager } from "../../packages/adapters/src/filesystem/config.js";
 import { NodeDeploymentManager } from "../../packages/adapters/src/filesystem/deployment.js";
+import {
+    hasAcceptedEula,
+    readEulaDocument,
+} from "../../packages/adapters/src/filesystem/eula.js";
+import { ensureUserEulaConsent } from "../../packages/adapters/src/filesystem/eula-consent.js";
 import { importProject } from "../../packages/adapters/src/filesystem/import.js";
 import {
     assertManifestJournalLimits,
@@ -43,6 +52,7 @@ import {
 } from "../../packages/adapters/src/filesystem/installations.js";
 import * as io from "../../packages/adapters/src/filesystem/io.js";
 import { addPlugins } from "../../packages/adapters/src/filesystem/plugin-commands.js";
+import { ensurePrivateDirectory } from "../../packages/adapters/src/filesystem/private.js";
 import {
     initProject,
     initWorkspace,
@@ -2451,6 +2461,7 @@ describe("deployment ownership and rollback", () => {
         await installProjects([fixture.context], fixture.store, {
             updateServer: true,
         });
+        await put(fixture.dir, "runtime/eula.txt", "eula=true\n");
         const before = await metadata(fixture.dir);
         const unsupported = async (): Promise<never> => {
             throw new Error("Unexpected backup method");
@@ -2503,17 +2514,23 @@ describe("deployment ownership and rollback", () => {
             undefined,
             { offline: true, signal },
         );
-        vi.spyOn(manager.controller, "status").mockResolvedValue({
-            status: "running",
-            activeId: active.id,
-        });
-        vi.spyOn(manager.controller, "stop").mockResolvedValue({
-            status: "stopped",
-            clean: true,
+        let status: "running" | "stopped" = "running";
+        vi.spyOn(manager.controller, "status").mockImplementation(async () =>
+            status === "running"
+                ? { status, activeId: active.id }
+                : { status, clean: true },
+        );
+        vi.spyOn(manager.controller, "stop").mockImplementation(async () => {
+            status = "stopped";
+            return { status, clean: true };
         });
         const start = vi
             .spyOn(manager.controller, "start")
-            .mockResolvedValue({ status: "running", activeId: active.id });
+            .mockImplementation(async () => {
+                expect(status).toBe("stopped");
+                status = "running";
+                return { status, activeId: active.id };
+            });
         const apply = vi.spyOn(manager, "applyPrepared");
         expect(await manager.createBackup()).toMatchObject({
             resumed: true,
@@ -2624,6 +2641,651 @@ describe("deployment ownership and rollback", () => {
         await expect(fixture.manager.preflight(true)).rejects.toMatchObject({
             code: "RUNTIME_SPACE",
         });
+    });
+});
+
+describe("explicit Paper EULA consent", () => {
+    const java25 = () =>
+        vi.spyOn(java, "inspectJava").mockResolvedValue({
+            executable: "fixture-java",
+            major: 25,
+            diagnostics: [],
+        });
+
+    it("does not create a project or receipt when initial consent is declined", async () => {
+        const root = await directory();
+        const home = path.join(root, "home");
+        const target = path.join(root, "paper");
+        const decline = vi.fn(async () => {
+            throw new CrafletError(
+                "CONFIRMATION_REQUIRED",
+                "Explicit consent was not provided.",
+                3,
+            );
+        });
+        await expect(
+            initProject(target, {
+                name: "paper",
+                kind: "paper",
+                version: "26.1",
+                eula: { home, requestConsent: decline },
+            }),
+        ).rejects.toMatchObject({ code: "CONFIRMATION_REQUIRED" });
+        expect(decline).toHaveBeenCalledOnce();
+        expect(await io.listFiles(root)).toEqual([]);
+        expect(await io.exists(path.join(target, "craflet.yaml"))).toBe(false);
+        expect(await io.exists(path.join(home, "eula.json"))).toBe(false);
+    });
+
+    it("remembers consent for later Paper initialization without creating runtime eula.txt", async () => {
+        const root = await directory();
+        const home = path.join(root, "home");
+        const accept = vi.fn(async () => undefined);
+        await initProject(path.join(root, "first"), {
+            name: "first",
+            kind: "paper",
+            version: "26.1",
+            eula: { home, requestConsent: accept },
+        });
+        const refuseSecondPrompt = vi.fn(async () => {
+            throw new Error("must not prompt again");
+        });
+        await initProject(path.join(root, "second"), {
+            name: "second",
+            kind: "paper",
+            version: "26.1",
+            eula: { home, requestConsent: refuseSecondPrompt },
+        });
+        expect(accept).toHaveBeenCalledOnce();
+        expect(refuseSecondPrompt).not.toHaveBeenCalled();
+        expect(
+            JSON.parse(await readFile(path.join(home, "eula.json"), "utf8")),
+        ).toMatchObject({
+            schemaVersion: 1,
+            url: "https://www.minecraft.net/eula",
+            accepted: true,
+        });
+        expect(await io.exists(path.join(root, "first/runtime/eula.txt"))).toBe(
+            false,
+        );
+        expect(
+            await io.exists(path.join(root, "second/runtime/eula.txt")),
+        ).toBe(false);
+    });
+
+    it("does not prompt or write during a dry-run initialization", async () => {
+        const root = await directory();
+        const home = path.join(root, "home");
+        const request = vi.fn(async () => undefined);
+        await initProject(path.join(root, "preview"), {
+            name: "preview",
+            kind: "paper",
+            version: "26.1",
+            dryRun: true,
+            eula: { home, requestConsent: request },
+        });
+        expect(request).not.toHaveBeenCalled();
+        expect(await io.listFiles(root)).toEqual([]);
+        expect(await io.exists(home)).toBe(false);
+    });
+
+    it("rejects an unsafe init target before requesting or recording consent", async () => {
+        const root = await directory();
+        const external = path.join(root, "external");
+        const target = path.join(root, "linked");
+        const home = path.join(root, "home");
+        await mkdir(external);
+        await symlink(
+            external,
+            target,
+            process.platform === "win32" ? "junction" : "dir",
+        );
+        const request = vi.fn(async () => undefined);
+        await expect(
+            initProject(target, {
+                name: "unsafe",
+                kind: "paper",
+                version: "26.1",
+                eula: { home, requestConsent: request },
+            }),
+        ).rejects.toMatchObject({ code: "SYMLINK_UNSAFE" });
+        expect(request).not.toHaveBeenCalled();
+        expect(await readdir(external)).toEqual([]);
+        expect(await io.exists(path.join(home, "eula.json"))).toBe(false);
+    });
+
+    it.each(["manifest", "symlink"] as const)(
+        "revalidates a %s target change made while consent is open",
+        async (kind) => {
+            const root = await directory();
+            const target = path.join(root, "paper");
+            const home = path.join(root, "home");
+            const external = path.join(root, "external");
+            if (kind === "symlink") await mkdir(external);
+            const request = vi.fn(async () => {
+                if (kind === "manifest") {
+                    await mkdir(target, { recursive: true });
+                    await writeFile(
+                        path.join(target, "craflet.yaml"),
+                        "existing project\n",
+                    );
+                } else
+                    await symlink(
+                        external,
+                        target,
+                        process.platform === "win32" ? "junction" : "dir",
+                    );
+            });
+
+            await expect(
+                initProject(target, {
+                    name: "paper",
+                    kind: "paper",
+                    version: "26.1",
+                    eula: { home, requestConsent: request },
+                }),
+            ).rejects.toMatchObject({
+                code: kind === "manifest" ? "PROJECT_EXISTS" : "SYMLINK_UNSAFE",
+            });
+
+            expect(request).toHaveBeenCalledOnce();
+            expect(await io.exists(path.join(home, "eula.json"))).toBe(true);
+            if (kind === "manifest")
+                expect(
+                    await readFile(path.join(target, "craflet.yaml"), "utf8"),
+                ).toBe("existing project\n");
+            else expect(await readdir(external)).toEqual([]);
+            expect(await io.exists(path.join(target, "config"))).toBe(false);
+            expect(await io.exists(path.join(target, "runtime"))).toBe(false);
+        },
+    );
+
+    it.each(["corrupt", "oversized", "hard-linked"] as const)(
+        "fails closed for a %s saved consent record",
+        async (kind) => {
+            const root = await directory();
+            const home = path.join(root, "home");
+            await ensurePrivateDirectory(home);
+            const file = path.join(home, "eula.json");
+            if (kind === "corrupt") await io.atomicWrite(file, "{}\n");
+            else if (kind === "oversized")
+                await io.atomicWrite(file, "x".repeat(64 * 1024 + 1));
+            else {
+                const external = await put(
+                    root,
+                    "external.json",
+                    `${JSON.stringify(
+                        {
+                            schemaVersion: 1,
+                            url: "https://www.minecraft.net/eula",
+                            accepted: true,
+                            acceptedAt: new Date().toISOString(),
+                        },
+                        null,
+                        4,
+                    )}\n`,
+                );
+                await link(external, file);
+            }
+            const request = vi.fn(async () => undefined);
+            await expect(
+                ensureUserEulaConsent(home, request),
+            ).rejects.toMatchObject({ code: "EULA_CONSENT_INVALID" });
+            expect(request).not.toHaveBeenCalled();
+            expect(await io.exists(path.join(home, "eula.lock"))).toBe(false);
+        },
+    );
+
+    it.runIf(process.platform !== "win32")(
+        "rejects a saved consent record readable by another OS user",
+        async () => {
+            const root = await directory();
+            const home = path.join(root, "home");
+            const file = await put(
+                home,
+                "eula.json",
+                `${JSON.stringify(
+                    {
+                        schemaVersion: 1,
+                        url: "https://www.minecraft.net/eula",
+                        accepted: true,
+                        acceptedAt: new Date().toISOString(),
+                    },
+                    null,
+                    4,
+                )}\n`,
+            );
+            await chmod(file, 0o644);
+            const request = vi.fn(async () => undefined);
+            await expect(
+                ensureUserEulaConsent(home, request),
+            ).rejects.toMatchObject({ code: "EULA_CONSENT_INVALID" });
+            expect(request).not.toHaveBeenCalled();
+        },
+    );
+
+    it("recovers a consent lock only after its recorded process has exited", async () => {
+        const root = await directory();
+        const home = path.join(root, "home");
+        await ensurePrivateDirectory(home);
+        let deadPid = 2_000_000_000;
+        while (!processDefinitelyExited(deadPid) && deadPid > 1_999_999_000)
+            deadPid--;
+        if (!processDefinitelyExited(deadPid))
+            throw new Error("Could not reserve a dead fixture PID");
+        const lock = path.join(home, "eula.lock");
+        await mkdir(lock);
+        await io.atomicWrite(
+            path.join(lock, "owner.json"),
+            `${JSON.stringify(
+                {
+                    schemaVersion: 1,
+                    pid: deadPid,
+                    startedAt: new Date().toISOString(),
+                },
+                null,
+                4,
+            )}\n`,
+        );
+        const request = vi.fn(async () => undefined);
+        await expect(ensureUserEulaConsent(home, request)).resolves.toBe(true);
+        expect(request).toHaveBeenCalledOnce();
+        expect(await io.exists(lock)).toBe(false);
+        expect(await io.exists(path.join(home, "eula.json"))).toBe(true);
+    });
+
+    it("retains a consent lock owned by a live process", async () => {
+        const root = await directory();
+        const home = path.join(root, "home");
+        await ensurePrivateDirectory(home);
+        const lock = path.join(home, "eula.lock");
+        await mkdir(lock);
+        await io.atomicWrite(
+            path.join(lock, "owner.json"),
+            `${JSON.stringify(
+                {
+                    schemaVersion: 1,
+                    pid: process.pid,
+                    startedAt: new Date().toISOString(),
+                },
+                null,
+                4,
+            )}\n`,
+        );
+        const request = vi.fn(async () => undefined);
+        await expect(
+            ensureUserEulaConsent(home, request),
+        ).rejects.toMatchObject({ code: "BUSY" });
+        expect(request).not.toHaveBeenCalled();
+        expect(await io.exists(lock)).toBe(true);
+    });
+
+    it.runIf(process.platform === "darwin")(
+        "removes directory ACL inheritance and rejects an ACL on the saved receipt",
+        async () => {
+            const root = await directory();
+            const home = path.join(root, "home");
+            await mkdir(home);
+            const execute = promisify(execFile);
+            await execute(
+                "/bin/chmod",
+                ["+a", "everyone allow read,write", home],
+                { env: { ...process.env, LC_ALL: "C" } },
+            );
+            await ensurePrivateDirectory(home);
+            const listing = await execute("/bin/ls", ["-lde", home], {
+                env: { ...process.env, LC_ALL: "C" },
+            });
+            expect(String(listing.stdout)).not.toMatch(/^\s*\d+:/m);
+
+            await ensureUserEulaConsent(home, async () => undefined);
+            const receipt = path.join(home, "eula.json");
+            await execute(
+                "/bin/chmod",
+                ["+a", "everyone allow read,write", receipt],
+                { env: { ...process.env, LC_ALL: "C" } },
+            );
+            const request = vi.fn(async () => undefined);
+            await expect(
+                ensureUserEulaConsent(home, request),
+            ).rejects.toMatchObject({ code: "EULA_CONSENT_INVALID" });
+            expect(request).not.toHaveBeenCalled();
+        },
+    );
+
+    it("records consent in preflight, then materializes it only at launch", async () => {
+        const fixture = await project();
+        java25();
+        const request = vi.fn(async (document) => {
+            expect(document.path).toBe(
+                path.join(fixture.dir, "runtime/eula.txt"),
+            );
+            expect(document.text).toContain("eula=false");
+            expect(document.url).toBe("https://www.minecraft.net/eula");
+        });
+        const manager = new NodeDeploymentManager(
+            fixture.context,
+            fixture.store,
+            undefined,
+            undefined,
+            undefined,
+            { requestEulaConsent: request },
+        );
+        const start = vi
+            .spyOn(manager.controller, "start")
+            .mockResolvedValue({ status: "running" });
+        const before = await metadata(fixture.dir);
+        await manager.preflight(true);
+        const eulaFile = path.join(fixture.dir, "runtime/eula.txt");
+        const receipt = path.join(fixture.home, "eula.json");
+        expect(await io.exists(eulaFile)).toBe(false);
+        expect(request).toHaveBeenCalledOnce();
+        expect(await metadata(fixture.dir)).toEqual(before);
+        const receiptBytes = await readFile(receipt);
+        const receiptTime = (await stat(receipt)).mtimeMs;
+        await manager.preflight(true);
+        expect(request).toHaveBeenCalledOnce();
+        expect(await io.exists(eulaFile)).toBe(false);
+        expect(await readFile(receipt)).toEqual(receiptBytes);
+        expect((await stat(receipt)).mtimeMs).toBe(receiptTime);
+
+        await manager.applyPrepared();
+        await manager.spawnActive();
+        expect(await readFile(eulaFile, "utf8")).toBe("eula=true\n");
+        const eulaBytes = await readFile(eulaFile);
+        const eulaTime = (await stat(eulaFile)).mtimeMs;
+        await manager.spawnActive();
+        expect(start).toHaveBeenCalledTimes(2);
+        expect(await readFile(eulaFile)).toEqual(eulaBytes);
+        expect((await stat(eulaFile)).mtimeMs).toBe(eulaTime);
+        expect(await readFile(receipt)).toEqual(receiptBytes);
+        expect((await stat(receipt)).mtimeMs).toBe(receiptTime);
+        expect(await readEulaDocument(fixture.context)).toMatchObject({
+            path: eulaFile,
+            text: "eula=true\n",
+        });
+    });
+
+    it("uses an existing runtime acceptance without creating host consent", async () => {
+        const fixture = await project();
+        java25();
+        await put(fixture.dir, "runtime/eula.txt", "# imported\neula=TRUE\n");
+        const request = vi.fn(async () => {
+            throw new Error("must not prompt");
+        });
+        const manager = new NodeDeploymentManager(
+            fixture.context,
+            fixture.store,
+            undefined,
+            undefined,
+            undefined,
+            { requestEulaConsent: request },
+        );
+        await manager.preflight(true);
+        expect(request).not.toHaveBeenCalled();
+        expect(await io.exists(path.join(fixture.home, "eula.json"))).toBe(
+            false,
+        );
+        expect(await contents(fixture.dir, "runtime/eula.txt")).toBe(
+            "# imported\neula=TRUE\n",
+        );
+    });
+
+    it.each([
+        {
+            active: "paper" as const,
+            desired: "velocity" as const,
+            prompts: true,
+        },
+        {
+            active: "velocity" as const,
+            desired: "paper" as const,
+            prompts: false,
+        },
+    ])(
+        "uses the active $active server type during a declared migration to $desired",
+        async ({ active, desired, prompts }) => {
+            const root = await directory();
+            const dir = path.join(root, "project");
+            const home = path.join(root, "home");
+            await initProject(dir, {
+                name: "migration",
+                kind: active,
+                version: active === "paper" ? "26.1" : "4.1.1",
+            });
+            const original = await loadProject(dir, home);
+            const provider = artifactStore(root);
+            await installProjects([original], provider.store);
+            await new NodeDeploymentManager(
+                original,
+                provider.store,
+            ).applyPrepared();
+            const declaration = await loadProject(dir, home);
+            await writeYaml(path.join(dir, "craflet.yaml"), {
+                ...declaration.manifest,
+                server: {
+                    type: desired,
+                    version: desired === "paper" ? "26.1" : "4.1.1",
+                    build: "1",
+                },
+            });
+            const current = await loadProject(dir, home);
+            java25();
+            const request = vi.fn(async () => undefined);
+            await new NodeDeploymentManager(
+                current,
+                provider.store,
+                undefined,
+                undefined,
+                undefined,
+                { requestEulaConsent: request },
+            ).preflight(false);
+            expect(request).toHaveBeenCalledTimes(prompts ? 1 : 0);
+            expect(await io.exists(path.join(dir, "runtime/eula.txt"))).toBe(
+                false,
+            );
+            expect(await io.exists(path.join(home, "eula.json"))).toBe(prompts);
+        },
+    );
+
+    it("keeps Velocity running through consent preflight and materializes Paper consent after restart stops it", async () => {
+        const root = await directory();
+        const dir = path.join(root, "migration");
+        const home = path.join(root, "home");
+        await initProject(dir, {
+            name: "migration",
+            kind: "velocity",
+            version: "4.1.1",
+        });
+        const provider = artifactStore(root);
+        const original = await loadProject(dir, home);
+        await installProjects([original], provider.store);
+        await new NodeDeploymentManager(
+            original,
+            provider.store,
+        ).applyPrepared();
+        const declaration = await loadProject(dir, home);
+        await writeYaml(path.join(dir, "craflet.yaml"), {
+            ...declaration.manifest,
+            server: { type: "paper", version: "26.1", build: "1" },
+        });
+        const current = await loadProject(dir, home);
+        await installProjects([current], provider.store);
+
+        const unsupported = async (): Promise<never> => {
+            throw new Error("Unexpected backup method");
+        };
+        const backup: BackupService = {
+            config: { files: [] },
+            prepare: vi.fn(async () => ({
+                path: "fixture-restic",
+                version: "fixture",
+            })),
+            preflight: vi.fn(async () => ({
+                roots: [],
+                files: [],
+                bytes: 0,
+                stagingBytes: 0,
+                databaseIds: [],
+                warnings: [],
+            })),
+            create: vi.fn(async (value) => ({
+                snapshotId: "saved",
+                repository: "fixture",
+                fileCount: 0,
+                bytes: 0,
+                metadata: {
+                    format: 1 as const,
+                    projectId: "fixture",
+                    createdAt: "2026-08-29",
+                    active: value,
+                    roots: [],
+                    files: [],
+                    databases: [],
+                },
+            })),
+            setup: unsupported,
+            plan: unsupported,
+            list: unsupported,
+            show: unsupported,
+            diff: unsupported,
+            check: unsupported,
+            planRestore: unsupported,
+            restore: unsupported,
+            prune: unsupported,
+        };
+        java25();
+        let status: "running" | "stopped" = "running";
+        const events: string[] = [];
+        vi.spyOn(NodeServerController.prototype, "status").mockImplementation(
+            async () => ({ status }),
+        );
+        vi.spyOn(NodeServerController.prototype, "stop").mockImplementation(
+            async () => {
+                events.push("stop");
+                status = "stopped";
+                return { status };
+            },
+        );
+        vi.spyOn(NodeServerController.prototype, "start").mockImplementation(
+            async (activeId) => {
+                events.push("spawn");
+                expect(status).toBe("stopped");
+                expect(await contents(dir, "runtime/eula.txt")).toBe(
+                    "eula=true\n",
+                );
+                status = "running";
+                return { status, activeId };
+            },
+        );
+        const request = vi.fn(async () => {
+            events.push("consent");
+            expect(status).toBe("running");
+            expect(await io.exists(path.join(dir, "runtime/eula.txt"))).toBe(
+                false,
+            );
+        });
+        const manager = new NodeDeploymentManager(
+            current,
+            provider.store,
+            backup,
+            undefined,
+            undefined,
+            { requestEulaConsent: request },
+        );
+        await expect(manager.restart()).resolves.toMatchObject({
+            status: "running",
+        });
+        expect(request).toHaveBeenCalledOnce();
+        expect(events).toEqual(["consent", "stop", "spawn"]);
+        expect((await readState(dir)).active?.manifest.server.type).toBe(
+            "paper",
+        );
+        expect(await io.exists(path.join(home, "eula.json"))).toBe(true);
+    });
+
+    it("does not request consent for preparation-only preflight", async () => {
+        const fixture = await project();
+        java25();
+        const request = vi.fn(async () => undefined);
+        const manager = new NodeDeploymentManager(
+            fixture.context,
+            fixture.store,
+            undefined,
+            undefined,
+            undefined,
+            { requestEulaConsent: request },
+        );
+        await manager.preflight(true, false);
+        expect(request).not.toHaveBeenCalled();
+        expect(
+            await io.exists(path.join(fixture.dir, "runtime/eula.txt")),
+        ).toBe(false);
+        expect(await io.exists(path.join(fixture.home, "eula.json"))).toBe(
+            false,
+        );
+    });
+
+    it("records consent without rewriting runtime while Paper is running", async () => {
+        const fixture = await project();
+        java25();
+        vi.spyOn(NodeServerController.prototype, "status").mockResolvedValue({
+            status: "running",
+        });
+        const request = vi.fn(async () => undefined);
+        const manager = new NodeDeploymentManager(
+            fixture.context,
+            fixture.store,
+            undefined,
+            undefined,
+            undefined,
+            { requestEulaConsent: request },
+        );
+        await manager.preflight(true);
+        expect(request).toHaveBeenCalledOnce();
+        expect(
+            await io.exists(path.join(fixture.dir, "runtime/eula.txt")),
+        ).toBe(false);
+        expect(await io.exists(path.join(fixture.home, "eula.json"))).toBe(
+            true,
+        );
+    });
+
+    it("refuses a managed unaccepted EULA without changing declarations or pending state", async () => {
+        const fixture = await project();
+        java25();
+        await put(fixture.dir, "config/eula.txt", "eula=false\n");
+        await installProjects([fixture.context], fixture.store);
+        const request = vi.fn(async () => undefined);
+        const manager = new NodeDeploymentManager(
+            fixture.context,
+            fixture.store,
+            undefined,
+            undefined,
+            undefined,
+            { requestEulaConsent: request },
+        );
+        const before = await metadata(fixture.dir);
+        await expect(manager.preflight(true)).rejects.toMatchObject({
+            code: "EULA_MANAGED",
+        });
+        expect(request).not.toHaveBeenCalled();
+        expect(await metadata(fixture.dir)).toEqual(before);
+        expect(
+            await io.exists(path.join(fixture.dir, "runtime/eula.txt")),
+        ).toBe(false);
+        expect(await io.exists(path.join(fixture.home, "eula.json"))).toBe(
+            false,
+        );
+    });
+
+    it("parses Java properties without substring false positives", () => {
+        expect(hasAcceptedEula("e\\u0075la : \\u0074rue\n")).toBe(true);
+        expect(hasAcceptedEula("eula=true \n")).toBe(false);
+        expect(hasAcceptedEula("note=value\\\neula=true\n")).toBe(false);
+        expect(() => hasAcceptedEula("eula=true\neula=false\n")).toThrow(
+            expect.objectContaining({ code: "EULA_INVALID" }),
+        );
     });
 });
 

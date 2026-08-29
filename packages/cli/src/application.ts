@@ -16,7 +16,10 @@ function globalOptions(command: Command): void {
             [],
         )
         .option("--json", "Write machine-readable JSON to stdout")
-        .option("--yes", "Confirm the requested operation (never accepts EULA)")
+        .option(
+            "--yes",
+            "Confirm the requested operation, including EULA consent during Paper init or launch",
+        )
         .option("--offline", "Do not contact artifact providers")
         .option(
             "--dry-run",

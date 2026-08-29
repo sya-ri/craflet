@@ -20,7 +20,7 @@ export function registerProjectCommands(
     const init = program
         .command("init [directory]")
         .description(
-            "Create a server project without accepting the EULA or starting Java.",
+            "Create a server project; Paper requests EULA consent once per host user. Java is not started.",
         )
         .option("--name <name>", "project name")
         .addOption(
@@ -62,6 +62,11 @@ export function registerProjectCommands(
             build: options.build,
             ...(options.source ? { source: options.source } : {}),
             dryRun: context.globals(command).dryRun ?? false,
+            eula: {
+                home: context.home,
+                requestConsent: context.requestEulaConsent,
+                signal: context.abort.signal,
+            },
         });
         return {
             directory: dir,

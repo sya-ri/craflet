@@ -29,7 +29,7 @@ export function registerRuntimeCommands(
                         results.push({
                             group: batch.group,
                             result: await context
-                                .group(batch)
+                                .group(batch, true)
                                 .operate(
                                     action,
                                     Boolean(command.opts().active),
@@ -44,7 +44,11 @@ export function registerRuntimeCommands(
                                 "No project selected.",
                                 2,
                             );
-                        const deployment = await context.deployment(project);
+                        const deployment = await context.deployment(
+                            project,
+                            undefined,
+                            true,
+                        );
                         results.push({
                             project: project.manifest.name,
                             result: context.globals(command).dryRun
@@ -55,6 +59,12 @@ export function registerRuntimeCommands(
                         });
                     }
                 } catch (error) {
+                    if (
+                        context.abort.signal.aborted ||
+                        (error instanceof CrafletError &&
+                            error.code === "CANCELLED")
+                    )
+                        throw error;
                     if (batches.length === 1) throw error;
                     process.exitCode = 4;
                     results.push({
@@ -258,7 +268,11 @@ export function registerRuntimeCommands(
         async (_, command) => {
             const project = await context.one(command);
             await context.batches(command, true);
-            const deployment = await context.deployment(project);
+            const deployment = await context.deployment(
+                project,
+                undefined,
+                true,
+            );
             if (context.globals(command).dryRun) return deployment.plan();
             try {
                 await deployment.start(Boolean(command.opts().active));

@@ -16,6 +16,7 @@ import {
 } from "@craflet/adapters";
 import { type BackupService, CrafletError } from "@craflet/core";
 import type { Command } from "commander";
+import { confirmEula } from "../presentation/eula.js";
 import { printError, printResult } from "../presentation/output.js";
 
 export interface Globals {
@@ -33,6 +34,23 @@ export class CommandContext {
     readonly abort = new AbortController();
     readonly runnerEntry: string;
     private activeGlobals: Globals = {};
+    readonly requestEulaConsent = async (document: {
+        path: string;
+        text: string;
+        url: string;
+    }): Promise<void> => {
+        try {
+            await confirmEula(document, {
+                yes: this.activeGlobals.yes ?? false,
+                json: this.activeGlobals.json ?? false,
+                signal: this.abort.signal,
+            });
+        } catch (error) {
+            if (error instanceof CrafletError && error.code === "CANCELLED")
+                this.abort.abort();
+            throw error;
+        }
+    };
     constructor(entryUrl: string) {
         this.runnerEntry = fileURLToPath(new URL("./runner.mjs", entryUrl));
     }
@@ -109,6 +127,7 @@ export class CommandContext {
     async deployment(
         project: ProjectContext,
         backup?: BackupService,
+        launch = false,
     ): Promise<NodeDeploymentManager> {
         return new NodeDeploymentManager(
             project,
@@ -119,6 +138,9 @@ export class CommandContext {
             {
                 offline: this.activeGlobals.offline ?? false,
                 signal: this.abort.signal,
+                ...(launch
+                    ? { requestEulaConsent: this.requestEulaConsent }
+                    : {}),
             },
         );
     }
@@ -130,10 +152,11 @@ export class CommandContext {
             ...(repository ? { repository } : {}),
         });
     }
-    group(batch: BackupBatch): NodeRecoveryGroup {
+    group(batch: BackupBatch, launch = false): NodeRecoveryGroup {
         return new NodeRecoveryGroup(batch, this.store, this.runnerEntry, {
             offline: this.activeGlobals.offline ?? false,
             signal: this.abort.signal,
+            ...(launch ? { requestEulaConsent: this.requestEulaConsent } : {}),
         });
     }
     async controller(command: Command): Promise<NodeServerController> {

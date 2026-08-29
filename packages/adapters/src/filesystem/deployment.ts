@@ -6,7 +6,6 @@ import {
     lstat,
     mkdir,
     readdir,
-    readFile,
     rename,
     rm,
 } from "node:fs/promises";
@@ -26,6 +25,12 @@ import { NodeServerController } from "../runtime/controller.js";
 import { inspectJava } from "../runtime/java.js";
 import { checkBackupSpace } from "./backup-files.js";
 import { NodeConfigManager } from "./config.js";
+import {
+    ensureRuntimeEulaConsent,
+    hasAcceptedEula,
+    type OwnedEulaOperationJournal,
+} from "./eula.js";
+import type { RequestEulaConsent } from "./eula-consent.js";
 import { artifactContext } from "./installations.js";
 import {
     assertNoSymlinks,
@@ -70,7 +75,11 @@ export class NodeDeploymentManager {
         readonly backupService?: BackupService,
         runnerEntry?: string,
         readonly checkpoint?: (stage: string) => Promise<void>,
-        readonly options: { offline?: boolean; signal?: AbortSignal } = {},
+        readonly options: {
+            offline?: boolean;
+            signal?: AbortSignal;
+            requestEulaConsent?: RequestEulaConsent;
+        } = {},
     ) {
         this.controller = new NodeServerController(
             context.dir,
@@ -88,6 +97,36 @@ export class NodeDeploymentManager {
     }
     private get journalFile(): string {
         return path.join(this.context.dir, ".craflet/deploy.json");
+    }
+    private async prepareEula(
+        candidate: Installation,
+        applyPending: boolean,
+        materialize: boolean,
+        ownedJournal?: OwnedEulaOperationJournal,
+    ): Promise<void> {
+        if (candidate.manifest.server.type !== "paper") return;
+        if (!materialize && applyPending) {
+            const staged = candidate.config.files.find(
+                (file) => file.relative === "eula.txt",
+            );
+            if (staged !== undefined) {
+                if (!hasAcceptedEula(staged.content ?? ""))
+                    throw new CrafletError(
+                        "EULA_MANAGED",
+                        "The pending eula.txt does not record acceptance, so it cannot be changed implicitly during launch.",
+                        3,
+                        "Update config/eula.txt explicitly and run craflet install, or remove that managed file and rebuild pending.",
+                    );
+                return;
+            }
+        }
+        await ensureRuntimeEulaConsent(
+            { ...this.context, manifest: candidate.manifest },
+            this.options.requestEulaConsent,
+            this.options.signal,
+            materialize,
+            ownedJournal,
+        );
     }
     async plan() {
         const state = await readState(this.context.dir);
@@ -109,7 +148,7 @@ export class NodeDeploymentManager {
             (file) => file !== "eula.txt",
         );
     }
-    async preflight(applyPending: boolean): Promise<void> {
+    async preflight(applyPending: boolean, launch = true): Promise<void> {
         this.options.signal?.throwIfAborted();
         if (
             (await exists(this.journalFile)) ||
@@ -196,23 +235,6 @@ export class NodeDeploymentManager {
                 "Java is unavailable or incompatible. Run craflet doctor.",
                 3,
             );
-        if (candidate.manifest.server.type === "paper") {
-            const eulaFile = path.join(this.context.dir, "runtime/eula.txt");
-            const staged = candidate.config.files.find(
-                (file) => file.relative === "eula.txt",
-            )?.content;
-            const eula =
-                staged ??
-                ((await exists(eulaFile))
-                    ? await readFile(eulaFile, "utf8")
-                    : "");
-            if (!/^\s*eula\s*=\s*true\s*$/m.test(eula))
-                throw new CrafletError(
-                    "EULA_REQUIRED",
-                    "Read https://www.minecraft.net/eula and explicitly set eula=true in runtime/eula.txt. --yes does not accept the EULA.",
-                    3,
-                );
-        }
         const context = artifactContext(
             { ...this.context, manifest: candidate.manifest },
             this.options,
@@ -235,6 +257,7 @@ export class NodeDeploymentManager {
                 this.options.signal ? { signal: this.options.signal } : {},
             );
         }
+        if (launch) await this.prepareEula(candidate, applyPending, false);
     }
     async backupActive(): Promise<unknown> {
         if (!(await this.needsBackup())) return undefined;
@@ -472,17 +495,44 @@ export class NodeDeploymentManager {
             },
             backup: () => this.backupActive(),
             apply: () => this.applyPrepared(),
-            spawn: async () => {
-                const active = (await readState(this.context.dir)).active;
-                if (!active)
-                    throw new CrafletError(
-                        "ACTIVE_MISSING",
-                        "No active installation.",
-                        3,
-                    );
-                return this.controller.start(active.id);
-            },
+            spawn: () => this.spawnActive(),
         };
+    }
+    /**
+     * The caller must hold the project or workspace operation lock.
+     * An expected ID prevents recovery paths from starting a different active installation.
+     */
+    async spawnActive(
+        expectedActiveId?: string,
+        ownedJournal?: OwnedEulaOperationJournal,
+    ) {
+        const active = (await readState(this.context.dir)).active;
+        if (
+            !active ||
+            (expectedActiveId !== undefined && active.id !== expectedActiveId)
+        )
+            throw new CrafletError(
+                "ACTIVE_MISSING",
+                expectedActiveId
+                    ? "The expected active installation is no longer active."
+                    : "No active installation.",
+                3,
+            );
+        const activeId = expectedActiveId ?? active.id;
+        const status = await this.controller.status();
+        // A matching running process is already the requested outcome; never touch its runtime files.
+        if (status.status === "running") {
+            if (status.activeId !== activeId)
+                throw new CrafletError(
+                    "ACTIVE_MISMATCH",
+                    "A different active installation is already running.",
+                    3,
+                );
+            return status;
+        }
+        assertStopped(status.status);
+        await this.prepareEula(active, false, true, ownedJournal);
+        return this.controller.start(activeId);
     }
     private operate<T>(operation: () => Promise<T>): Promise<T> {
         return withMutex(
@@ -505,7 +555,7 @@ export class NodeDeploymentManager {
             assertStopped((await this.controller.status()).status);
             if (!(await readState(this.context.dir)).pending)
                 return this.plan();
-            await this.preflight(true);
+            await this.preflight(true, false);
             const pending = (await readState(this.context.dir)).pending;
             if (pending)
                 await this.config(pending).assertUnchanged(pending.config);

@@ -135,6 +135,100 @@ describe("CLI usage and package-style project management", () => {
         );
         expect((await command(["--version"])).reply.help).toBe("0.1.0");
     });
+    it("remembers explicit Paper EULA consent for this host user during init", async () => {
+        const rejected = path.join(root, "paper-rejected");
+        const failure = await command([
+            "init",
+            rejected,
+            "--name",
+            "paper-rejected",
+            "--type",
+            "paper",
+            "--version",
+            "1.21.11",
+        ]);
+        expect(failure.code).toBe(3);
+        expect(failure.reply.error?.code).toBe("CONFIRMATION_REQUIRED");
+        await expect(
+            stat(path.join(rejected, "craflet.yaml")),
+        ).rejects.toMatchObject({
+            code: "ENOENT",
+        });
+        await expect(stat(path.join(home, "eula.json"))).rejects.toMatchObject({
+            code: "ENOENT",
+        });
+
+        const accepted = path.join(root, "paper-accepted");
+        await result([
+            "init",
+            accepted,
+            "--name",
+            "paper-accepted",
+            "--type",
+            "paper",
+            "--version",
+            "1.21.11",
+            "--yes",
+        ]);
+        expect(
+            JSON.parse(await readFile(path.join(home, "eula.json"), "utf8")),
+        ).toMatchObject({
+            schemaVersion: 1,
+            accepted: true,
+            url: "https://www.minecraft.net/eula",
+        });
+        await expect(
+            stat(path.join(accepted, "runtime/eula.txt")),
+        ).rejects.toMatchObject({
+            code: "ENOENT",
+        });
+
+        const remembered = path.join(root, "paper-remembered");
+        await result([
+            "init",
+            remembered,
+            "--name",
+            "paper-remembered",
+            "--type",
+            "paper",
+            "--version",
+            "1.21.11",
+        ]);
+        await expect(
+            stat(path.join(remembered, "runtime/eula.txt")),
+        ).rejects.toMatchObject({
+            code: "ENOENT",
+        });
+    });
+
+    it.each(["start", "restart"] as const)(
+        "passes the EULA interaction to %s launches",
+        async (action) => {
+            const launch = vi
+                .spyOn(NodeDeploymentManager.prototype, action)
+                .mockImplementation(async function (
+                    this: NodeDeploymentManager,
+                ) {
+                    expect(this.options.requestEulaConsent).toBeTypeOf(
+                        "function",
+                    );
+                    await this.options.requestEulaConsent?.({
+                        path: path.join(project, "runtime/eula.txt"),
+                        text: "eula=false\n",
+                        url: "https://www.minecraft.net/eula",
+                    });
+                    return { status: "running" };
+                });
+            const failure = await command([action]);
+            expect(failure.code).toBe(3);
+            expect(failure.reply.error?.code).toBe("CONFIRMATION_REQUIRED");
+            expect(await result([action, "--yes"])).toEqual([
+                { project: "example", result: { status: "running" } },
+            ]);
+            expect(launch).toHaveBeenCalledTimes(2);
+        },
+    );
+
     it("accepts common flags before and after nested commands without losing parent values", async () => {
         const target = path.join(root, "preview");
         await result([
@@ -594,6 +688,25 @@ describe("workspace selection through the CLI", () => {
 });
 
 describe("CLI routing to backup and lifecycle ports", () => {
+    it("stops a recursive launch immediately after cancellation", async () => {
+        await result(["workspace", "init", "servers/*"], root);
+        for (const name of ["alpha", "beta"])
+            await initProject(path.join(root, "servers", name), {
+                name,
+                kind: "velocity",
+                version: "4.1.1",
+            });
+        const start = vi
+            .spyOn(NodeDeploymentManager.prototype, "start")
+            .mockRejectedValue(
+                new CrafletError("CANCELLED", "Operation cancelled.", 130),
+            );
+        const execution = await command(["-r", "start"], root);
+        expect(execution.code).toBe(130);
+        expect(execution.reply.error?.code).toBe("CANCELLED");
+        expect(start).toHaveBeenCalledOnce();
+    });
+
     it("requests graceful stop when foreground startup is cancelled, without reverting active", async () => {
         vi.spyOn(NodeDeploymentManager.prototype, "start").mockImplementation(
             async () => {
@@ -621,12 +734,20 @@ describe("CLI routing to backup and lifecycle ports", () => {
         });
         expect(stop).not.toHaveBeenCalled();
     });
-    it("ends foreground following when the server has exited", async () => {
-        vi.spyOn(NodeDeploymentManager.prototype, "start").mockResolvedValue({
-            status: "running",
-        });
+    it("passes EULA consent into foreground run and ends when the server exits", async () => {
+        vi.spyOn(NodeDeploymentManager.prototype, "start").mockImplementation(
+            async function (this: NodeDeploymentManager) {
+                expect(this.options.requestEulaConsent).toBeTypeOf("function");
+                await this.options.requestEulaConsent?.({
+                    path: path.join(project, "runtime/eula.txt"),
+                    text: "eula=false\n",
+                    url: "https://www.minecraft.net/eula",
+                });
+                return { status: "running" };
+            },
+        );
         const stop = vi.spyOn(NodeServerController.prototype, "stop");
-        expect(await result(["run", "--active"])).toEqual({
+        expect(await result(["run", "--active", "--yes"])).toEqual({
             detached: false,
             status: { status: "stopped" },
         });
