@@ -220,7 +220,7 @@ function renderInstall(
     if (!dryRun && changed.length) {
         lines.push("Running JARs were not replaced.");
         lines.push(
-            "Apply the pending installation with craflet start or craflet restart.",
+            "Apply the pending installation with crafleet start or crafleet restart.",
         );
     }
     if (command === "plugins remove")
@@ -288,8 +288,8 @@ function renderUpdateCheck(
             if (update.kind === "local") {
                 const updateCommand =
                     target === "server"
-                        ? "craflet server update"
-                        : `craflet plugins update -- ${name}`;
+                        ? "crafleet server update"
+                        : `crafleet plugins update -- ${name}`;
                 lines.push(
                     `  ${name}: local JAR locked at ${text(update.lockedVersion)}; run ${updateCommand} to reimport changed bytes.`,
                 );
@@ -536,7 +536,7 @@ function renderConfig(
                 `Capture stopped with ${conflicts.length} ${plural(conflicts.length, "conflict")}; no templates were changed.`,
                 ...conflicts.map(
                     (entry) =>
-                        `  ${text(entry.relative)}: review with craflet config diff`,
+                        `  ${text(entry.relative)}: review with crafleet config diff`,
                 ),
             ].join("\n");
         const captured = list(item?.captured).map((entry) => text(entry));
@@ -740,7 +740,7 @@ function renderBackup(
             structured
                 ? item?.applied === true
                     ? `Applied retention and pruned repository data; ${removed.length} ${plural(removed.length, "snapshot")} removed.`
-                    : `Retention preview: ${removed.length} ${plural(removed.length, "snapshot")} would be removed. Run craflet backup prune --apply to delete them.`
+                    : `Retention preview: ${removed.length} ${plural(removed.length, "snapshot")} would be removed. Run crafleet backup prune --apply to delete them.`
                 : `Retention ${item?.applied === true ? "result" : "preview"}: restic reported ${groups.length} ${plural(groups.length, "retention group")}; use --json to inspect its provider-specific structure.`,
         ];
         lines.push(
@@ -897,7 +897,7 @@ function renderRecovery(result: unknown, dryRun: boolean): string {
     }
     if (!dryRun)
         lines.push(
-            "Run craflet validate, craflet status, and craflet deploy plan before continuing.",
+            "Run crafleet validate, crafleet status, and crafleet deploy plan before continuing.",
         );
     return lines.join("\n");
 }

@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import {
     type BackupMetadata,
-    CrafletError,
+    CrafleetError,
     validateBackupIdentifier,
-} from "@craflet/core";
+} from "@crafleet/core";
 
 export const MAX_ACTIVE_METADATA_BYTES = 4 * 1024 * 1024;
 export const MAX_BACKUP_METADATA_BYTES = 64 * 1024 * 1024;
@@ -35,7 +35,7 @@ export function validateBackupRelativePath(value: string): string {
             (segment) => !segment || segment === "." || segment === "..",
         )
     ) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_RESTORE_PATH",
             "The snapshot contains an unsafe relative path.",
             3,
@@ -55,7 +55,7 @@ export function validateBackupRelativePath(value: string): string {
                 ),
         )
     ) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_RESTORE_PATH",
             "The snapshot contains a filename that cannot be safely restored on Windows.",
             3,
@@ -79,9 +79,9 @@ export function validateBackupMetadata(
         !Array.isArray(value.files) ||
         !Array.isArray(value.databases)
     ) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_METADATA",
-            "The snapshot has invalid Craflet metadata or belongs to a different project.",
+            "The snapshot has invalid Crafleet metadata or belongs to a different project.",
             3,
         );
     }
@@ -91,7 +91,7 @@ export function validateBackupMetadata(
         backupJson(value).length > MAX_BACKUP_METADATA_BYTES ||
         backupJson(value.active).length > MAX_ACTIVE_METADATA_BYTES
     ) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_METADATA",
             "The snapshot manifest exceeds the supported metadata limits.",
             3,
@@ -113,7 +113,7 @@ export function validateBackupMetadata(
             typeof root.external !== "boolean" ||
             !["directory", "file"].includes(String(root.kind))
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_METADATA",
                 "The snapshot source mapping is invalid.",
                 3,
@@ -121,21 +121,21 @@ export function validateBackupMetadata(
         }
         validateBackupIdentifier(root.id);
         if (rootIds.has(backupPathKey(root.id)))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_METADATA",
                 "The snapshot repeats a source root ID.",
                 3,
             );
         if (!root.external) {
             if (root.id !== "runtime" || root.kind !== "directory")
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_METADATA",
                     "The snapshot has an invalid runtime root.",
                     3,
                 );
             runtimeRoot = true;
         } else if (backupPathKey(root.id) === "runtime") {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_METADATA",
                 "An additional root cannot use the runtime ID.",
                 3,
@@ -144,7 +144,7 @@ export function validateBackupMetadata(
         rootIds.add(backupPathKey(root.id));
     }
     if (value.roots.length === 0)
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_METADATA",
             "The snapshot has no declared data roots.",
             3,
@@ -162,7 +162,7 @@ export function validateBackupMetadata(
             Number(file.mode) < 0 ||
             Number(file.mode) > 0o777
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_METADATA",
                 "The snapshot file manifest is invalid.",
                 3,
@@ -171,7 +171,7 @@ export function validateBackupMetadata(
         validateBackupRelativePath(file.destination);
         const components = file.destination.split("/");
         if (file.destination.startsWith("data/runtime/") && !runtimeRoot)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_METADATA",
                 "The snapshot has runtime data without a runtime root.",
                 3,
@@ -184,7 +184,7 @@ export function validateBackupMetadata(
                     externalRootIds.has(components[2] ?? ""))
             )
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_METADATA",
                 "The snapshot file is outside its declared data roots.",
                 3,
@@ -192,7 +192,7 @@ export function validateBackupMetadata(
         }
         const key = backupPathKey(file.destination);
         if (destinations.has(key))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_METADATA",
                 "The snapshot contains colliding file destinations.",
                 3,
@@ -211,7 +211,7 @@ export function validateBackupMetadata(
             !Number.isSafeInteger(database.bytes) ||
             Number(database.bytes) < 1
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_METADATA",
                 "The snapshot database manifest is invalid.",
                 3,
@@ -223,7 +223,7 @@ export function validateBackupMetadata(
             database.file !==
             `databases/${database.id}.${database.kind === "sqlite" ? "sqlite3" : "sql"}`
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_METADATA",
                 "A database artifact does not match its declared identifier and kind.",
                 3,
@@ -231,7 +231,7 @@ export function validateBackupMetadata(
         const key = backupPathKey(database.file);
         const idKey = backupPathKey(database.id);
         if (databases.has(idKey) || destinations.has(key))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_METADATA",
                 "The snapshot contains duplicate database entries.",
                 3,
@@ -243,7 +243,7 @@ export function validateBackupMetadata(
         const components = destination.split("/");
         for (let index = 1; index < components.length; index++) {
             if (destinations.has(components.slice(0, index).join("/")))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_METADATA",
                     "The snapshot has a file and directory path collision.",
                     3,

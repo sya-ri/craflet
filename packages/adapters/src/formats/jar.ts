@@ -1,9 +1,9 @@
 import { crc32 } from "node:zlib";
 import {
-    CrafletError,
+    CrafleetError,
     type PluginIdentity,
     type ServerKind,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { type } from "arktype";
 import { parseDocument } from "yaml";
 import { type Entry, openPromise, type ZipFile } from "yauzl";
@@ -54,7 +54,7 @@ function metadata<T>(schema: { assert(value: unknown): T }, value: unknown): T {
     try {
         return schema.assert(value);
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "INVALID_PLUGIN_DESCRIPTOR",
             "The selected plugin descriptor has invalid or missing fields.",
             3,
@@ -70,7 +70,7 @@ function safeName(value: string): string {
         value.includes("\\") ||
         !value.trim()
     ) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "INVALID_PLUGIN_DESCRIPTOR",
             "The plugin descriptor contains an invalid identifier.",
             3,
@@ -115,7 +115,7 @@ async function readDescriptor(
         entry.compressedSize > maximum ||
         entry.isEncrypted()
     ) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "JAR_DESCRIPTOR_LIMIT",
             "The plugin descriptor exceeds the size limit or is encrypted.",
             3,
@@ -131,7 +131,7 @@ async function readDescriptor(
                 : Buffer.from(value as Uint8Array);
             size += chunk.byteLength;
             if (size > maximum)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "JAR_DESCRIPTOR_LIMIT",
                     "The expanded plugin descriptor exceeds the size limit.",
                     3,
@@ -143,7 +143,7 @@ async function readDescriptor(
     }
     const content = Buffer.concat(chunks);
     if (crc32(content) !== entry.crc32)
-        throw new CrafletError(
+        throw new CrafleetError(
             "INVALID_JAR",
             "The plugin descriptor CRC does not match the ZIP directory.",
             3,
@@ -166,7 +166,7 @@ export async function inspectOptionalPluginJar(
         });
         const maximum = options.maxEntries ?? 100_000;
         if (zip.entryCount > maximum)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "JAR_ENTRY_LIMIT",
                 "The JAR contains too many ZIP entries.",
                 3,
@@ -180,14 +180,14 @@ export async function inspectOptionalPluginJar(
         let count = 0;
         for await (const entry of zip.eachEntry()) {
             if (++count > maximum)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "JAR_ENTRY_LIMIT",
                     "The JAR contains too many ZIP entries.",
                     3,
                 );
             if (!names.includes(entry.fileName)) continue;
             if (descriptors.has(entry.fileName))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "DUPLICATE_PLUGIN_DESCRIPTOR",
                     "The JAR contains a duplicate plugin descriptor.",
                     3,
@@ -212,7 +212,7 @@ export async function inspectOptionalPluginJar(
             try {
                 parsed = JSON.parse(content);
             } catch {
-                throw new CrafletError(
+                throw new CrafleetError(
                     "INVALID_PLUGIN_DESCRIPTOR",
                     "The Velocity plugin descriptor is not valid JSON.",
                     3,
@@ -234,7 +234,7 @@ export async function inspectOptionalPluginJar(
         }
         const document = parseDocument(content, { uniqueKeys: true });
         if (document.errors.length || document.warnings.length)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "INVALID_PLUGIN_DESCRIPTOR",
                 "The plugin descriptor is not valid YAML.",
                 3,
@@ -243,7 +243,7 @@ export async function inspectOptionalPluginJar(
         try {
             parsed = document.toJS({ maxAliasCount: 0 });
         } catch {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "INVALID_PLUGIN_DESCRIPTOR",
                 "YAML aliases are not accepted in plugin descriptors.",
                 3,
@@ -288,8 +288,8 @@ export async function inspectOptionalPluginJar(
             data.provides,
         );
     } catch (error) {
-        if (error instanceof CrafletError) throw error;
-        throw new CrafletError(
+        if (error instanceof CrafleetError) throw error;
+        throw new CrafleetError(
             "INVALID_JAR",
             "The JAR or its selected plugin descriptor cannot be read safely.",
             3,
@@ -305,7 +305,7 @@ export async function inspectPluginJar(
 ): Promise<PluginIdentity> {
     const result = await inspectOptionalPluginJar(file, options);
     if (!result)
-        throw new CrafletError(
+        throw new CrafleetError(
             "PLUGIN_DESCRIPTOR_MISSING",
             "The JAR has no supported root plugin descriptor.",
             3,

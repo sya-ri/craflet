@@ -24,8 +24,8 @@ import {
     NodeArtifactStore,
     readState,
     saveState,
-} from "@craflet/adapters";
-import { CRAFLET_VERSION } from "@craflet/core";
+} from "@crafleet/adapters";
+import { CRAFLEET_VERSION } from "@crafleet/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NodeServerController } from "../../packages/adapters/src/runtime/controller.js";
 import {
@@ -55,10 +55,10 @@ const servers = new Set<net.Server>();
 const sockets = new Set<net.Socket>();
 const controllers: NodeServerController[] = [];
 beforeEach(async () => {
-    root = await mkdtemp(path.join(temporaryParent, "craflet-runtime-"));
+    root = await mkdtemp(path.join(temporaryParent, "crafleet-runtime-"));
     project = path.join(root, "server 日本語");
     home = path.join(root, "home");
-    await mkdir(path.join(project, ".craflet"), { recursive: true });
+    await mkdir(path.join(project, ".crafleet"), { recursive: true });
     await mkdir(path.join(project, "runtime"));
 });
 afterEach(async () => {
@@ -71,7 +71,7 @@ afterEach(async () => {
     servers.clear();
     if (
         path.dirname(root) !== temporaryParent ||
-        !path.basename(root).startsWith("craflet-runtime-")
+        !path.basename(root).startsWith("crafleet-runtime-")
     )
         throw new Error("Unsafe cleanup target");
     await rm(root, { recursive: true, force: true });
@@ -123,7 +123,7 @@ function record(patch: Partial<RunnerRecord> = {}): RunnerRecord {
 }
 async function putRecord(value: unknown): Promise<void> {
     await writeFile(
-        path.join(project, ".craflet/runner.json"),
+        path.join(project, ".crafleet/runner.json"),
         JSON.stringify(value),
     );
 }
@@ -277,7 +277,7 @@ describe("server identity and control", () => {
             clean: false,
             exitCode: 1,
         });
-        await mkdir(path.join(project, ".craflet/process.lock"));
+        await mkdir(path.join(project, ".crafleet/process.lock"));
         expect(await controller.status()).toEqual({ status: "unknown" });
         await expect(controller.stop(true)).rejects.toMatchObject({
             code: "UNKNOWN_PROCESS",
@@ -306,7 +306,8 @@ describe("server identity and control", () => {
                 ),
             );
             await putRecord(identity);
-            if (guard) await mkdir(path.join(project, ".craflet/process.lock"));
+            if (guard)
+                await mkdir(path.join(project, ".crafleet/process.lock"));
             expect(
                 await new NodeServerController(project, home).status(),
             ).toEqual(
@@ -325,12 +326,12 @@ describe("server identity and control", () => {
             await putRecord(identity);
             if (mode === "oversize")
                 await writeFile(
-                    path.join(project, ".craflet/runner.json"),
+                    path.join(project, ".crafleet/runner.json"),
                     "x".repeat(32769),
                 );
             if (mode === "invalid-json")
                 await writeFile(
-                    path.join(project, ".craflet/runner.json"),
+                    path.join(project, ".crafleet/runner.json"),
                     "{",
                 );
             const controller = new NodeServerController(project, home);
@@ -425,7 +426,7 @@ describe("server identity and control", () => {
         const cached = path.join(
             home,
             "runners",
-            CRAFLET_VERSION,
+            CRAFLEET_VERSION,
             hash,
             "runner.mjs",
         );
@@ -589,7 +590,7 @@ describe("bounded logs and early daemon failures", () => {
     });
 
     it("paginates complete UTF-8 and CRLF lines without gaps", async () => {
-        const file = path.join(project, ".craflet/server.log");
+        const file = path.join(project, ".crafleet/server.log");
         const boundary = `${"x".repeat(64 * 1024 - 3)}日本語`;
         await writeFile(file, `zero\r\n一\r\n\r\n${boundary}\r\nlast\n`);
 
@@ -621,12 +622,12 @@ describe("bounded logs and early daemon failures", () => {
         );
     });
     it("walks backward through one oversized line with bounded pages", async () => {
-        const file = path.join(project, ".craflet/server.log");
+        const file = path.join(project, ".crafleet/server.log");
         await writeFile(file, `old\n${"x".repeat(4 * 1024 * 1024)}`);
 
         const recent = await readRecentServerLogs(project, 2);
         expect(recent.text).toBe(
-            "[craflet] Oversized server log line omitted.\n",
+            "[crafleet] Oversized server log line omitted.\n",
         );
         let cursor = recent.older;
         const pages: string[] = [];
@@ -639,11 +640,11 @@ describe("bounded logs and early daemon failures", () => {
         }
         expect(cursor).toBeNull();
         expect(pages.join("") + recent.text).toBe(
-            "old\n[craflet] Oversized server log line omitted.\n",
+            "old\n[crafleet] Oversized server log line omitted.\n",
         );
     });
     it("marks an older page stale after a same-length rewrite", async () => {
-        const file = path.join(project, ".craflet/server.log");
+        const file = path.join(project, ".crafleet/server.log");
         await writeFile(file, "old1\nold2\nlast\n");
         const recent = await readRecentServerLogs(project, 1);
         if (!recent.older) throw new Error("Expected an older log page.");
@@ -661,7 +662,7 @@ describe("bounded logs and early daemon failures", () => {
         });
     });
     it("hands off the snapshot offset without losing concurrent appends", async () => {
-        const file = path.join(project, ".craflet/server.log");
+        const file = path.join(project, ".crafleet/server.log");
         await writeFile(file, "before\n");
         const recent = await readRecentServerLogs(project, 10);
         await appendFile(file, "between\n");
@@ -684,7 +685,7 @@ describe("bounded logs and early daemon failures", () => {
         expect((await iterator.next()).done).toBe(true);
     });
     it("resets follow after an observed prefix is rewritten at the same length", async () => {
-        const file = path.join(project, ".craflet/server.log");
+        const file = path.join(project, ".crafleet/server.log");
         await writeFile(file, "ready\n");
         const recent = await readRecentServerLogs(project, 1);
         const abort = new AbortController();
@@ -714,7 +715,7 @@ describe("bounded logs and early daemon failures", () => {
         expect((await iterator.next()).done).toBe(true);
     });
     it("retries a recent snapshot if the open log shrinks after its page is read", async () => {
-        const file = path.join(project, ".craflet/server.log");
+        const file = path.join(project, ".crafleet/server.log");
         await writeFile(file, "one\ntwo\n");
         const fault = await shrinkAfterLogRead(file, 2);
         try {
@@ -727,7 +728,7 @@ describe("bounded logs and early daemon failures", () => {
         }
     });
     it("marks an older page stale if the open log shrinks after reading", async () => {
-        const file = path.join(project, ".craflet/server.log");
+        const file = path.join(project, ".crafleet/server.log");
         await writeFile(file, "zero\none\ntwo\n");
         const recent = await readRecentServerLogs(project, 1);
         if (!recent.older) throw new Error("Expected an older log page.");
@@ -741,7 +742,7 @@ describe("bounded logs and early daemon failures", () => {
         }
     });
     it("withholds an incomplete UTF-8 line until CRLF completes it", async () => {
-        const file = path.join(project, ".craflet/server.log");
+        const file = path.join(project, ".crafleet/server.log");
         const value = Buffer.from("日本語");
         await writeFile(
             file,
@@ -780,7 +781,7 @@ describe("bounded logs and early daemon failures", () => {
         await iterator.next();
     });
     it("accepts a maximum-size line when CRLF crosses follow chunks", async () => {
-        const file = path.join(project, ".craflet/server.log");
+        const file = path.join(project, ".crafleet/server.log");
         await writeFile(file, "ready\n");
         const recent = await readRecentServerLogs(project, 1);
         const abort = new AbortController();
@@ -804,7 +805,7 @@ describe("bounded logs and early daemon failures", () => {
         await iterator.next();
     });
     it("marks old cursors stale and closes follow after truncation", async () => {
-        const file = path.join(project, ".craflet/server.log");
+        const file = path.join(project, ".crafleet/server.log");
         await writeFile(file, "zero\none\ntwo\n");
         const recent = await readRecentServerLogs(project, 1);
         expect(recent.older).not.toBeNull();
@@ -826,7 +827,7 @@ describe("bounded logs and early daemon failures", () => {
         expect((await iterator.next()).done).toBe(true);
     });
     it("stops checkpoint following promptly on abort", async () => {
-        const file = path.join(project, ".craflet/server.log");
+        const file = path.join(project, ".crafleet/server.log");
         await writeFile(file, "ready\n");
         const recent = await readRecentServerLogs(project);
         const abort = new AbortController();
@@ -843,13 +844,13 @@ describe("bounded logs and early daemon failures", () => {
         const linked = path.join(root, "linked-private");
         await mkdir(linked);
         await writeFile(path.join(linked, "server.log"), "outside\n");
-        await rm(path.join(project, ".craflet"), {
+        await rm(path.join(project, ".crafleet"), {
             recursive: true,
             force: true,
         });
         await symlink(
             linked,
-            path.join(project, ".craflet"),
+            path.join(project, ".crafleet"),
             process.platform === "win32" ? "junction" : "dir",
         );
         await expect(readRecentServerLogs(project)).rejects.toMatchObject({
@@ -857,7 +858,7 @@ describe("bounded logs and early daemon failures", () => {
         });
     });
     it("reads only requested tail lines and never splits oversized first lines", async () => {
-        const file = path.join(project, ".craflet/server.log");
+        const file = path.join(project, ".crafleet/server.log");
         expect(await recentText()).toBe("");
         await writeFile(
             file,
@@ -866,18 +867,18 @@ describe("bounded logs and early daemon failures", () => {
         expect(await recentText(2)).toBe("last\n日本語");
         await writeFile(file, "x".repeat(4 * 1024 * 1024 + 1));
         expect(await recentText(2)).toBe(
-            "[craflet] Oversized server log line omitted.",
+            "[crafleet] Oversized server log line omitted.",
         );
         await writeFile(file, "x".repeat(256 * 1024 + 2));
         expect(await recentText(2)).toBe(
-            "[craflet] Oversized server log line omitted.",
+            "[crafleet] Oversized server log line omitted.",
         );
     });
     it("classifies incomplete lines exactly at the byte limit", async () => {
-        const file = path.join(project, ".craflet/server.log");
+        const file = path.join(project, ".crafleet/server.log");
         await writeFile(file, "x".repeat(256 * 1024 + 1));
         expect(await recentText(1)).toBe(
-            "[craflet] Oversized server log line omitted.",
+            "[crafleet] Oversized server log line omitted.",
         );
 
         await writeFile(file, `${"x".repeat(256 * 1024)}\r`);
@@ -886,17 +887,17 @@ describe("bounded logs and early daemon failures", () => {
         await writeFile(file, `old\n${"x".repeat(256 * 1024 + 1)}`);
         const recent = await readRecentServerLogs(project, 1);
         expect(recent.text).toBe(
-            "[craflet] Oversized server log line omitted.\n",
+            "[crafleet] Oversized server log line omitted.\n",
         );
         expect(recent.older).not.toBeNull();
     });
     it("includes a bounded sentinel when an oversized line precedes the tail", async () => {
-        const file = path.join(project, ".craflet/server.log");
+        const file = path.join(project, ".crafleet/server.log");
         await writeFile(file, `${"x".repeat(2 * 1024 * 1024)}\nlast\n`);
 
         const recent = await readRecentServerLogs(project, 2);
         expect(recent).toMatchObject({
-            text: "[craflet] Oversized server log line omitted.\nlast\n",
+            text: "[crafleet] Oversized server log line omitted.\nlast\n",
             lineCount: 2,
         });
         expect(recent.older).not.toBeNull();
@@ -924,7 +925,7 @@ describe("bounded logs and early daemon failures", () => {
         },
     );
     it("follows creation, split UTF-8 and truncation and stops promptly on abort", async () => {
-        const file = path.join(project, ".craflet/server.log");
+        const file = path.join(project, ".crafleet/server.log");
         const abort = new AbortController();
         const found: string[] = [];
         const reading = (async () => {
@@ -970,7 +971,7 @@ describe("bounded logs and early daemon failures", () => {
         await new Promise<void>((resolve) => stream.once("end", resolve));
         expect(lines).toEqual([
             "ok",
-            "[craflet] Oversized server log line omitted.",
+            "[crafleet] Oversized server log line omitted.",
             "next",
             "tail",
         ]);
@@ -981,10 +982,12 @@ describe("bounded logs and early daemon failures", () => {
         consumeLogLines(stream, (line) => lines.push(line), 2);
         stream.end("secret");
         await new Promise<void>((resolve) => stream.once("end", resolve));
-        expect(lines).toEqual(["[craflet] Oversized server log line omitted."]);
+        expect(lines).toEqual([
+            "[crafleet] Oversized server log line omitted.",
+        ]);
     });
     it("refuses malformed launch requests and active mismatches without spawning", async () => {
-        const file = path.join(project, ".craflet/runner-launch.json");
+        const file = path.join(project, ".crafleet/runner-launch.json");
         await writeFile(file, "{}");
         await expect(runServerDaemon(project)).rejects.toMatchObject({
             code: "RUNNER_LAUNCH",
@@ -1002,13 +1005,13 @@ describe("bounded logs and early daemon failures", () => {
             code: "RUNNER_ACTIVE",
         });
         await expect(
-            stat(path.join(project, ".craflet/process.lock")),
+            stat(path.join(project, ".crafleet/process.lock")),
         ).rejects.toMatchObject({ code: "ENOENT" });
     });
     it("records real executable failure and clears the owned guard without hanging", async () => {
         const installation = await active();
         await writeFile(
-            path.join(project, ".craflet/runner-launch.json"),
+            path.join(project, ".crafleet/runner-launch.json"),
             JSON.stringify({
                 protocol: 1,
                 token: randomUUID(),
@@ -1022,13 +1025,13 @@ describe("bounded logs and early daemon failures", () => {
             await new NodeServerController(project, home).status(),
         ).toMatchObject({ status: "stopped", clean: false });
         await expect(
-            stat(path.join(project, ".craflet/process.lock")),
+            stat(path.join(project, ".crafleet/process.lock")),
         ).rejects.toMatchObject({ code: "ENOENT" });
     });
     it("does not replace another process lifetime guard", async () => {
         const installation = await active();
         await writeFile(
-            path.join(project, ".craflet/runner-launch.json"),
+            path.join(project, ".crafleet/runner-launch.json"),
             JSON.stringify({
                 protocol: 1,
                 token: randomUUID(),
@@ -1036,7 +1039,7 @@ describe("bounded logs and early daemon failures", () => {
                 home,
             }),
         );
-        await mkdir(path.join(project, ".craflet/process.lock"));
+        await mkdir(path.join(project, ".crafleet/process.lock"));
         await expect(runServerDaemon(project)).rejects.toMatchObject({
             code: "RUNNER_GUARD",
         });
@@ -1047,7 +1050,7 @@ describe("bounded logs and early daemon failures", () => {
             code: "JAVA_PATH",
         });
         await expect(
-            javaExecutable("craflet-test-java-not-installed"),
+            javaExecutable("crafleet-test-java-not-installed"),
         ).rejects.toMatchObject({ code: "JAVA_MISSING" });
     });
 });

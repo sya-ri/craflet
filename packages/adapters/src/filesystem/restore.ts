@@ -7,12 +7,12 @@ import {
     assertStopped,
     type BackupMetadata,
     type BackupService,
-    CrafletError,
+    CrafleetError,
     createBackupSelector,
     type DatabaseBackupConfig,
     portablePluginJarName,
     stableStringify,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { type } from "arktype";
 import { NodeDatabaseBackupAdapter } from "../database/backup.js";
 import {
@@ -141,10 +141,10 @@ function protectedPaths(
     return [
         project.home,
         source,
-        ...["config", ".craflet", ".git", "imports", "craflet.yaml"].map(
+        ...["config", ".crafleet", ".git", "imports", "crafleet.yaml"].map(
             (name) => path.join(project.dir, name),
         ),
-        ...[".craflet", "craflet-lock.yaml", "craflet-workspace.yaml"].map(
+        ...[".crafleet", "crafleet-lock.yaml", "crafleet-workspace.yaml"].map(
             (name) => path.join(project.lockRoot, name),
         ),
         ...Object.values(project.manifest.secrets ?? {}).flatMap((reference) =>
@@ -194,7 +194,7 @@ function assertDataTarget(
             pathsOverlap(target, protectedPath),
         )
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_MAPPING",
             "A restored data target overlaps protected declarations, secrets, artifacts, repository or extraction files.",
             3,
@@ -212,7 +212,7 @@ function assertDistinctTargets(targets: readonly string[]): void {
     for (const target of targets) {
         const key = pathKey(target);
         if (keys.has(key))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_COLLISION",
                 "Multiple restored entries target the same file.",
                 3,
@@ -223,7 +223,7 @@ function assertDistinctTargets(targets: readonly string[]): void {
         let parent = path.dirname(target);
         while (parent !== path.dirname(parent)) {
             if (keys.has(pathKey(parent)))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTORE_COLLISION",
                     "A restored file collides with another target's directory.",
                     3,
@@ -236,7 +236,7 @@ async function currentHash(target: string): Promise<string | null> {
     await assertNoSymlinks(target);
     if (!(await exists(target))) return null;
     if (!(await lstat(target)).isFile())
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_TARGET",
             "A restore target is not a regular file.",
             3,
@@ -249,7 +249,7 @@ async function sqliteReady(target: string, source: string): Promise<void> {
             (await exists(`${target}${suffix}`)) ||
             (await exists(`${source}${suffix}`))
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "DATABASE_SQLITE_BUSY",
                 "SQLite restore requires a cleanly closed target and a standalone verified dump without sidecar files.",
                 3,
@@ -266,7 +266,7 @@ async function sqliteReady(target: string, source: string): Promise<void> {
         if (result.length !== 1 || Object.values(result[0] ?? {})[0] !== "ok")
             throw new Error("Invalid SQLite dump");
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "DATABASE_SQLITE_CHECK",
             "The SQLite restore dump failed its integrity check.",
             3,
@@ -285,13 +285,13 @@ export async function inspectBackupRestore(
     const source = path.resolve(directory);
     await assertNoSymlinks(source);
     if (pathsOverlap(source, project.dir) || pathsOverlap(source, project.home))
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_OVERLAP",
-            "The extraction directory must be separate from the project and CRAFLET_HOME.",
+            "The extraction directory must be separate from the project and CRAFLEET_HOME.",
             3,
         );
-    if (await exists(path.join(source, ".craflet-restore-incomplete.json")))
-        throw new CrafletError(
+    if (await exists(path.join(source, ".crafleet-restore-incomplete.json")))
+        throw new CrafleetError(
             "RESTORE_INCOMPLETE",
             "This extraction did not finish verification. Restore the snapshot again into an empty directory.",
             3,
@@ -310,7 +310,7 @@ export async function inspectBackupRestore(
     ] as const) {
         const info = await lstat(file);
         if (!info.isFile() || info.size > limit)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_METADATA",
                 "Backup metadata exceeds its size limit or is not a regular file.",
                 3,
@@ -322,13 +322,13 @@ export async function inspectBackupRestore(
     );
     const active = await readJson<unknown>(activeFile);
     if (stableStringify(active) !== stableStringify(metadata.active))
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_METADATA",
             "The extracted active metadata does not match its manifest.",
             3,
         );
     if (!metadata.active.installation)
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_NO_INSTALLATION",
             "This snapshot has no known active JAR set. Its data can be extracted, but automatic production application is unsafe.",
             3,
@@ -341,7 +341,7 @@ export async function inspectBackupRestore(
         installation.manifest.id &&
         installation.manifest.id !== project.manifest.id
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_PROJECT",
             "The snapshot installation belongs to a different project.",
             3,
@@ -368,7 +368,7 @@ export async function inspectBackupRestore(
         actual.length !== allowed.size ||
         actual.some((file) => !allowed.has(file))
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_CONTENTS",
             "The extracted backup contains missing or unexpected files.",
             3,
@@ -376,7 +376,7 @@ export async function inspectBackupRestore(
     const mappings = options.mappings ?? {};
     for (const name of Object.keys(mappings))
         if (!metadata.roots.some((root) => root.id === name && root.external))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_MAPPING",
                 "An additional-root mapping does not belong to this snapshot.",
                 2,
@@ -395,7 +395,7 @@ export async function inspectBackupRestore(
         )
             continue;
         if (!base || !path.isAbsolute(base))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_MAPPING",
                 `Additional root ${root.id} requires an explicit absolute mapping. Snapshot source paths are never used as write targets.`,
                 3,
@@ -404,14 +404,14 @@ export async function inspectBackupRestore(
         if (root.external) {
             assertDataTarget(project, source, backup, target);
             if (pathsOverlap(target, path.join(project.dir, "runtime")))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTORE_MAPPING",
                     "An additional data root cannot overlap the runtime root.",
                     3,
                 );
         }
         if (roots.some((existing) => pathsOverlap(existing.path, target)))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_COLLISION",
                 "Mapped restore roots overlap one another.",
                 3,
@@ -429,7 +429,7 @@ export async function inspectBackupRestore(
                 candidate.id === (external ? segments[2] : "runtime"),
         );
         if (!root)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_ROOT",
                 "A restored file has no mapped root.",
                 3,
@@ -437,7 +437,7 @@ export async function inspectBackupRestore(
         const suffix = segments.slice(external ? 3 : 2).join("/");
         validateBackupRelativePath(suffix);
         if (root.kind === "file" && suffix.includes("/"))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_ROOT",
                 "A single-file root contains a nested path.",
                 3,
@@ -445,7 +445,7 @@ export async function inspectBackupRestore(
         const target =
             root.kind === "file" ? root.path : path.resolve(root.path, suffix);
         if (!pathContains(root.path, target))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_MAPPING",
                 "A restore file leaves its mapped root.",
                 3,
@@ -455,7 +455,7 @@ export async function inspectBackupRestore(
         const payload = await assertNoSymlinks(source, file.destination);
         const integrity = await hashBackupFile(payload);
         if (integrity.sha256 !== file.sha256 || integrity.bytes !== file.size)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_HASH",
                 "A restored data file failed size or SHA-256 verification.",
                 3,
@@ -472,7 +472,7 @@ export async function inspectBackupRestore(
     const databases: VerifiedRestore["databases"] = [];
     for (const dump of metadata.databases) {
         if (!options.databases?.includes(dump.id))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_DATABASE",
                 `Explicitly confirm database ${dump.id} before applying it.`,
                 3,
@@ -481,7 +481,7 @@ export async function inspectBackupRestore(
             (entry) => entry.id === dump.id && entry.kind === dump.kind,
         );
         if (!config)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_DATABASE",
                 "A database dump does not match a currently configured target.",
                 3,
@@ -489,7 +489,7 @@ export async function inspectBackupRestore(
         const payload = await assertNoSymlinks(source, dump.file);
         const integrity = await hashBackupFile(payload);
         if (integrity.sha256 !== dump.sha256 || integrity.bytes !== dump.bytes)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_HASH",
                 "A database dump failed size or SHA-256 verification.",
                 3,
@@ -508,7 +508,7 @@ export async function inspectBackupRestore(
     }
     for (const id of options.databases ?? [])
         if (!metadata.databases.some((entry) => entry.id === id))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_DATABASE",
                 "A selected database does not exist in this snapshot.",
                 2,
@@ -561,7 +561,7 @@ async function sourcesFor(
                 integrity.sha256 !== artifact.sha256 ||
                 integrity.bytes !== artifact.size
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTORE_HASH",
                     "A locked JAR is unavailable at its exact checksum and size.",
                     3,
@@ -608,7 +608,7 @@ export async function verifyRuntimeJars(
         path.join(project.dir, "runtime/plugins"),
     ))
         if (/^[^/]+\.jar$/i.test(relative) && !known.has(`plugins/${relative}`))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "UNMANAGED_JAR",
                 "Import unmanaged runtime JARs before applying a backup.",
                 3,
@@ -618,9 +618,9 @@ export async function verifyRuntimeJars(
             path.join(project.dir, "runtime", relative),
         );
         if (current !== null && current !== artifact.sha256)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RUNTIME_JAR_DRIFT",
-                "A runtime JAR was modified outside Craflet; refusing to overwrite it.",
+                "A runtime JAR was modified outside Crafleet; refusing to overwrite it.",
                 3,
             );
     }
@@ -668,7 +668,7 @@ export async function prepareRestoreApplication(
             before !== null &&
             (!selected(file.target) || !backedUp.has(pathKey(file.target)))
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_UNPROTECTED_TARGET",
                 "An existing restore target is excluded by the current backup policy. Include it in the pre-restore backup before replacing it.",
                 3,
@@ -737,7 +737,7 @@ async function validateChanges(
         journal.policyFingerprint !== policyFingerprint(project, backup) ||
         journal.fingerprint !== verified.fingerprint
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_CHANGED",
             "The extraction or restore policy changed after planning; no files were modified.",
             4,
@@ -762,7 +762,7 @@ async function validateChanges(
             path.resolve(change.target) !== change.target ||
             (change.before === null && change.after === null)
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_JOURNAL",
                 "A restore journal target is invalid.",
                 4,
@@ -774,7 +774,7 @@ async function validateChanges(
                 expected.kind !== change.kind ||
                 expected.sha256 !== change.after
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTORE_JOURNAL",
                     "Restore writes do not match the verified snapshot.",
                     4,
@@ -787,7 +787,7 @@ async function validateChanges(
                 /\.jar$/i.test(change.target) ||
                 !select(change.target)
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTORE_JOURNAL",
                     "A restore deletion leaves its approved data scope.",
                     4,
@@ -803,21 +803,21 @@ async function validateChanges(
                 (!appliedState &&
                     previousJars.get(relative)?.sha256 !== change.before)
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTORE_JOURNAL",
                     "A removed JAR has an invalid target.",
                     4,
                 );
             portablePluginJarName(relative.slice("plugins/".length, -4));
         } else
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_JOURNAL",
                 "Database deletion is not a supported restore operation.",
                 4,
             );
         const current = await currentHash(change.target);
         if (appliedState && current !== change.after)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_CONFLICT",
                 "Restored files changed after installation bookkeeping was saved.",
                 4,
@@ -826,14 +826,14 @@ async function validateChanges(
             current !== change.before &&
             !(recovering && current === change.after)
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_CONFLICT",
                 "A restore target was edited outside this application; all remaining targets were retained.",
                 4,
             );
     }
     if (seen.size !== sourceMap.size)
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_JOURNAL",
             "The restore journal omits a snapshot target.",
             4,
@@ -848,7 +848,7 @@ async function validateChanges(
             /^[^/]+\.jar$/i.test(file) &&
             !jarTargets.has(pathKey(path.join(runtime, "plugins", file)))
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "UNMANAGED_JAR",
                 "An unmanaged JAR appeared after restore planning; it was not overwritten.",
                 4,
@@ -857,13 +857,13 @@ async function validateChanges(
         digest(state) !== journal.stateFingerprint &&
         !(recovering && appliedState)
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_CONFLICT",
             "Installation state changed outside the restore operation.",
             4,
         );
     if (journal.phase === "applied" && !appliedState)
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_CONFLICT",
             "Completed restore bookkeeping does not match the installation state.",
             4,
@@ -881,19 +881,19 @@ async function copyVerified(
     await mkdir(path.dirname(destination), { recursive: true });
     const temporary = path.join(
         path.dirname(destination),
-        `.craflet-restore-${randomUUID()}.tmp`,
+        `.crafleet-restore-${randomUUID()}.tmp`,
     );
     try {
         await copyFile(source, temporary, constants.COPYFILE_EXCL);
         if ((await hashBackupFile(temporary)).sha256 !== expectedHash)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_HASH",
                 "A restore source changed after verification.",
                 3,
             );
         await chmod(temporary, mode & 0o600 || 0o600);
         if ((await currentHash(destination)) !== before)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_CONFLICT",
                 "A restore target changed while its replacement was being copied.",
                 4,
@@ -917,7 +917,7 @@ async function applyJournal(
     );
     const journalFile = await assertNoSymlinks(
         project.dir,
-        ".craflet/restore.json",
+        ".crafleet/restore.json",
     );
     const sourceMap = new Map(
         sources.map((file) => [pathKey(file.target), file]),
@@ -926,7 +926,7 @@ async function applyJournal(
         execution.signal?.throwIfAborted();
         const current = await currentHash(change.target);
         if (current !== change.before && current !== change.after)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_CONFLICT",
                 "A restore target changed during application.",
                 4,
@@ -939,7 +939,7 @@ async function applyJournal(
             else {
                 const source = sourceMap.get(pathKey(change.target));
                 if (!source)
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "RESTORE_JOURNAL",
                         "A restore source is missing.",
                         4,
@@ -968,7 +968,7 @@ async function applyJournal(
             await assertNoSymlinks(item.source),
         );
         if (integrity.sha256 !== item.sha256 || integrity.bytes !== item.size)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_HASH",
                 "A database dump changed after verification.",
                 3,
@@ -1010,7 +1010,7 @@ export async function executePreparedRestore(
     execution: RestoreExecutionContext,
 ): Promise<void> {
     if (execution.operationLockHeld !== true || !execution.preRestoreSnapshot)
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_CONTEXT",
             "Restore execution requires a held operation lock and a completed pre-restore backup.",
             4,
@@ -1019,9 +1019,9 @@ export async function executePreparedRestore(
         (await new NodeServerController(project.dir, project.home).status())
             .status,
     );
-    const file = await assertNoSymlinks(project.dir, ".craflet/restore.json");
+    const file = await assertNoSymlinks(project.dir, ".crafleet/restore.json");
     if (await exists(file))
-        throw new CrafletError(
+        throw new CrafleetError(
             "RECOVERY_REQUIRED",
             "Recover the previous restore before applying another one.",
             4,
@@ -1056,7 +1056,7 @@ export async function executePreparedRestore(
     try {
         await applyJournal(project, verified, journal, sources, execution);
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_INTERRUPTED",
             "Restore application interrupted; all servers remain stopped. Run recover to resume verified file changes. If SQL import started, use the recorded pre-restore snapshot and review the database before retrying.",
             4,
@@ -1073,7 +1073,7 @@ export async function applyBackupRestore(
     runnerEntry?: string,
 ): Promise<unknown> {
     if (project.manifest.backup?.group)
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_GROUP",
             "A recovery group must be restored as a complete group; do not apply one member separately.",
             3,
@@ -1108,11 +1108,11 @@ export async function applyBackupRestore(
         };
     }
     return withMutex(
-        path.join(project.lockRoot, ".craflet/operation.lock"),
+        path.join(project.lockRoot, ".crafleet/operation.lock"),
         async () => {
             for (const target of recoveryJournalPaths(project))
                 if (await exists(target))
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "RECOVERY_REQUIRED",
                         "Recover the interrupted operation before applying another backup.",
                         4,
@@ -1163,7 +1163,7 @@ export async function applyBackupRestore(
                 backup,
             );
             if (prepared.fingerprint !== verified.fingerprint)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTORE_CHANGED",
                     "The extracted backup changed during preflight.",
                     3,
@@ -1194,17 +1194,17 @@ export async function recoverBackupRestore(
     dryRun = false,
     execution?: { operationLockHeld: true; signal?: AbortSignal },
 ): Promise<boolean> {
-    const file = await assertNoSymlinks(project.dir, ".craflet/restore.json");
+    const file = await assertNoSymlinks(project.dir, ".crafleet/restore.json");
     if (!(await exists(file))) return false;
     const perform = async () => {
         assertStopped(
             (await new NodeServerController(project.dir, project.home).status())
                 .status,
         );
-        await assertNoSymlinks(project.dir, ".craflet/restore.json");
+        await assertNoSymlinks(project.dir, ".crafleet/restore.json");
         if (!(await exists(file))) return false;
         if ((await lstat(file)).size > 128 * 1024 * 1024)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_JOURNAL",
                 "Restore journal exceeds its size limit.",
                 4,
@@ -1213,7 +1213,7 @@ export async function recoverBackupRestore(
         try {
             raw = await readJson<unknown>(file);
         } catch {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_JOURNAL",
                 "Unreadable restore journal; input values are omitted.",
                 4,
@@ -1225,13 +1225,13 @@ export async function recoverBackupRestore(
             Array.isArray(journal.mappings) ||
             journal.changes.length > 250100
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_JOURNAL",
                 "Invalid restore journal; automatic recovery is disabled.",
                 4,
             );
         if (journal.phase === "database")
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_DATABASE_RECOVERY",
                 "SQL restoration may have partially completed. Keep all writers stopped and recover from the recorded pre-restore snapshot; automatic SQL re-execution is disabled.",
                 4,
@@ -1261,7 +1261,7 @@ export async function recoverBackupRestore(
             (journal.phase === "applied" &&
                 journal.completedDatabases.length !== sqlIds.size)
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_JOURNAL",
                 "Invalid database progress in restore journal.",
                 4,
@@ -1295,7 +1295,7 @@ export async function recoverBackupRestore(
         if (journal.phase === "applied") {
             for (const change of journal.changes)
                 if ((await currentHash(change.target)) !== change.after)
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "RESTORE_CONFLICT",
                         "An applied restore target changed before recovery bookkeeping completed.",
                         4,
@@ -1312,7 +1312,7 @@ export async function recoverBackupRestore(
     return dryRun || execution?.operationLockHeld
         ? perform()
         : withMutex(
-              path.join(project.lockRoot, ".craflet/operation.lock"),
+              path.join(project.lockRoot, ".crafleet/operation.lock"),
               perform,
           );
 }

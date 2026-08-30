@@ -14,13 +14,13 @@ import {
     type ArtifactStore,
     assertStopped,
     type BackupService,
-    CrafletError,
+    CrafleetError,
     coldBackup,
     diagnosticsFailed,
     type LifecyclePorts,
     restartServer,
     startServer,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { NodeServerController } from "../runtime/controller.js";
 import { inspectJava } from "../runtime/java.js";
 import { checkBackupSpace } from "./backup-files.js";
@@ -96,7 +96,7 @@ export class NodeDeploymentManager {
         );
     }
     private get journalFile(): string {
-        return path.join(this.context.dir, ".craflet/deploy.json");
+        return path.join(this.context.dir, ".crafleet/deploy.json");
     }
     private async prepareEula(
         candidate: Installation,
@@ -111,11 +111,11 @@ export class NodeDeploymentManager {
             );
             if (staged !== undefined) {
                 if (!hasAcceptedEula(staged.content ?? ""))
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "EULA_MANAGED",
                         "The pending eula.txt does not record acceptance, so it cannot be changed implicitly during launch.",
                         3,
-                        "Update config/eula.txt explicitly and run craflet install, or remove that managed file and rebuild pending.",
+                        "Update config/eula.txt explicitly and run crafleet install, or remove that managed file and rebuild pending.",
                     );
                 return;
             }
@@ -153,7 +153,7 @@ export class NodeDeploymentManager {
     async preflight(applyPending: boolean, launch = true): Promise<void> {
         this.options.signal?.throwIfAborted();
         if (await hasRecoveryJournal(this.context))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RECOVERY_REQUIRED",
                 "An interrupted operation must be recovered first.",
                 4,
@@ -161,9 +161,9 @@ export class NodeDeploymentManager {
         const state = await readState(this.context.dir);
         const candidate = applyPending ? state.pending : state.active;
         if (!candidate)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "NOT_INSTALLED",
-                "No prepared installation. Run craflet install first.",
+                "No prepared installation. Run crafleet install first.",
                 3,
             );
         await this.probeJars(
@@ -182,7 +182,7 @@ export class NodeDeploymentManager {
                 bytes(state.active ?? null),
             );
             if (!Number.isSafeInteger(required))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RUNTIME_SPACE",
                     "The prepared JAR set exceeds safely measurable runtime capacity.",
                     3,
@@ -196,10 +196,10 @@ export class NodeDeploymentManager {
                 );
             } catch (error) {
                 if (
-                    error instanceof CrafletError &&
+                    error instanceof CrafleetError &&
                     error.code === "BACKUP_SPACE"
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "RUNTIME_SPACE",
                         "Insufficient free space on the runtime volume for JAR staging and rollback copies.",
                         3,
@@ -209,18 +209,18 @@ export class NodeDeploymentManager {
         }
         const java = await inspectJava(candidate.manifest);
         if (diagnosticsFailed(java.diagnostics))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "JAVA_UNSUITABLE",
-                "Java is unavailable or incompatible. Run craflet doctor.",
+                "Java is unavailable or incompatible. Run crafleet doctor.",
                 3,
             );
         if (applyPending && (await this.needsBackup(state.active))) {
             if (!this.backupService)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_REQUIRED",
                     "Configure a backup repository before applying changes to existing data.",
                     3,
-                    "Run craflet backup setup.",
+                    "Run crafleet backup setup.",
                 );
             await this.backupService.prepare(this.options);
             await this.backupService.preflight(
@@ -243,7 +243,7 @@ export class NodeDeploymentManager {
         if (!(await this.needsBackup(state.active))) return undefined;
         assertStopped((await this.controller.status()).status);
         if (!this.backupService)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_REQUIRED",
                 "A backup repository is required.",
                 3,
@@ -260,7 +260,7 @@ export class NodeDeploymentManager {
         );
         if (!(await exists(file))) return null;
         if (!(await lstat(file)).isFile())
-            throw new CrafletError(
+            throw new CrafleetError(
                 "JAR_TYPE",
                 "A managed JAR target is not a regular file.",
                 3,
@@ -283,7 +283,7 @@ export class NodeDeploymentManager {
             new Set(targets.map((relative) => relative.toLowerCase())).size !==
             targets.length
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "JAR_PATH",
                 "Installation changes a JAR filename only by letter case; import it explicitly before deploying.",
                 3,
@@ -295,7 +295,7 @@ export class NodeDeploymentManager {
                     !next.has(`plugins/${entry}`) &&
                     !old.has(`plugins/${entry}`)
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "UNMANAGED_JAR",
                         "An unmanaged plugin JAR exists; import it before applying.",
                         3,
@@ -315,23 +315,23 @@ export class NodeDeploymentManager {
                     current !== before?.sha256 &&
                     current !== after?.sha256
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "JAR_DRIFT",
                         "Runtime JARs changed outside the interrupted deployment; recovery requires review.",
                         4,
                     );
             } else if (before) {
                 if (current !== before.sha256)
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "JAR_DRIFT",
-                        "An active JAR is missing or changed outside Craflet; import or restore it before deploying.",
+                        "An active JAR is missing or changed outside Crafleet; import or restore it before deploying.",
                         3,
                     );
             } else if (
                 current !== null &&
                 (previous !== null || current !== after?.sha256)
             ) {
-                throw new CrafletError(
+                throw new CrafleetError(
                     "UNMANAGED_JAR",
                     "An existing JAR has the target filename but different content; import it before applying.",
                     3,
@@ -356,7 +356,7 @@ export class NodeDeploymentManager {
             this.options.signal?.throwIfAborted();
             const current = await this.runtimeJar(relative);
             if (current !== expected.get(relative))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "JAR_DRIFT",
                     "Runtime JARs changed after deployment preflight.",
                     3,
@@ -377,19 +377,19 @@ export class NodeDeploymentManager {
                 const target = await assertNoSymlinks(runtime, relative);
                 const temporary = path.join(
                     path.dirname(target),
-                    `.craflet-${randomUUID()}.tmp`,
+                    `.crafleet-${randomUUID()}.tmp`,
                 );
                 try {
                     await copyFile(source, temporary);
                     await chmod(temporary, 0o600);
                     if ((await jarHash(temporary)) !== artifact.sha256)
-                        throw new CrafletError(
+                        throw new CrafleetError(
                             "ARTIFACT_HASH",
                             "The staged JAR does not match its locked checksum.",
                             3,
                         );
                     if ((await this.runtimeJar(relative)) !== current)
-                        throw new CrafletError(
+                        throw new CrafleetError(
                             "JAR_DRIFT",
                             "Runtime JARs changed before replacement.",
                             3,
@@ -406,7 +406,7 @@ export class NodeDeploymentManager {
                 if (
                     (await this.runtimeJar(relative)) !== expected.get(relative)
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "JAR_DRIFT",
                         "A removed JAR changed after deployment preflight.",
                         3,
@@ -422,7 +422,7 @@ export class NodeDeploymentManager {
         const state = await readState(this.context.dir);
         if (!state.pending) return;
         if (await exists(this.journalFile))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RECOVERY_REQUIRED",
                 "Recover the interrupted deployment before applying another one.",
                 4,
@@ -436,7 +436,7 @@ export class NodeDeploymentManager {
             next: state.pending,
             createdJars: probe.createdJars,
         };
-        await assertNoSymlinks(this.context.dir, ".craflet/deploy.json");
+        await assertNoSymlinks(this.context.dir, ".crafleet/deploy.json");
         await writeJson(this.journalFile, journal);
         try {
             await this.replaceJars(
@@ -453,9 +453,9 @@ export class NodeDeploymentManager {
             await writeJson(this.journalFile, { ...journal, phase: "applied" });
             await rm(this.journalFile);
         } catch {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "DEPLOY_INTERRUPTED",
-                "Deployment interrupted. The server was not started. Run craflet recover.",
+                "Deployment interrupted. The server was not started. Run crafleet recover.",
                 4,
             );
         }
@@ -490,7 +490,7 @@ export class NodeDeploymentManager {
             !active ||
             (expectedActiveId !== undefined && active.id !== expectedActiveId)
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "ACTIVE_MISSING",
                 expectedActiveId
                     ? "The expected active installation is no longer active."
@@ -502,7 +502,7 @@ export class NodeDeploymentManager {
         // A matching running process is already the requested outcome; never touch its runtime files.
         if (status.status === "running") {
             if (status.activeId !== activeId)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "ACTIVE_MISMATCH",
                     "A different active installation is already running.",
                     3,
@@ -515,7 +515,7 @@ export class NodeDeploymentManager {
     }
     private operate<T>(operation: () => Promise<T>): Promise<T> {
         return withMutex(
-            path.join(this.context.lockRoot, ".craflet/operation.lock"),
+            path.join(this.context.lockRoot, ".crafleet/operation.lock"),
             operation,
         );
     }
@@ -547,7 +547,7 @@ export class NodeDeploymentManager {
         if (dryRun) return;
         await this.operate(async () => {
             if (await exists(this.journalFile))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RECOVERY_REQUIRED",
                     "Recover deployment before discarding pending.",
                     4,
@@ -559,7 +559,7 @@ export class NodeDeploymentManager {
     }
     async createBackup(leaveStopped = false): Promise<unknown> {
         if (!this.backupService)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_REQUIRED",
                 "Configure a backup repository first.",
                 3,
@@ -596,10 +596,10 @@ export class NodeDeploymentManager {
     async recover(dryRun = false): Promise<{ recovered: boolean }> {
         const operation = async () => {
             assertStopped((await this.controller.status()).status);
-            await assertNoSymlinks(this.context.dir, ".craflet/deploy.json");
+            await assertNoSymlinks(this.context.dir, ".crafleet/deploy.json");
             if (!(await exists(this.journalFile))) return { recovered: false };
             if ((await lstat(this.journalFile)).size > 32 * 1024 * 1024)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "JOURNAL_INVALID",
                     "Deployment journal exceeds its size limit.",
                     4,
@@ -639,7 +639,7 @@ export class NodeDeploymentManager {
                     createdJars: value.createdJars,
                 };
             } catch {
-                throw new CrafletError(
+                throw new CrafleetError(
                     "JOURNAL_INVALID",
                     "Invalid deployment journal; input values are omitted.",
                     4,
@@ -656,7 +656,7 @@ export class NodeDeploymentManager {
                         !nextJars.has(relative) || oldJars.has(relative),
                 )
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "JOURNAL_INVALID",
                     "Deployment journal contains invalid created JAR paths.",
                     4,
@@ -674,7 +674,7 @@ export class NodeDeploymentManager {
                         probe.hashes.get(relative) === null,
                 )
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "JAR_DRIFT",
                     "A pre-existing adopted JAR disappeared after deployment; recover it explicitly.",
                     4,
@@ -695,7 +695,7 @@ export class NodeDeploymentManager {
                             (await this.runtimeJar(relative)) !==
                             probe.hashes.get(relative)
                         )
-                            throw new CrafletError(
+                            throw new CrafleetError(
                                 "JAR_DRIFT",
                                 "Runtime JARs changed during recovery.",
                                 4,

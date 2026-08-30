@@ -1,5 +1,5 @@
 import picomatch from "picomatch";
-import { CrafletError } from "./errors.js";
+import { CrafleetError } from "./errors.js";
 
 export type BackupSecretReference = { env: string } | { file: string };
 
@@ -159,7 +159,7 @@ function pathAndAncestors(path: string | undefined): string[] {
 
 export function parseBackupRules(patterns: readonly string[]): BackupRule[] {
     if (patterns.length > 512) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_PATTERNS",
             "At most 512 backup file rules are supported.",
             2,
@@ -172,7 +172,7 @@ export function parseBackupRules(patterns: readonly string[]): BackupRule[] {
             /[\0\r\n]/u.test(value) ||
             value.startsWith("!!")
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_PATTERNS",
                 "Backup rules must be nonempty patterns; !! force-ignore is not supported.",
                 2,
@@ -183,7 +183,7 @@ export function parseBackupRules(patterns: readonly string[]): BackupRule[] {
             .replaceAll("\\", "/")
             .replace(/^\.\//u, "");
         if (!pattern || /[{}]/u.test(pattern) || /[?*+@!]\(/u.test(pattern)) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_PATTERNS",
                 "Backup rules support *, **, ?, and character classes; braces and extglobs are not supported.",
                 2,
@@ -194,7 +194,7 @@ export function parseBackupRules(patterns: readonly string[]): BackupRule[] {
         const staticPrefix =
             magic === -1 ? pattern : segments.slice(0, magic).join("/");
         if (magic !== -1 && segments.slice(magic).includes("..")) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_PATTERNS",
                 "Parent traversal after a wildcard is not supported.",
                 2,
@@ -252,7 +252,7 @@ export function validateBackupIdentifier(
         !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/u.test(value) ||
         ["__proto__", "constructor", "prototype"].includes(value.toLowerCase())
     ) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_IDENTIFIER",
             `${label} must contain only letters, numbers, dots, underscores, or hyphens.`,
             2,
@@ -263,7 +263,7 @@ export function validateBackupIdentifier(
 
 export function validateSnapshotId(value: string): string {
     if (!/^[a-f0-9]{8,64}$/u.test(value)) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_SNAPSHOT",
             "Use an explicit snapshot ID of 8 to 64 lowercase hexadecimal characters.",
             2,
@@ -285,7 +285,7 @@ export function retentionArguments(retention: BackupRetention): string[] {
         const value = retention[field];
         if (value === undefined) continue;
         if (!Number.isSafeInteger(value) || value < 1) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_RETENTION",
                 "Retention counts must be positive integers.",
                 2,
@@ -294,7 +294,7 @@ export function retentionArguments(retention: BackupRetention): string[] {
         args.push(flag, String(value));
     }
     if (args.length === 0) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_RETENTION",
             "Configure at least one positive retention count before planning pruning.",
             2,
@@ -305,14 +305,14 @@ export function retentionArguments(retention: BackupRetention): string[] {
 
 export function assertCompleteBackup(exitCode: number): void {
     if (exitCode === 3) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_INCOMPLETE",
             "Restic could not read all selected data. Any partial snapshot is not a successful backup.",
             3,
         );
     }
     if (exitCode !== 0) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_FAILED",
             `Restic backup failed with exit code ${exitCode}.`,
             3,

@@ -9,7 +9,7 @@ import {
     writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import type { BackupMetadata, ServerStatus } from "@craflet/core";
+import type { BackupMetadata, ServerStatus } from "@crafleet/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NodeDatabaseBackupAdapter } from "../../packages/adapters/src/database/backup.js";
 import { NodeDeploymentManager } from "../../packages/adapters/src/filesystem/deployment.js";
@@ -166,7 +166,7 @@ describe("group production restore with actual temporary files", () => {
         await modifyData(fixture);
         const states = runtimeStates(fixture.projects, "running");
         const lock = await readFile(
-            path.join(fixture.workspace, "craflet-lock.yaml"),
+            path.join(fixture.workspace, "crafleet-lock.yaml"),
         );
         const result = await applyGroupBackupRestore(
             fixture.batch,
@@ -199,16 +199,16 @@ describe("group production restore with actual temporary files", () => {
             );
         }
         expect(
-            await readFile(path.join(fixture.workspace, "craflet-lock.yaml")),
+            await readFile(path.join(fixture.workspace, "crafleet-lock.yaml")),
         ).toEqual(lock);
         expect(
             await exists(
-                path.join(fixture.workspace, ".craflet/group-restore.json"),
+                path.join(fixture.workspace, ".crafleet/group-restore.json"),
             ),
         ).toBe(false);
         expect(
             (await readdir(fixture.root)).some((file) =>
-                file.startsWith(".craflet-group-restore-"),
+                file.startsWith(".crafleet-group-restore-"),
             ),
         ).toBe(false);
         expect(await fixture.batch.backup.show(saved.snapshotId)).toEqual(
@@ -253,7 +253,7 @@ describe("group production restore with actual temporary files", () => {
         ).toBe("alpha modified");
         expect(
             (await readdir(fixture.root)).some((file) =>
-                file.startsWith(".craflet-group-restore-"),
+                file.startsWith(".crafleet-group-restore-"),
             ),
         ).toBe(false);
     });
@@ -345,7 +345,7 @@ describe("group production restore with actual temporary files", () => {
         ).toBe("alpha modified");
         expect(
             await exists(
-                path.join(fixture.workspace, ".craflet/group-restore.json"),
+                path.join(fixture.workspace, ".crafleet/group-restore.json"),
             ),
         ).toBe(false);
     });
@@ -365,7 +365,7 @@ describe("group production restore with actual temporary files", () => {
         await expect(
             inspectGroupBackupRestore(fixture.batch, fixture.source, {
                 mappings: {
-                    [id]: path.join(fixture.projects[1].dir, ".craflet"),
+                    [id]: path.join(fixture.projects[1].dir, ".crafleet"),
                 },
             }),
         ).rejects.toMatchObject({ code: "RESTORE_MAPPING" });
@@ -409,13 +409,15 @@ describe("group production restore with actual temporary files", () => {
         await rmdir(path.join(fixture.source, "unexpected-empty-directory"));
         await writeBackupTestFile(
             fixture.source,
-            ".craflet-restore-incomplete.json",
+            ".crafleet-restore-incomplete.json",
             "{}",
         );
         await expect(
             inspectGroupBackupRestore(fixture.batch, fixture.source, options),
         ).rejects.toMatchObject({ code: "RESTORE_INCOMPLETE" });
-        await rm(path.join(fixture.source, ".craflet-restore-incomplete.json"));
+        await rm(
+            path.join(fixture.source, ".crafleet-restore-incomplete.json"),
+        );
         const file = path.join(
             fixture.source,
             `data/external/${runtimeRootId(fixture.projects[0])}/world/players.dat`,
@@ -586,7 +588,7 @@ describe("group production restore with actual temporary files", () => {
         ).rejects.toThrow();
         expect(
             (await readdir(fixture.root)).some((file) =>
-                file.startsWith(".craflet-group-restore-"),
+                file.startsWith(".crafleet-group-restore-"),
             ),
         ).toBe(false);
     });
@@ -661,7 +663,7 @@ describe("group restore interruption and recovery", () => {
             ).rejects.toMatchObject({ code: "GROUP_RESTORE_INTERRUPTED" });
             const journal = path.join(
                 fixture.workspace,
-                ".craflet/group-restore.json",
+                ".crafleet/group-restore.json",
             );
             expect(await exists(journal)).toBe(true);
             expect(
@@ -689,7 +691,7 @@ describe("group restore interruption and recovery", () => {
             ).toBe(false);
             expect(
                 (await readdir(fixture.root)).some((file) =>
-                    file.startsWith(".craflet-group-restore-"),
+                    file.startsWith(".crafleet-group-restore-"),
                 ),
             ).toBe(false);
         },
@@ -721,7 +723,7 @@ describe("group restore interruption and recovery", () => {
         ).rejects.toMatchObject({ code: "RESTORE_INTERRUPTED" });
         expect(
             await exists(
-                path.join(fixture.projects[0].dir, ".craflet/restore.json"),
+                path.join(fixture.projects[0].dir, ".crafleet/restore.json"),
             ),
         ).toBe(true);
         expect(
@@ -767,7 +769,7 @@ describe("group restore interruption and recovery", () => {
         ).toBe("alpha modified");
         expect(
             await exists(
-                path.join(fixture.workspace, ".craflet/group-restore.json"),
+                path.join(fixture.workspace, ".crafleet/group-restore.json"),
             ),
         ).toBe(true);
     });
@@ -797,7 +799,7 @@ describe("group restore interruption and recovery", () => {
         ).rejects.toMatchObject({ code: "RESTORE_CHANGED" });
         files.pop();
         const journal = await readJson<{ directory: string }>(
-            path.join(fixture.workspace, ".craflet/group-restore.json"),
+            path.join(fixture.workspace, ".crafleet/group-restore.json"),
         );
         await writeJson(path.join(journal.directory, "owner.json"), {
             wrong: true,
@@ -828,7 +830,7 @@ describe("group restore interruption and recovery", () => {
         ).rejects.toMatchObject({ code: "RESTORE_INTERRUPTED" });
         const file = path.join(
             fixture.projects[0].dir,
-            ".craflet/restore.json",
+            ".crafleet/restore.json",
         );
         const original = await readJson<Record<string, unknown>>(file);
         await writeJson(file, { ...original, backupId: "b".repeat(64) });
@@ -870,7 +872,7 @@ describe("group restore interruption and recovery", () => {
         ).rejects.toThrow();
         expect(
             await exists(
-                path.join(fixture.workspace, ".craflet/group-restore.json"),
+                path.join(fixture.workspace, ".crafleet/group-restore.json"),
             ),
         ).toBe(true);
         expect(
@@ -901,7 +903,7 @@ describe("group restore interruption and recovery", () => {
         ).rejects.toThrow();
         const file = path.join(
             fixture.workspace,
-            ".craflet/group-restore.json",
+            ".crafleet/group-restore.json",
         );
         const original = await readJson<{
             directory: string;
@@ -1019,7 +1021,7 @@ describe("group restore interruption and recovery", () => {
         ).rejects.toMatchObject({ code: "RESTORE_CONFLICT" });
         expect(
             await exists(
-                path.join(fixture.workspace, ".craflet/group-restore.json"),
+                path.join(fixture.workspace, ".crafleet/group-restore.json"),
             ),
         ).toBe(true);
     });
@@ -1141,7 +1143,7 @@ describe("group database consistency boundaries", () => {
         expect(states.start).not.toHaveBeenCalled();
         expect(
             await exists(
-                path.join(fixture.workspace, ".craflet/group-restore.json"),
+                path.join(fixture.workspace, ".crafleet/group-restore.json"),
             ),
         ).toBe(true);
     });

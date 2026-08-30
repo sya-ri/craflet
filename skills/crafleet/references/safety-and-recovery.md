@@ -17,7 +17,7 @@ Before a mutation, identify:
 
 ## Minecraft EULA
 
-Craflet never treats a general request to set up a server as legal consent.
+Crafleet never treats a general request to set up a server as legal consent.
 
 For Paper:
 
@@ -29,14 +29,14 @@ For Paper:
 - `--dry-run` never records consent or writes `runtime/eula.txt`.
 - `install` and `deploy apply` do not accept the EULA.
 - Velocity does not use this flow.
-- A valid per-user receipt is stored at `CRAFLET_HOME/eula.json`, under `~/.craflet` by default. Do not forge or edit it.
-- At launch, Craflet writes `runtime/eula.txt` only after the server is stopped. It never rewrites the file while Java is running.
+- A valid per-user receipt is stored at `CRAFLEET_HOME/eula.json`, under `~/.crafleet` by default. Do not forge or edit it.
+- At launch, Crafleet writes `runtime/eula.txt` only after the server is stopped. It never rewrites the file while Java is running.
 
 If consent is declined or uncertain, stop. Do not retry with `--yes`.
 
 ## Running files and deployment
 
-Never overwrite or unlink a JAR used by a running server. Craflet downloads to its shared content-addressed cache, prepares pending, stops the server cleanly, backs up when required, and copies the verified installation into runtime.
+Never overwrite or unlink a JAR used by a running server. Crafleet downloads to its shared content-addressed cache, prepares pending, stops the server cleanly, backs up when required, and copies the verified installation into runtime.
 
 The safe order is:
 
@@ -69,7 +69,7 @@ A backup destination must be the explicitly registered path. Verify its canonica
 
 The default selection excludes reproducible JARs, including custom JARs. Keep old custom artifacts retrievable through their original `file:` source or shared cache if restoration may need them. Do not add all downloads to backups as a workaround.
 
-Symlink targets are not followed. External data needs explicit roots and restore mappings. Shared databases require all writers in one stopped recovery group; Craflet cannot guarantee consistency for writers it does not manage.
+Symlink targets are not followed. External data needs explicit roots and restore mappings. Shared databases require all writers in one stopped recovery group; Crafleet cannot guarantee consistency for writers it does not manage.
 
 If backup fails after shutdown, leave the server stopped. A successful cold backup resumes only previously running members with the same active installation, even if pending exists.
 
@@ -83,17 +83,17 @@ If backup fails after shutdown, leave the server stopped. A successful cold back
 
 ## Interrupted operations
 
-When Craflet reports `RECOVERY_REQUIRED` or `BUSY`:
+When Crafleet reports `RECOVERY_REQUIRED` or `BUSY`:
 
 1. stop issuing unrelated start/apply commands
-2. inspect `craflet doctor`
+2. inspect `crafleet doctor`
 3. confirm the selected Java processes and server state
-4. run `craflet recover --dry-run`
+4. run `crafleet recover --dry-run`
 5. explain the proposed recovery and obtain authorization
-6. run `craflet recover`
+6. run `crafleet recover`
 7. re-run `validate`, `doctor`, and `status`
 
-Do not manually delete `.craflet` journals, locks, or partially applied files. Do not claim that a failed SQL restore was rolled back automatically; Craflet records the pre-restore snapshot and requires deliberate database recovery.
+Do not manually delete `.crafleet` journals, locks, or partially applied files. Do not claim that a failed SQL restore was rolled back automatically; Crafleet records the pre-restore snapshot and requires deliberate database recovery.
 
 ## Reporting
 

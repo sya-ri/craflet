@@ -3,9 +3,9 @@ import path from "node:path";
 import {
     type ArtifactStore,
     assertStopped,
-    CrafletError,
+    CrafleetError,
     stableStringify,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { type } from "arktype";
 import { NodeDatabaseBackupAdapter } from "../database/backup.js";
 import { NodeServerController } from "../runtime/controller.js";
@@ -107,11 +107,11 @@ export interface GroupRestoreRecoveryOptions {
 
 function journalPath(batch: BackupBatch): string {
     const { first } = groupRestoreContext(batch);
-    return path.join(first.lockRoot, ".craflet/group-restore.json");
+    return path.join(first.lockRoot, ".crafleet/group-restore.json");
 }
 
 function memberJournal(projection: GroupRestoreProjection): string {
-    return path.join(projection.project.dir, ".craflet/restore.json");
+    return path.join(projection.project.dir, ".crafleet/restore.json");
 }
 
 async function assertAllStopped(batch: BackupBatch): Promise<void> {
@@ -171,7 +171,7 @@ function assertDistinctGroupChanges(
             path.resolve(change.target) !== change.target ||
             keys.has(key)
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_COLLISION",
                 "Two group members restore or remove the same target.",
                 3,
@@ -182,7 +182,7 @@ function assertDistinctGroupChanges(
         let parent = path.dirname(key);
         while (parent !== path.dirname(parent)) {
             if (keys.has(parent))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTORE_COLLISION",
                     "A group file target overlaps another target's parent directory.",
                     3,
@@ -206,7 +206,7 @@ async function assertBackedUpTargets(
                 pathsOverlap(file.source, workspace.directory),
         )
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_SELF_INCLUSION",
             "The group backup selects its restore extraction or temporary projection.",
             3,
@@ -220,7 +220,7 @@ async function assertBackedUpTargets(
             change.before !== null &&
             !files.has(groupRestorePathKey(change.target))
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_UNPROTECTED_TARGET",
                 "An existing group restore target is absent from the actual pre-restore backup selection.",
                 3,
@@ -238,7 +238,7 @@ async function verifyCompleted(
         projection.backup,
     );
     if (verified.fingerprint !== member.fingerprint)
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_CHANGED",
             "The completed member's extraction changed after planning.",
             4,
@@ -254,7 +254,7 @@ async function verifyCompleted(
         },
     };
     if (stableStringify(current) !== stableStringify(expected))
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_CONFLICT",
             "An already restored member's installation state changed; it was not overwritten.",
             4,
@@ -265,7 +265,7 @@ async function verifyCompleted(
             ? (await hashBackupFile(change.target)).sha256
             : null;
         if (hash !== change.after)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_CONFLICT",
                 "An already restored group target changed; automatic recovery stopped.",
                 4,
@@ -280,7 +280,7 @@ async function validateMemberJournal(
 ): Promise<void> {
     const file = await assertNoSymlinks(memberJournal(projection));
     if ((await lstat(file)).size > 128 * 1024 * 1024)
-        throw new CrafletError(
+        throw new CrafleetError(
             "GROUP_RESTORE_JOURNAL",
             "A member restore journal exceeds the supported size limit.",
             4,
@@ -293,7 +293,7 @@ async function validateMemberJournal(
     try {
         value = await readJson(file);
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "GROUP_RESTORE_JOURNAL",
             "A member restore journal cannot be read.",
             4,
@@ -316,7 +316,7 @@ async function validateMemberJournal(
         stableStringify(value.databases) !==
             stableStringify(member.options.databases)
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "GROUP_RESTORE_JOURNAL",
             "A member restore journal differs from its group plan.",
             4,
@@ -324,8 +324,8 @@ async function validateMemberJournal(
 }
 
 function interrupted(error: unknown): never {
-    if (error instanceof CrafletError) throw error;
-    throw new CrafletError(
+    if (error instanceof CrafleetError) throw error;
+    throw new CrafleetError(
         "GROUP_RESTORE_INTERRUPTED",
         "Group restore interrupted. Keep every member stopped and run recover with the complete group. Its pre-restore snapshot and exact file plan were retained.",
         4,
@@ -470,7 +470,7 @@ export async function applyGroupBackupRestore(
                         integrity.sha256 !== artifact.sha256 ||
                         integrity.bytes !== artifact.size
                     )
-                        throw new CrafletError(
+                        throw new CrafleetError(
                             "RESTORE_HASH",
                             "An exact locked group JAR is unavailable.",
                             3,
@@ -506,7 +506,7 @@ export async function applyGroupBackupRestore(
                 rechecked.fingerprint !== inspection.fingerprint ||
                 rechecked.policyFingerprint !== inspection.policyFingerprint
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTORE_CHANGED",
                     "The group extraction or policy changed during preflight.",
                     3,
@@ -603,9 +603,9 @@ export async function applyGroupBackupRestore(
         }
     };
     if (options.dryRun) return perform();
-    await ensurePrivateDirectory(path.join(first.lockRoot, ".craflet"));
+    await ensurePrivateDirectory(path.join(first.lockRoot, ".crafleet"));
     return withMutex(
-        path.join(first.lockRoot, ".craflet/operation.lock"),
+        path.join(first.lockRoot, ".crafleet/operation.lock"),
         perform,
     );
 }
@@ -613,7 +613,7 @@ export async function applyGroupBackupRestore(
 async function readJournal(batch: BackupBatch): Promise<GroupRestoreJournal> {
     const file = await assertNoSymlinks(journalPath(batch));
     if ((await lstat(file)).size > 128 * 1024 * 1024)
-        throw new CrafletError(
+        throw new CrafleetError(
             "GROUP_RESTORE_JOURNAL",
             "The group restore journal exceeds the supported size limit.",
             4,
@@ -622,7 +622,7 @@ async function readJournal(batch: BackupBatch): Promise<GroupRestoreJournal> {
     try {
         raw = await readJson(file);
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "GROUP_RESTORE_JOURNAL",
             "The group restore journal cannot be read.",
             4,
@@ -650,7 +650,7 @@ async function readJournal(batch: BackupBatch): Promise<GroupRestoreJournal> {
             0,
         ) > 300000
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "GROUP_RESTORE_JOURNAL",
             "The journal does not identify exactly the current group and a bounded file plan.",
             4,
@@ -673,7 +673,7 @@ export async function recoverGroupBackupRestore(
         await assertAllStopped(batch);
         const journal = await readJournal(batch);
         if (journal.policyFingerprint !== groupRestorePolicyFingerprint(batch))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_CHANGED",
                 "The group backup or secret policy changed after interruption.",
                 4,
@@ -696,7 +696,7 @@ export async function recoverGroupBackupRestore(
             },
         );
         if (inspection.fingerprint !== journal.fingerprint)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_CHANGED",
                 "The original group extraction changed after interruption.",
                 4,
@@ -730,7 +730,7 @@ export async function recoverGroupBackupRestore(
                     entry.projectId === projectBackupId(projection.project),
             );
             if (!member)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "GROUP_RESTORE_JOURNAL",
                     "A group member is missing from the restore journal.",
                     4,
@@ -742,7 +742,7 @@ export async function recoverGroupBackupRestore(
                 stableStringify(member.options.databases) !==
                     stableStringify(projection.options.databases)
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "GROUP_RESTORE_JOURNAL",
                     "The group journal's member projection or database ownership changed.",
                     4,
@@ -786,7 +786,7 @@ export async function recoverGroupBackupRestore(
                     groupRestoreDigest(immutablePlan(prepared)) !==
                     groupRestoreDigest(immutablePlan(member))
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "RESTORE_CONFLICT",
                         "An untouched member changed after group restore stopped; its new files were not deleted.",
                         4,
@@ -850,7 +850,7 @@ export async function recoverGroupBackupRestore(
             interrupted(error);
         }
         if (!(await cleanup(inspection, workspace)))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_CLEANUP",
                 `The group was restored and remains stopped, but its private working directory could not be removed: ${workspace.directory}. Inspect it before manual cleanup.`,
                 3,
@@ -860,7 +860,7 @@ export async function recoverGroupBackupRestore(
     return options.dryRun
         ? perform()
         : withMutex(
-              path.join(first.lockRoot, ".craflet/operation.lock"),
+              path.join(first.lockRoot, ".crafleet/operation.lock"),
               perform,
           );
 }

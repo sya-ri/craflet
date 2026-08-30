@@ -263,8 +263,8 @@ describe("configuration secret handling", () => {
     it("loads explicit environment references and rejects missing or invalid ones", async () => {
         const secrets = await loadConfigSecrets(
             "unused",
-            { AUTH: { env: "CRAFLET_TEST" } },
-            { CRAFLET_TEST: "fixture-password" },
+            { AUTH: { env: "CRAFLEET_TEST" } },
+            { CRAFLEET_TEST: "fixture-password" },
         );
         expect(secrets.inject("a.txt", "${secret:AUTH}")).toBe(
             "fixture-password",

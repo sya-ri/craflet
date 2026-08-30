@@ -1,6 +1,6 @@
 import { type } from "arktype";
 import type { ServerKind, SourceInput, SourceSpec } from "./artifacts.js";
-import { CrafletError } from "./errors.js";
+import { CrafleetError } from "./errors.js";
 
 const sourceSchema = type({ provider: "'file'", path: "string > 0" })
     .or({
@@ -28,7 +28,7 @@ const sourceSchema = type({ provider: "'file'", path: "string > 0" })
     });
 
 function invalidSource(): never {
-    throw new CrafletError(
+    throw new CrafleetError(
         "INVALID_SOURCE",
         "Invalid artifact source. Use a provider reference, file:path, or a structured source object.",
         2,
@@ -122,7 +122,7 @@ export function parsePluginSource(
 ): Exclude<SourceSpec, { provider: "paper" }> {
     const source = parseSource(input);
     if (source.provider === "paper")
-        throw new CrafletError(
+        throw new CrafleetError(
             "NOT_PLUGIN",
             "A Paper or Velocity server source cannot be declared as a plugin.",
             2,
@@ -136,7 +136,7 @@ export function parseServerSource(
 ): SourceSpec {
     const source = parseSource(input);
     if (source.provider === "paper" && source.project !== serverKind)
-        throw new CrafletError(
+        throw new CrafleetError(
             "SERVER_PLATFORM",
             `The server source provides ${source.project}, not ${serverKind}.`,
             2,

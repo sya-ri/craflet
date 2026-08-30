@@ -15,7 +15,7 @@ import {
 
 afterEach(cleanupBackupTestDirectories);
 
-describe.runIf(process.env.CRAFLET_TEST_RESTIC === "1")(
+describe.runIf(process.env.CRAFLEET_TEST_RESTIC === "1")(
     "official restic binary integration",
     () => {
         it("downloads and verifies restic, initializes explicitly, creates real snapshots and restores old data", async () => {
@@ -52,7 +52,7 @@ describe.runIf(process.env.CRAFLET_TEST_RESTIC === "1")(
                 project,
                 home,
                 config,
-                async () => "craflet-disposable-test-password",
+                async () => "crafleet-disposable-test-password",
                 {
                     runner: async (request) => {
                         if (

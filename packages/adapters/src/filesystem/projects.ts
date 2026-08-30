@@ -3,7 +3,7 @@ import type { BigIntStats } from "node:fs";
 import { lstat, mkdir, readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import {
-    CrafletError,
+    CrafleetError,
     type LockFile,
     newProject,
     type ProjectManifest,
@@ -14,7 +14,7 @@ import {
     validateProject,
     validationError,
     WorkspaceSchema,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { type } from "arktype";
 import picomatch from "picomatch";
 import { Document, parseDocument } from "yaml";
@@ -38,7 +38,7 @@ const MAX_GITIGNORE_BYTES = 1024 * 1024;
 const GITIGNORE_RULES = [
     "runtime/",
     "shared-data/",
-    ".craflet/",
+    ".crafleet/",
     "imports/",
     ".env",
     ".env.*",
@@ -59,13 +59,13 @@ export function recoveryJournalPaths(
 ): string[] {
     return [
         ...["deploy.json", "restore.json", "import-incomplete.json"].map(
-            (name) => path.join(project.dir, ".craflet", name),
+            (name) => path.join(project.dir, ".crafleet", name),
         ),
         ...[
             "manifest-transaction.json",
             "group-operation.json",
             "group-restore.json",
-        ].map((name) => path.join(project.lockRoot, ".craflet", name)),
+        ].map((name) => path.join(project.lockRoot, ".crafleet", name)),
     ];
 }
 
@@ -88,7 +88,7 @@ function parseYamlContent(text: string, file: string): unknown {
         prettyErrors: false,
     });
     if (document.errors.length)
-        throw new CrafletError(
+        throw new CrafleetError(
             "YAML_SYNTAX",
             `${path.basename(file)}: invalid YAML (input values omitted).`,
             2,
@@ -96,7 +96,7 @@ function parseYamlContent(text: string, file: string): unknown {
     try {
         return document.toJS({ maxAliasCount: 50 });
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "YAML_ALIASES",
             `${path.basename(file)}: excessive YAML alias expansion.`,
             2,
@@ -107,7 +107,7 @@ function parseYamlContent(text: string, file: string): unknown {
 async function readYamlText(file: string): Promise<string> {
     await assertNoSymlinks(path.dirname(file), path.basename(file));
     if ((await stat(file)).size > MAX_YAML_BYTES)
-        throw new CrafletError(
+        throw new CrafleetError(
             "YAML_SIZE",
             `${path.basename(file)} exceeds the 2 MiB limit.`,
             2,
@@ -117,7 +117,7 @@ async function readYamlText(file: string): Promise<string> {
 
 function boundedYamlText(file: string, text: string): string {
     if (Buffer.byteLength(text) > MAX_YAML_BYTES)
-        throw new CrafletError(
+        throw new CrafleetError(
             "YAML_SIZE",
             `${path.basename(file)} exceeds the 2 MiB limit.`,
             2,
@@ -146,7 +146,7 @@ export async function yamlText(
         prettyErrors: false,
     });
     if (doc.errors.length)
-        throw new CrafletError(
+        throw new CrafleetError(
             "YAML_SYNTAX",
             `Cannot edit invalid YAML: ${path.basename(file)}`,
             2,
@@ -202,14 +202,14 @@ export async function loadProject(
     home: string,
 ): Promise<ProjectContext> {
     const absolute = path.resolve(dir);
-    await assertNoSymlinks(absolute, "craflet.yaml");
+    await assertNoSymlinks(absolute, "crafleet.yaml");
     const manifestText = await readYamlText(
-        path.join(absolute, "craflet.yaml"),
+        path.join(absolute, "crafleet.yaml"),
     );
     const manifest = validateProject(
-        parseYamlContent(manifestText, "craflet.yaml"),
+        parseYamlContent(manifestText, "crafleet.yaml"),
     );
-    const workspace = await nearestFile(absolute, "craflet-workspace.yaml");
+    const workspace = await nearestFile(absolute, "crafleet-workspace.yaml");
     const lockRoot = workspace ? path.dirname(workspace) : absolute;
     return {
         dir: absolute,
@@ -223,7 +223,7 @@ export async function loadProject(
 }
 
 export async function readLock(root: string): Promise<LockFile> {
-    const file = path.join(root, "craflet-lock.yaml");
+    const file = path.join(root, "crafleet-lock.yaml");
     return parseLockText(
         (await exists(file)) ? await readYamlText(file) : null,
     );
@@ -233,19 +233,19 @@ export function parseLockText(text: string | null): LockFile {
     return validateLock(
         text === null
             ? { lockVersion: 1, projects: {} }
-            : parseYamlContent(text, "craflet-lock.yaml"),
+            : parseYamlContent(text, "crafleet-lock.yaml"),
     );
 }
 
 export async function workspaceProjects(root: string): Promise<string[]> {
-    const workspaceFile = await nearestFile(root, "craflet-workspace.yaml");
+    const workspaceFile = await nearestFile(root, "crafleet-workspace.yaml");
     if (!workspaceFile)
-        return (await exists(path.join(root, "craflet.yaml")))
+        return (await exists(path.join(root, "crafleet.yaml")))
             ? [path.resolve(root)]
             : [];
     const workspace = WorkspaceSchema(await readYaml(workspaceFile));
     if (workspace instanceof type.errors)
-        throw validationError("craflet-workspace.yaml", workspace);
+        throw validationError("crafleet-workspace.yaml", workspace);
     const base = path.dirname(workspaceFile);
     const matchers = workspace.projects.map(workspacePattern);
     const includes = matchers.filter((entry) => !entry.excluded);
@@ -253,7 +253,7 @@ export async function workspaceProjects(root: string): Promise<string[]> {
     const projects: string[] = [];
     async function walk(directory: string, depth: number) {
         if (depth > 12)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "WORKSPACE_DEPTH",
                 "Workspace nesting exceeds 12 directories.",
                 2,
@@ -261,7 +261,7 @@ export async function workspaceProjects(root: string): Promise<string[]> {
         const relative =
             path.relative(base, directory).replaceAll(path.sep, "/") || ".";
         if (
-            (await exists(path.join(directory, "craflet.yaml"))) &&
+            (await exists(path.join(directory, "crafleet.yaml"))) &&
             includes.some(({ matches }) => matches(relative)) &&
             !excludes.some(({ matches }) => matches(relative))
         )
@@ -286,7 +286,7 @@ export async function selectProjects(
     home: string,
     options: { recursive?: boolean; filters?: string[] } = {},
 ): Promise<ProjectContext[]> {
-    const projectFile = await nearestFile(cwd, "craflet.yaml");
+    const projectFile = await nearestFile(cwd, "crafleet.yaml");
     const recursive = options.recursive || Boolean(options.filters?.length);
     const dirs = recursive
         ? await workspaceProjects(cwd)
@@ -294,7 +294,7 @@ export async function selectProjects(
           ? [path.dirname(projectFile)]
           : [];
     if (!dirs.length)
-        throw new CrafletError(
+        throw new CrafleetError(
             "NO_PROJECT",
             "No project selected. Use --recursive at a workspace root, or -C <project>.",
             2,
@@ -311,7 +311,7 @@ export async function selectProjects(
           )
         : all;
     if (!selected.length)
-        throw new CrafletError(
+        throw new CrafleetError(
             "EMPTY_SELECTION",
             "The workspace filter matched no projects.",
             2,
@@ -319,7 +319,7 @@ export async function selectProjects(
     const names = new Set<string>();
     for (const project of all) {
         if (names.has(project.manifest.name))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "DUPLICATE_PROJECT",
                 `Duplicate project name: ${project.manifest.name}`,
                 2,
@@ -351,7 +351,7 @@ interface GitIgnoreSnapshot {
 }
 
 function gitIgnoreChanged(): never {
-    throw new CrafletError(
+    throw new CrafleetError(
         "CONCURRENT_EDIT",
         ".gitignore changed while the project was being initialized. Review it and retry.",
         3,
@@ -361,18 +361,18 @@ function gitIgnoreChanged(): never {
 function gitIgnoreReadFailure(reason: BoundedFileFailure): never {
     if (reason === "changed") gitIgnoreChanged();
     if (reason === "unsafe")
-        throw new CrafletError(
+        throw new CrafleetError(
             "GITIGNORE_UNSAFE",
             ".gitignore must be a regular file without symbolic or hard links.",
             3,
         );
     if (reason === "too-large")
-        throw new CrafletError(
+        throw new CrafleetError(
             "GITIGNORE_SIZE",
             ".gitignore exceeds the 1 MiB safety limit.",
             3,
         );
-    throw new CrafletError(
+    throw new CrafleetError(
         "GITIGNORE_UNREADABLE",
         ".gitignore cannot be read safely. Its contents are omitted.",
         3,
@@ -452,15 +452,15 @@ async function writeGitIgnore(
 }
 
 function projectExists(): never {
-    throw new CrafletError(
+    throw new CrafleetError(
         "PROJECT_EXISTS",
-        "craflet.yaml already exists; it will not be overwritten.",
+        "crafleet.yaml already exists; it will not be overwritten.",
         3,
     );
 }
 
 function workspaceExists(): never {
-    throw new CrafletError(
+    throw new CrafleetError(
         "WORKSPACE_EXISTS",
         "Workspace manifest already exists.",
         3,
@@ -472,7 +472,7 @@ async function prepareProjectInitialization(
     manifestFile: string,
 ): Promise<GitIgnoreSnapshot | undefined> {
     await assertNoSymlinks(directory);
-    for (const child of ["craflet.yaml", "config", "runtime", "shared-data"])
+    for (const child of ["crafleet.yaml", "config", "runtime", "shared-data"])
         await assertNoSymlinks(directory, child);
     if (await exists(manifestFile)) projectExists();
     if (!(await isGitManaged(directory))) return undefined;
@@ -520,7 +520,7 @@ export async function initProject(
             ...(options.source !== undefined ? { source: options.source } : {}),
         },
     });
-    const file = path.join(dir, "craflet.yaml");
+    const file = path.join(dir, "crafleet.yaml");
     const manifestText = await yamlText(file, manifest, null);
     let gitIgnore = await prepareProjectInitialization(dir, file);
     if (options.kind === "paper" && options.eula) {
@@ -555,8 +555,8 @@ export async function initWorkspace(
     projects: string[],
     dryRun = false,
 ): Promise<void> {
-    const file = path.join(dir, "craflet-workspace.yaml");
-    await assertNoSymlinks(dir, "craflet-workspace.yaml");
+    const file = path.join(dir, "crafleet-workspace.yaml");
+    await assertNoSymlinks(dir, "crafleet-workspace.yaml");
     if (await exists(file)) workspaceExists();
     for (const pattern of projects) workspacePattern(pattern);
     const text = await yamlText(file, { schemaVersion: 1, projects }, null);
@@ -577,7 +577,7 @@ function workspacePattern(input: string): {
         pattern.includes(":") ||
         pattern.split("/").includes("..")
     ) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "WORKSPACE_PATH",
             "Workspace patterns must be nonempty and remain under the workspace directory.",
             2,

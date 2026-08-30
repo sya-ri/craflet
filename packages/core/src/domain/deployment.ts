@@ -1,4 +1,4 @@
-import { CrafletError } from "./errors.js";
+import { CrafleetError } from "./errors.js";
 
 export type RuntimeStatus =
     | "stopped"
@@ -8,11 +8,11 @@ export type RuntimeStatus =
     | "unknown";
 export function assertStopped(status: RuntimeStatus): void {
     if (status !== "stopped")
-        throw new CrafletError(
+        throw new CrafleetError(
             "NOT_STOPPED",
             `Server is ${status}; no runtime files were changed.`,
             3,
-            "Run craflet stop and confirm termination first.",
+            "Run crafleet stop and confirm termination first.",
         );
 }
 

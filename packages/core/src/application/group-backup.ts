@@ -1,5 +1,5 @@
 import { assertStopped } from "../domain/deployment.js";
-import { CrafletError } from "../domain/errors.js";
+import { CrafleetError } from "../domain/errors.js";
 import type { ServerStatus } from "../ports/runtime.js";
 
 export interface GroupBackupMember {
@@ -15,7 +15,7 @@ export async function coldGroupBackup<T>(
     leaveStopped = false,
 ): Promise<{ backup: T; resumed: string[] }> {
     if (!members.length)
-        throw new CrafletError(
+        throw new CrafleetError(
             "EMPTY_SELECTION",
             "A recovery group must contain at least one server.",
             2,
@@ -41,7 +41,7 @@ export async function coldGroupBackup<T>(
                     throw new Error("Not ready");
                 resumed.push(member.name);
             } catch {
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_SAVED_RESTART_FAILED",
                     `The complete group snapshot was saved, but ${member.name} did not become ready. Already resumed: ${resumed.join(", ") || "none"}. Pending was not applied.`,
                     4,

@@ -1,25 +1,25 @@
 ---
-name: craflet
-description: Set up, inspect, operate, update, back up, restore, or troubleshoot Paper and Velocity servers managed by Craflet. Use for craflet.yaml and workspace declarations, server and plugin artifacts, pending deployment, configuration capture, secrets, restic backups, EULA consent, and recovery; do not use for unmanaged Docker, OS-service, SSH, or Forge/Fabric workflows.
+name: crafleet
+description: Set up, inspect, operate, update, back up, restore, or troubleshoot Paper and Velocity servers managed by Crafleet. Use for crafleet.yaml and workspace declarations, server and plugin artifacts, pending deployment, configuration capture, secrets, restic backups, EULA consent, and recovery; do not use for unmanaged Docker, OS-service, SSH, or Forge/Fabric workflows.
 license: MIT
 ---
 
-# Craflet
+# Crafleet
 
-Operate reproducible Paper and Velocity projects with the Craflet CLI on the server host. Keep declarations and reviewed configuration in Git while Craflet owns downloaded artifacts, pending deployment state, process control, and verified backups.
+Operate reproducible Paper and Velocity projects with the Crafleet CLI on the server host. Keep declarations and reviewed configuration in Git while Crafleet owns downloaded artifacts, pending deployment state, process control, and verified backups.
 
 ## Scope
 
-Craflet does not establish SSH connections. Connect to the host through the user's existing remote-access method, then run Craflet there.
-Do not replace Craflet with direct edits to its lock, `.craflet/` state, running JARs, or restic metadata.
+Crafleet does not establish SSH connections. Connect to the host through the user's existing remote-access method, then run Crafleet there.
+Do not replace Crafleet with direct edits to its lock, `.crafleet/` state, running JARs, or restic metadata.
 Do not add Docker, systemd, Windows services, Java installation, Forge/Fabric management, or automatic Git operations unless the user separately requests them.
 
 ## Workflow
 
 1. Establish the target before mutation:
-   - locate `craflet.yaml` or `craflet-workspace.yaml`
+   - locate `crafleet.yaml` or `crafleet-workspace.yaml`
    - identify the intended project or workspace filter
-   - inspect `craflet status`, `craflet validate`, and relevant command help
+   - inspect `crafleet status`, `crafleet validate`, and relevant command help
 2. Read [project-files.md](references/project-files.md) before creating or changing declarations, sources, configuration tracking, secrets, or backup selection.
 3. Read [operations.md](references/operations.md) for the workflow being performed.
 4. Read [safety-and-recovery.md](references/safety-and-recovery.md) before EULA consent, downtime, deployment, backup application, pruning, or recovery.
@@ -30,7 +30,7 @@ Use the installed CLI's `--help` as the source of truth when its version differs
 
 ## Essential model
 
-- **Desired** is `craflet.yaml` plus `craflet-lock.yaml`.
+- **Desired** is `crafleet.yaml` plus `crafleet-lock.yaml`.
 - **Pending** is a fully acquired and verified installation prepared for a future apply.
 - **Active** is the installation currently deployed in `runtime/`.
 - `plugins` and `server` show declared, locked, pending, and active artifacts without a provider lookup. Add `--latest` for provider status; use `plugins check` or `server check` for a nonmutating update report.
@@ -49,4 +49,4 @@ A direct user request for a specific downtime, deploy, restore, prune, or reposi
 ## Output expectations
 
 State which host directory and projects were selected, whether the action was inspection or mutation, and whether pending or active changed.
-For failures, preserve Craflet's error code and recovery hint, do not expose secret values, and do not claim success from a submitted command alone.
+For failures, preserve Crafleet's error code and recovery hint, do not expose secret values, and do not claim success from a submitted command alone.

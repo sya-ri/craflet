@@ -1,0 +1,7 @@
+interface:
+  display_name: "Crafleet"
+  short_description: "Manage Paper and Velocity servers safely"
+  default_prompt: "Use $crafleet to inspect and safely manage this Crafleet server project."
+
+policy:
+  allow_implicit_invocation: true

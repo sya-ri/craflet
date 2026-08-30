@@ -3,7 +3,7 @@ import { createReadStream } from "node:fs";
 import { open } from "node:fs/promises";
 import { Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { CrafletError } from "@craflet/core";
+import { CrafleetError } from "@crafleet/core";
 
 export interface BackupProcessRequest {
     executable: string;
@@ -32,7 +32,7 @@ export type BackupProcessRunner = (
 export const runBackupProcess: BackupProcessRunner = async (request) => {
     request.signal?.throwIfAborted();
     if (request.input && request.inputFile)
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_PROCESS_INPUT",
             "Only one process input is supported.",
             2,
@@ -53,7 +53,7 @@ export const runBackupProcess: BackupProcessRunner = async (request) => {
                 });
             } catch {
                 reject(
-                    new CrafletError(
+                    new CrafleetError(
                         "BACKUP_PROCESS_START",
                         "Could not start the configured backup executable.",
                         3,
@@ -65,11 +65,11 @@ export const runBackupProcess: BackupProcessRunner = async (request) => {
             const stdout: Buffer[] = [];
             const stderr: Buffer[] = [];
             let outputSize = 0;
-            let failure: CrafletError | undefined;
+            let failure: CrafleetError | undefined;
             let killTimer: ReturnType<typeof setTimeout> | undefined;
             let inputTask: Promise<void> | undefined;
             let outputTask: Promise<void> | undefined;
-            const stop = (error: CrafletError) => {
+            const stop = (error: CrafleetError) => {
                 failure ??= error;
                 child.kill("SIGTERM");
                 killTimer ??= setTimeout(() => child.kill("SIGKILL"), 1000);
@@ -77,7 +77,7 @@ export const runBackupProcess: BackupProcessRunner = async (request) => {
             };
             const onAbort = () =>
                 stop(
-                    new CrafletError(
+                    new CrafleetError(
                         "BACKUP_ABORTED",
                         "Backup command was interrupted.",
                         130,
@@ -87,7 +87,7 @@ export const runBackupProcess: BackupProcessRunner = async (request) => {
             const timeout = setTimeout(
                 () =>
                     stop(
-                        new CrafletError(
+                        new CrafleetError(
                             "BACKUP_PROCESS_TIMEOUT",
                             "Backup command exceeded its time limit.",
                             3,
@@ -100,7 +100,7 @@ export const runBackupProcess: BackupProcessRunner = async (request) => {
                 outputSize += chunk.length;
                 if (outputSize > maximum) {
                     stop(
-                        new CrafletError(
+                        new CrafleetError(
                             "BACKUP_PROCESS_OUTPUT",
                             "Backup command output exceeded its configured limit.",
                             3,
@@ -121,7 +121,7 @@ export const runBackupProcess: BackupProcessRunner = async (request) => {
                                 (request.maxFileOutputBytes ??
                                     Number.MAX_SAFE_INTEGER)
                             ) {
-                                throw new CrafletError(
+                                throw new CrafleetError(
                                     "BACKUP_PROCESS_OUTPUT",
                                     "Backup archive output exceeded its configured limit.",
                                     3,
@@ -136,7 +136,7 @@ export const runBackupProcess: BackupProcessRunner = async (request) => {
                                     null,
                                 );
                                 if (written.bytesWritten === 0)
-                                    throw new CrafletError(
+                                    throw new CrafleetError(
                                         "BACKUP_PROCESS_OUTPUT",
                                         "Could not write backup command output.",
                                         3,
@@ -147,7 +147,7 @@ export const runBackupProcess: BackupProcessRunner = async (request) => {
                             () => callback(),
                             () =>
                                 callback(
-                                    new CrafletError(
+                                    new CrafleetError(
                                         "BACKUP_PROCESS_OUTPUT",
                                         "Could not write backup archive within its output limit.",
                                         3,
@@ -158,7 +158,7 @@ export const runBackupProcess: BackupProcessRunner = async (request) => {
                 });
                 outputTask = pipeline(child.stdout, destination).catch(() => {
                     stop(
-                        new CrafletError(
+                        new CrafleetError(
                             "BACKUP_PROCESS_OUTPUT",
                             "Could not write backup archive within its output limit.",
                             3,
@@ -172,14 +172,14 @@ export const runBackupProcess: BackupProcessRunner = async (request) => {
             }
             child.stderr?.on("data", (chunk: Buffer) => collect(stderr, chunk));
             child.on("error", () => {
-                failure ??= new CrafletError(
+                failure ??= new CrafleetError(
                     "BACKUP_PROCESS_START",
                     "Could not start the configured backup executable.",
                     3,
                 );
             });
             child.stdin?.on("error", () => {
-                failure ??= new CrafletError(
+                failure ??= new CrafleetError(
                     "BACKUP_PROCESS_INPUT",
                     "Backup command could not consume its input.",
                     3,
@@ -192,7 +192,7 @@ export const runBackupProcess: BackupProcessRunner = async (request) => {
                         child.stdin,
                     ).catch(() => {
                         stop(
-                            new CrafletError(
+                            new CrafleetError(
                                 "BACKUP_PROCESS_INPUT",
                                 "Backup command could not consume its input file.",
                                 3,
@@ -221,7 +221,7 @@ export const runBackupProcess: BackupProcessRunner = async (request) => {
                     }
                 })().catch(() =>
                     reject(
-                        new CrafletError(
+                        new CrafleetError(
                             "BACKUP_PROCESS_OUTPUT",
                             "Could not finalize backup command output.",
                             3,
@@ -256,7 +256,7 @@ export function backupJsonLines(value: string): unknown[] {
             .filter((line) => line.trim())
             .map((line) => JSON.parse(line) as unknown);
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_PROCESS_JSON",
             "Backup executable returned invalid JSON.",
             3,

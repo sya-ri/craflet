@@ -1,5 +1,5 @@
 import { assertStopped, shouldResumeBackup } from "../domain/deployment.js";
-import { CrafletError } from "../domain/errors.js";
+import { CrafleetError } from "../domain/errors.js";
 import type { ServerStatus } from "../ports/runtime.js";
 
 export interface LifecyclePorts {
@@ -38,7 +38,7 @@ export async function restartServer(
 ): Promise<ServerStatus> {
     const before = await ports.status();
     if (before.status === "unknown")
-        throw new CrafletError(
+        throw new CrafleetError(
             "UNKNOWN_PROCESS",
             "Cannot restart an unidentified process.",
             3,
@@ -59,7 +59,7 @@ export async function coldBackup<T>(
 ): Promise<{ backup: T; resumed: boolean }> {
     const before = await ports.status();
     if (!["stopped", "running"].includes(before.status))
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_STATE",
             `Cannot back up a server in ${before.status} state.`,
             3,
@@ -79,11 +79,11 @@ export async function coldBackup<T>(
                     "The original server is not confirmed running.",
                 );
         } catch {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_SAVED_RESTART_FAILED",
                 "The backup was saved, but restarting the original active configuration failed.",
                 1,
-                "Inspect craflet status and logs; the snapshot is available in backup list.",
+                "Inspect crafleet status and logs; the snapshot is available in backup list.",
             );
         }
     }

@@ -3,9 +3,9 @@ import { chmod, lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
     type BackupPrepareOptions,
-    CrafletError,
+    CrafleetError,
     type PreparedBackupTool,
-} from "@craflet/core";
+} from "@crafleet/core";
 import bunzip from "seek-bzip";
 import { openPromise } from "yauzl";
 import { hashBackupFile } from "../filesystem/backup-files.js";
@@ -51,7 +51,7 @@ export function verifyResticArchive(
         bytes.length !== asset.size ||
         createHash("sha256").update(bytes).digest("hex") !== asset.sha256
     ) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTIC_CHECKSUM",
             "The restic archive does not match its pinned official size and SHA256.",
             3,
@@ -66,7 +66,7 @@ export function decodeVerifiedResticBzip(
 ): Buffer {
     verifyResticArchive(bytes, asset);
     if (asset.compression !== "bz2")
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTIC_ARCHIVE",
             "Expected the official bzip2 restic archive.",
             3,
@@ -85,14 +85,14 @@ export function decodeVerifiedResticBzip(
             },
         });
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTIC_ARCHIVE",
             "Could not decode the verified restic archive within its resource limits.",
             3,
         );
     }
     if (offset === 0)
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTIC_ARCHIVE",
             "The restic archive contained an empty executable.",
             3,
@@ -116,7 +116,7 @@ export async function extractVerifiedResticZip(
         let entries = 0;
         for await (const entry of zip.eachEntry()) {
             if (++entries > 16)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTIC_ARCHIVE",
                     "The restic archive contains too many entries.",
                     3,
@@ -130,7 +130,7 @@ export async function extractVerifiedResticZip(
                 entry.uncompressedSize === 0 ||
                 (entry.generalPurposeBitFlag & 1) !== 0
             ) {
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTIC_ARCHIVE",
                     "Unexpected content in the official restic ZIP archive.",
                     3,
@@ -143,7 +143,7 @@ export async function extractVerifiedResticZip(
                 for await (const chunk of stream) {
                     size += chunk.length;
                     if (size > MAX_RESTIC_BINARY_BYTES)
-                        throw new CrafletError(
+                        throw new CrafleetError(
                             "RESTIC_ARCHIVE",
                             "Restic executable exceeds its size limit.",
                             3,
@@ -156,7 +156,7 @@ export async function extractVerifiedResticZip(
             executable = Buffer.concat(chunks);
         }
         if (!executable)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTIC_ARCHIVE",
                 "The restic archive has no executable.",
                 3,
@@ -187,14 +187,14 @@ export class ResticBootstrap {
         options.signal?.throwIfAborted();
         if (options.binaryPath) {
             if (!path.isAbsolute(options.binaryPath))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTIC_PATH",
                     "An explicit restic executable path must be absolute.",
                     2,
                 );
             await assertNoSymlinks(options.binaryPath);
             if (!(await lstat(options.binaryPath)).isFile())
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTIC_PATH",
                     "The explicit restic executable is not a regular file.",
                     3,
@@ -204,7 +204,7 @@ export class ResticBootstrap {
         }
         const asset = RESTIC_ASSETS[this.target];
         if (!asset) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTIC_PLATFORM",
                 "There is no pinned official restic binary for this OS/CPU. Restic-backed backup operations are unavailable on this platform in this release.",
                 3,
@@ -233,9 +233,9 @@ export class ResticBootstrap {
                 verifyResticArchive(archiveBytes, asset);
             } else {
                 if (options.offline)
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "RESTIC_OFFLINE",
-                        "The pinned restic binary is not cached. Run craflet tools prepare restic while online first.",
+                        "The pinned restic binary is not cached. Run crafleet tools prepare restic while online first.",
                         3,
                     );
                 archiveBytes = await this.download(asset, options.signal);
@@ -309,9 +309,9 @@ export class ResticBootstrap {
             !("version" in parsed) ||
             parsed.version !== RESTIC_VERSION
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTIC_VERSION",
-                `Craflet requires the pinned restic version ${RESTIC_VERSION}.`,
+                `Crafleet requires the pinned restic version ${RESTIC_VERSION}.`,
                 3,
             );
         }
@@ -337,7 +337,7 @@ export class ResticBootstrap {
                     "objects.githubusercontent.com",
                 ].includes(location.hostname)
             ) {
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTIC_DOWNLOAD",
                     "The official restic download redirected to an unapproved origin.",
                     3,
@@ -347,7 +347,7 @@ export class ResticBootstrap {
                 redirect: "manual",
                 signal: abort,
                 headers: {
-                    "User-Agent": "craflet/restic-bootstrap",
+                    "User-Agent": "crafleet/restic-bootstrap",
                     Accept: "application/octet-stream",
                 },
             });
@@ -355,7 +355,7 @@ export class ResticBootstrap {
                 const target = response.headers.get("location");
                 await response.body?.cancel();
                 if (!target)
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "RESTIC_DOWNLOAD",
                         "The official restic redirect has no location.",
                         3,
@@ -364,7 +364,7 @@ export class ResticBootstrap {
                 continue;
             }
             if (!response.ok || !response.body)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTIC_DOWNLOAD",
                     `Could not download the pinned restic archive (HTTP ${response.status}).`,
                     3,
@@ -372,7 +372,7 @@ export class ResticBootstrap {
             const declared = response.headers.get("content-length");
             if (declared !== null && Number(declared) !== asset.size) {
                 await response.body.cancel();
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTIC_CHECKSUM",
                     "The restic archive has an unexpected declared size.",
                     3,
@@ -387,7 +387,7 @@ export class ResticBootstrap {
                     if (next.done) break;
                     size += next.value.length;
                     if (size > asset.size)
-                        throw new CrafletError(
+                        throw new CrafleetError(
                             "RESTIC_CHECKSUM",
                             "The restic archive exceeds its pinned size.",
                             3,
@@ -402,7 +402,7 @@ export class ResticBootstrap {
             verifyResticArchive(bytes, asset);
             return bytes;
         }
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTIC_DOWNLOAD",
             "The official restic download exceeded its redirect limit.",
             3,

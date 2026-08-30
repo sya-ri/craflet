@@ -43,7 +43,7 @@ const developmentCliEntry = path.join(
 );
 const temporaryRoot = path.join(repository, ".test-tmp");
 const managementSecret = "0123456789abcdef0123456789abcdef01234567";
-const repositoryPassword = "craflet-e2e-disposable-repository-password";
+const repositoryPassword = "crafleet-e2e-disposable-repository-password";
 
 export type PluginPlatform = "bukkit" | "paper" | "velocity";
 export interface FixtureJar {
@@ -85,9 +85,9 @@ interface CliReply<T> {
 }
 
 export function requirePaperEula(): void {
-    if (process.env.CRAFLET_E2E_EULA !== "true") {
+    if (process.env.CRAFLEET_E2E_EULA !== "true") {
         throw new Error(
-            "Paper E2E requires explicit Minecraft EULA acceptance. Read https://www.minecraft.net/eula and set CRAFLET_E2E_EULA=true only after accepting it. This test is not skipped.",
+            "Paper E2E requires explicit Minecraft EULA acceptance. Read https://www.minecraft.net/eula and set CRAFLEET_E2E_EULA=true only after accepting it. This test is not skipped.",
         );
     }
 }
@@ -107,11 +107,11 @@ async function installPackagedCli(
     const sourceInfo = await lstat(source);
     if (!sourceInfo.isFile() || sourceInfo.isSymbolicLink()) {
         throw new Error(
-            "CRAFLET_E2E_PACKAGE must name a regular local tarball.",
+            "CRAFLEET_E2E_PACKAGE must name a regular local tarball.",
         );
     }
     const sha256 = await fileHash(source);
-    const snapshot = path.join(root, "craflet-package.tgz");
+    const snapshot = path.join(root, "crafleet-package.tgz");
     await copyFile(source, snapshot);
     if ((await fileHash(snapshot)) !== sha256)
         throw new Error("The package changed while it was copied.");
@@ -170,12 +170,12 @@ async function installPackagedCli(
             maxBuffer: 4 * 1024 * 1024,
         },
     );
-    const installed = path.join(installDirectory, "node_modules", "craflet");
+    const installed = path.join(installDirectory, "node_modules", "crafleet");
     expect((await lstat(installed)).isSymbolicLink()).toBe(false);
     const manifest = JSON.parse(
         await readFile(path.join(installed, "package.json"), "utf8"),
     ) as { name: string; dependencies?: Record<string, string> };
-    expect(manifest.name).toBe("craflet");
+    expect(manifest.name).toBe("crafleet");
     expect(Object.keys(manifest.dependencies ?? {})).toEqual([]);
     expect(JSON.stringify(manifest)).not.toContain("workspace:");
     for (const name of ["cli.mjs", "runner.mjs"]) {
@@ -194,7 +194,7 @@ async function cleanupPackageDirectory(directory: string): Promise<void> {
     const base = await realpath(tmpdir());
     if (
         path.dirname(root) !== base ||
-        !path.basename(root).startsWith("craflet-real-package-")
+        !path.basename(root).startsWith("crafleet-real-package-")
     ) {
         throw new Error(
             "Refusing to delete a directory outside the isolated package temporary root.",
@@ -204,7 +204,7 @@ async function cleanupPackageDirectory(directory: string): Promise<void> {
 }
 
 export async function prepareRealSuite(): Promise<RealSuite> {
-    const requestedPackage = process.env.CRAFLET_E2E_PACKAGE;
+    const requestedPackage = process.env.CRAFLEET_E2E_PACKAGE;
     if (!requestedPackage) {
         try {
             await stat(developmentCliEntry);
@@ -248,9 +248,9 @@ export async function prepareRealSuite(): Promise<RealSuite> {
     const home = path.join(root, "home");
     const env: NodeJS.ProcessEnv = {
         ...process.env,
-        CRAFLET_HOME: home,
-        CRAFLET_TEST_MANAGEMENT_SECRET: managementSecret,
-        CRAFLET_TEST_BACKUP_PASSWORD: repositoryPassword,
+        CRAFLEET_HOME: home,
+        CRAFLEET_TEST_MANAGEMENT_SECRET: managementSecret,
+        CRAFLEET_TEST_BACKUP_PASSWORD: repositoryPassword,
         NO_COLOR: "1",
         NODE_PATH: "",
     };
@@ -258,7 +258,7 @@ export async function prepareRealSuite(): Promise<RealSuite> {
     let packageDirectory: string | undefined;
     if (requestedPackage) {
         packageDirectory = await realpath(
-            await mkdtemp(path.join(tmpdir(), "craflet-real-package-")),
+            await mkdtemp(path.join(tmpdir(), "crafleet-real-package-")),
         );
         try {
             cliEntry = await installPackagedCli(
@@ -370,7 +370,7 @@ export async function cli<T = unknown>(
         try {
             log = (
                 await readFile(
-                    path.join(directory, ".craflet", "server.log"),
+                    path.join(directory, ".crafleet", "server.log"),
                     "utf8",
                 )
             )
@@ -382,7 +382,7 @@ export async function cli<T = unknown>(
         }
         throw new Error(
             redacted(
-                `craflet ${args.join(" ")} failed (${exitCode}): ${JSON.stringify(reply)}\n${log}`,
+                `crafleet ${args.join(" ")} failed (${exitCode}): ${JSON.stringify(reply)}\n${log}`,
             ),
         );
     }
@@ -526,9 +526,9 @@ export async function withRuntimeRootWriteDenied(
                 maxBuffer: 64 * 1024,
                 env: {
                     ...suite.env,
-                    CRAFLET_TEST_RUNTIME_DIRECTORY: runtime,
+                    CRAFLEET_TEST_RUNTIME_DIRECTORY: runtime,
                     ...(previous
-                        ? { CRAFLET_TEST_PREVIOUS_ACL: previous }
+                        ? { CRAFLEET_TEST_PREVIOUS_ACL: previous }
                         : {}),
                 },
             },
@@ -539,7 +539,7 @@ export async function withRuntimeRootWriteDenied(
         process.platform === "win32"
             ? await acl(
                   [
-                      "$acl = [System.IO.Directory]::GetAccessControl($env:CRAFLET_TEST_RUNTIME_DIRECTORY, [System.Security.AccessControl.AccessControlSections]::Access)",
+                      "$acl = [System.IO.Directory]::GetAccessControl($env:CRAFLEET_TEST_RUNTIME_DIRECTORY, [System.Security.AccessControl.AccessControlSections]::Access)",
                       "$acl.GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)",
                   ].join("\n"),
               )
@@ -548,7 +548,7 @@ export async function withRuntimeRootWriteDenied(
         throw new Error(
             "The permission-failure E2E must run as an ordinary user, not root.",
         );
-    const probe = path.join(runtime, ".craflet-e2e-write-probe");
+    const probe = path.join(runtime, ".crafleet-e2e-write-probe");
     let probeCreated = false;
     try {
         if (process.platform === "win32") {
@@ -556,12 +556,12 @@ export async function withRuntimeRootWriteDenied(
                 throw new Error("The original runtime ACL was not recorded.");
             await acl(
                 [
-                    "$acl = [System.IO.Directory]::GetAccessControl($env:CRAFLET_TEST_RUNTIME_DIRECTORY, [System.Security.AccessControl.AccessControlSections]::Access)",
+                    "$acl = [System.IO.Directory]::GetAccessControl($env:CRAFLEET_TEST_RUNTIME_DIRECTORY, [System.Security.AccessControl.AccessControlSections]::Access)",
                     "$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User",
                     "$rights = [System.Security.AccessControl.FileSystemRights]::CreateFiles",
                     "$rule = [System.Security.AccessControl.FileSystemAccessRule]::new($sid, $rights, [System.Security.AccessControl.InheritanceFlags]::None, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Deny)",
                     "$acl.AddAccessRule($rule)",
-                    "[System.IO.Directory]::SetAccessControl($env:CRAFLET_TEST_RUNTIME_DIRECTORY, $acl)",
+                    "[System.IO.Directory]::SetAccessControl($env:CRAFLEET_TEST_RUNTIME_DIRECTORY, $acl)",
                 ].join("\n"),
             );
         } else {
@@ -588,7 +588,7 @@ export async function withRuntimeRootWriteDenied(
         const childProbe = path.join(
             runtime,
             "plugins",
-            ".craflet-e2e-write-probe",
+            ".crafleet-e2e-write-probe",
         );
         const handle = await open(childProbe, "wx");
         await handle.close();
@@ -599,8 +599,8 @@ export async function withRuntimeRootWriteDenied(
             await acl(
                 [
                     "$acl = [System.Security.AccessControl.DirectorySecurity]::new()",
-                    "$acl.SetSecurityDescriptorSddlForm($env:CRAFLET_TEST_PREVIOUS_ACL, [System.Security.AccessControl.AccessControlSections]::Access)",
-                    "[System.IO.Directory]::SetAccessControl($env:CRAFLET_TEST_RUNTIME_DIRECTORY, $acl)",
+                    "$acl.SetSecurityDescriptorSddlForm($env:CRAFLEET_TEST_PREVIOUS_ACL, [System.Security.AccessControl.AccessControlSections]::Access)",
+                    "[System.IO.Directory]::SetAccessControl($env:CRAFLEET_TEST_RUNTIME_DIRECTORY, $acl)",
                 ].join("\n"),
                 previousAcl,
             );
@@ -653,11 +653,11 @@ export async function initRealProject(
             args: [
                 "-Xms128M",
                 kind === "paper" ? "-Xmx1536M" : "-Xmx384M",
-                ...(faults ? ["-Dcraflet.fixture.allowFaults=true"] : []),
+                ...(faults ? ["-Dcrafleet.fixture.allowFaults=true"] : []),
                 ...(shared
                     ? [
-                          `-Dcraflet.fixture.sharedDirectory=${shared.directory}`,
-                          `-Dcraflet.fixture.instance=${shared.instance}`,
+                          `-Dcrafleet.fixture.sharedDirectory=${shared.directory}`,
+                          `-Dcrafleet.fixture.instance=${shared.instance}`,
                       ]
                     : []),
             ],
@@ -668,20 +668,20 @@ export async function initRealProject(
             ? {
                   secrets: {
                       TEST_MANAGEMENT_SECRET: {
-                          env: "CRAFLET_TEST_MANAGEMENT_SECRET",
+                          env: "CRAFLEET_TEST_MANAGEMENT_SECRET",
                       },
                   },
               }
             : {}),
     };
-    await writeYaml(path.join(directory, "craflet.yaml"), manifest);
+    await writeYaml(path.join(directory, "crafleet.yaml"), manifest);
     const port = await freePort();
     if (kind === "paper") {
         const properties = `${[
             "server-ip=127.0.0.1",
             `server-port=${port}`,
             "online-mode=true",
-            "motd=Craflet disposable E2E",
+            "motd=Crafleet disposable E2E",
             "level-type=minecraft:flat",
             // Mojang 26.2 worldgen/flat_level_generator_preset/classic_flat.json: settings.
             `generator-settings=${JSON.stringify({
@@ -714,7 +714,7 @@ export async function initRealProject(
         const toml = `${[
             'config-version = "2.8"',
             `bind = "127.0.0.1:${port}"`,
-            'motd = "Craflet disposable E2E"',
+            'motd = "Crafleet disposable E2E"',
             "show-max-players = 20",
             "online-mode = true",
             'player-info-forwarding-mode = "NONE"',
@@ -762,7 +762,7 @@ export async function setupRealBackup(
         "--path",
         repositoryPath,
         "--password-env",
-        "CRAFLET_TEST_BACKUP_PASSWORD",
+        "CRAFLEET_TEST_BACKUP_PASSWORD",
         ...(initialize ? ["--init"] : []),
         "--yes",
     ]);
@@ -813,7 +813,7 @@ async function writeDiagnostics(
         let log = "";
         try {
             const handle = await open(
-                path.join(project, ".craflet", "server.log"),
+                path.join(project, ".crafleet", "server.log"),
                 "r",
             );
             try {
@@ -865,7 +865,7 @@ export async function cleanupRealSuite(
     if (
         failures.length ||
         suite.failed ||
-        process.env.CRAFLET_E2E_KEEP === "true"
+        process.env.CRAFLEET_E2E_KEEP === "true"
     ) {
         await writeDiagnostics(suite, failures);
     }
@@ -873,7 +873,7 @@ export async function cleanupRealSuite(
         throw new Error(
             `Could not confirm test server shutdown; retained directories: ${failures.join(", ")}`,
         );
-    if (suite.failed || process.env.CRAFLET_E2E_KEEP === "true") {
+    if (suite.failed || process.env.CRAFLEET_E2E_KEEP === "true") {
         if (suite.packageDirectory) {
             process.stderr.write(
                 `Retained isolated package: ${suite.packageDirectory}\n`,

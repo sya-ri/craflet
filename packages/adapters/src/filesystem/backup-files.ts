@@ -17,10 +17,10 @@ import {
     type BackupMetadata,
     type BackupPlan,
     type BackupRoot,
-    CrafletError,
+    CrafleetError,
     createBackupSelector,
     parseBackupRules,
-} from "@craflet/core";
+} from "@crafleet/core";
 import {
     assertNoSymlinks,
     containedPath,
@@ -47,7 +47,7 @@ export async function planBackupFiles(
     const canonicalRuntime = await realpath(runtime);
     const canonicalBase = await realpath(patternBase);
     if (!(await lstat(canonicalRuntime)).isDirectory()) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_SOURCE",
             "The runtime backup source must be a directory.",
             3,
@@ -68,7 +68,7 @@ export async function planBackupFiles(
             /^[a-zA-Z]:\//u.test(rule.staticPrefix) &&
             process.platform !== "win32"
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_SOURCE",
                 "A Windows absolute backup path cannot be used on this host.",
                 2,
@@ -78,7 +78,7 @@ export async function planBackupFiles(
         if (pathContains(canonicalRuntime, prefix)) continue;
         await assertNoSymlinks(prefix);
         if (!(await exists(prefix))) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_SOURCE_MISSING",
                 `Explicit backup source is missing: ${prefix}`,
                 3,
@@ -87,7 +87,7 @@ export async function planBackupFiles(
         const canonical = await realpath(prefix);
         const details = await lstat(canonical);
         if (!details.isFile() && !details.isDirectory()) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_SOURCE",
                 `Backup sources must be regular files or directories: ${canonical}`,
                 3,
@@ -99,7 +99,7 @@ export async function planBackupFiles(
             (pathContains(canonical, canonicalRuntime) ||
                 canonical === path.parse(canonical).root)
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_SOURCE_OVERLAP",
                 "External directory rules must not include the project runtime or an entire filesystem root.",
                 3,
@@ -118,9 +118,9 @@ export async function planBackupFiles(
         for (const forbidden of forbiddenPaths) {
             await assertNoSymlinks(forbidden);
             if (pathsOverlap(root.path, forbidden)) {
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_SELF_INCLUSION",
-                    `Backup source overlaps a repository or Craflet working directory: ${root.path}`,
+                    `Backup source overlaps a repository or Crafleet working directory: ${root.path}`,
                     3,
                 );
             }
@@ -133,7 +133,7 @@ export async function planBackupFiles(
     async function visit(source: string, root: BackupRoot): Promise<void> {
         const details = await lstat(source);
         if (details.isSymbolicLink()) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_SYMLINK",
                 `Backup traversal does not follow symbolic links or junctions: ${source}`,
                 3,
@@ -153,14 +153,14 @@ export async function planBackupFiles(
         const selection = select(relative, source.split(path.sep).join("/"));
         if (!selection.included || seen.has(source)) return;
         if (!details.isFile()) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_SPECIAL_FILE",
                 `Only regular files can be backed up: ${source}`,
                 3,
             );
         }
         if (!Number.isSafeInteger(details.size)) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_FILE_SIZE",
                 "A backup file exceeds the supported exact integer size.",
                 3,
@@ -202,7 +202,7 @@ export async function planBackupFiles(
     );
     const bytes = files.reduce((total, file) => total + file.size, 0);
     if (!Number.isSafeInteger(bytes))
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_FILE_SIZE",
             "The selected backup size is too large.",
             3,
@@ -242,7 +242,7 @@ export async function removePrivateBackupDirectory(
         path.resolve(directory),
     );
     if (!relative || !pathContains(parent, directory)) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_CLEANUP",
             "Refusing to remove a directory outside the backup temporary directory.",
             3,
@@ -261,7 +261,7 @@ export async function checkBackupSpace(
     const info = await statfs(existing, { bigint: true });
     const available = info.bavail * info.bsize;
     if (available < BigInt(requiredBytes) + 16n * 1024n * 1024n) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_SPACE",
             "Insufficient free space for the selected files and backup working data.",
             3,
@@ -293,7 +293,7 @@ export async function stageBackupPlan(
                 before.mtimeMs !== file.mtimeMs ||
                 before.ctimeMs !== file.ctimeMs
             ) {
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_SOURCE_CHANGED",
                     `Selected file changed after planning: ${file.source}`,
                     3,
@@ -320,7 +320,7 @@ export async function stageBackupPlan(
                 if (!bytesRead) break;
                 bytes += bytesRead;
                 if (bytes > file.size)
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "BACKUP_SOURCE_CHANGED",
                         "A source file grew during staging.",
                         3,
@@ -336,7 +336,7 @@ export async function stageBackupPlan(
                         null,
                     );
                     if (written.bytesWritten === 0)
-                        throw new CrafletError(
+                        throw new CrafleetError(
                             "BACKUP_WRITE",
                             "Could not write backup staging data.",
                             3,
@@ -354,7 +354,7 @@ export async function stageBackupPlan(
                 named.ino !== before.ino ||
                 named.dev !== before.dev
             ) {
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_SOURCE_CHANGED",
                     `Selected file changed while being copied: ${file.source}`,
                     3,
@@ -392,7 +392,7 @@ export async function hashBackupFile(
     );
     try {
         if (!(await handle.stat()).isFile())
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_FILE",
                 "Expected a regular backup file.",
                 3,

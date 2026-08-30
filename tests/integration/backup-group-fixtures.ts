@@ -5,7 +5,7 @@ import {
     type ArtifactStore,
     type LockedArtifact,
     parseSource,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { NodeDeploymentManager } from "../../packages/adapters/src/filesystem/deployment.js";
 import {
     type BackupBatch,
@@ -80,7 +80,7 @@ export async function backupGroupFixture() {
             files: ["runtime/**", "../../shared/**", "!**/*.[jJ][aA][rR]"],
             retention: { keepLast: 2 },
         };
-        await writeYaml(path.join(dir, "craflet.yaml"), manifest);
+        await writeYaml(path.join(dir, "crafleet.yaml"), manifest);
         await writeBackupTestFile(
             dir,
             "runtime/world/players.dat",
@@ -178,7 +178,7 @@ export async function backupGroupFixture() {
         for (const project of projects) {
             project.manifest.server.build = "2";
             await writeYaml(
-                path.join(project.dir, "craflet.yaml"),
+                path.join(project.dir, "crafleet.yaml"),
                 project.manifest,
             );
             Object.assign(

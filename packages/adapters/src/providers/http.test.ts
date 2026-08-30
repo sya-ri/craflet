@@ -1,4 +1,4 @@
-import { type ArtifactContext, CRAFLET_VERSION } from "@craflet/core";
+import { type ArtifactContext, CRAFLEET_VERSION } from "@crafleet/core";
 import { describe, expect, it, vi } from "vitest";
 import { ProviderHttp, safeDownloadUrl } from "./http.js";
 
@@ -71,7 +71,7 @@ describe("provider HTTP boundary", () => {
         expect(fetcher.mock.calls[0]?.[1]).toMatchObject({
             redirect: "manual",
             headers: {
-                "User-Agent": `craflet/${CRAFLET_VERSION} (https://github.com/sya-ri/craflet)`,
+                "User-Agent": `crafleet/${CRAFLEET_VERSION} (https://github.com/sya-ri/crafleet)`,
             },
         });
         const unsafe = new ProviderHttp({

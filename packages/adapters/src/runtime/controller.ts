@@ -4,11 +4,11 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
-    CRAFLET_VERSION,
-    CrafletError,
+    CRAFLEET_VERSION,
+    CrafleetError,
     type ServerController,
     type ServerStatus,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { type } from "arktype";
 import {
     assertNoSymlinks,
@@ -33,9 +33,9 @@ export class NodeServerController implements ServerController {
     ) {}
 
     async record(): Promise<RunnerRecord | undefined> {
-        const file = path.join(this.projectDir, ".craflet/runner.json");
+        const file = path.join(this.projectDir, ".crafleet/runner.json");
         if (!(await exists(file))) return undefined;
-        await assertNoSymlinks(this.projectDir, ".craflet/runner.json");
+        await assertNoSymlinks(this.projectDir, ".crafleet/runner.json");
         try {
             if ((await stat(file)).size > 32768) return undefined;
             const parsed = RunnerRecordSchema(
@@ -59,10 +59,10 @@ export class NodeServerController implements ServerController {
             return {
                 status:
                     (await exists(
-                        path.join(this.projectDir, ".craflet/runner.json"),
+                        path.join(this.projectDir, ".crafleet/runner.json"),
                     )) ||
                     (await exists(
-                        path.join(this.projectDir, ".craflet/process.lock"),
+                        path.join(this.projectDir, ".crafleet/process.lock"),
                     ))
                         ? "unknown"
                         : "stopped",
@@ -93,7 +93,7 @@ export class NodeServerController implements ServerController {
     }
 
     private async stoppedStatus(record: RunnerRecord): Promise<ServerStatus> {
-        if (await exists(path.join(this.projectDir, ".craflet/process.lock")))
+        if (await exists(path.join(this.projectDir, ".crafleet/process.lock")))
             return { status: "unknown" };
         return {
             status: "stopped",
@@ -109,7 +109,7 @@ export class NodeServerController implements ServerController {
         const before = await this.status();
         if (before.status === "running") {
             if (before.activeId !== activeId)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "ACTIVE_MISMATCH",
                     "A different active installation is already running.",
                     3,
@@ -117,19 +117,19 @@ export class NodeServerController implements ServerController {
             return before;
         }
         if (before.status !== "stopped")
-            throw new CrafletError(
+            throw new CrafleetError(
                 "UNKNOWN_PROCESS",
                 "Only a confirmed stopped server can be started.",
                 3,
             );
         if (!this.runnerEntry)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RUNNER_MISSING",
                 "The bundled runner entry is unavailable.",
             );
         const state = await readState(this.projectDir);
         if (!state.active || state.active.id !== activeId)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "ACTIVE_MISSING",
                 "No matching active installation exists.",
                 3,
@@ -139,7 +139,7 @@ export class NodeServerController implements ServerController {
         const runner = path.join(
             this.home,
             "runners",
-            CRAFLET_VERSION,
+            CRAFLEET_VERSION,
             hash,
             "runner.mjs",
         );
@@ -150,17 +150,17 @@ export class NodeServerController implements ServerController {
                 .update(await readFile(runner))
                 .digest("hex") !== hash
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RUNNER_HASH",
                 "Managed runner cache is corrupted.",
                 3,
             );
         const token = randomUUID();
         await ensurePrivateDirectory(
-            await assertNoSymlinks(this.projectDir, ".craflet"),
+            await assertNoSymlinks(this.projectDir, ".crafleet"),
         );
         await writeJson(
-            path.join(this.projectDir, ".craflet/runner-launch.json"),
+            path.join(this.projectDir, ".crafleet/runner-launch.json"),
             { protocol: 1, token, activeId, home: this.home },
         );
         const processHandle = spawn(
@@ -183,12 +183,12 @@ export class NodeServerController implements ServerController {
         while (Date.now() < deadline) {
             this.signal?.throwIfAborted();
             if (spawnError)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RUNNER_SPAWN",
                     "Could not start the server runner.",
                 );
             if (runnerExited)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RUNNER_EXITED",
                     "Runner exited before the server became ready. Inspect doctor and logs.",
                     1,
@@ -196,16 +196,16 @@ export class NodeServerController implements ServerController {
             const current = await this.record();
             if (current?.token === token) {
                 if (current.phase === "stopped")
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "SERVER_EXITED",
-                        "Server exited before becoming ready. Inspect craflet logs.",
+                        "Server exited before becoming ready. Inspect crafleet logs.",
                         1,
                     );
                 if (current.phase === "running") return this.status();
             }
             await delay(150);
         }
-        throw new CrafletError(
+        throw new CrafleetError(
             "START_TIMEOUT",
             "Server did not become ready before the deadline. It was not killed; inspect status and logs.",
             3,
@@ -218,14 +218,14 @@ export class NodeServerController implements ServerController {
         const before = await this.status();
         if (before.status === "stopped") return before;
         if (before.status === "unknown")
-            throw new CrafletError(
+            throw new CrafleetError(
                 "UNKNOWN_PROCESS",
                 "Refusing to signal an unidentified process.",
                 3,
             );
         const record = await this.record();
         if (!record)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "UNKNOWN_PROCESS",
                 "Runner identity is unavailable.",
                 3,
@@ -245,7 +245,7 @@ export class NodeServerController implements ServerController {
             if (current.status === "stopped") return current;
             await delay(50);
         }
-        throw new CrafletError(
+        throw new CrafleetError(
             "STOP_UNCONFIRMED",
             "The server process exit could not be confirmed.",
             3,
@@ -254,14 +254,14 @@ export class NodeServerController implements ServerController {
 
     async command(text: string): Promise<void> {
         if (!text || /[\r\n\0]/.test(text) || text.length > 8192)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "COMMAND_INVALID",
                 "Provide one console command without line breaks.",
                 2,
             );
         const record = await this.record();
         if (!record || record.phase === "stopped")
-            throw new CrafletError("NOT_RUNNING", "Server is not running.", 3);
+            throw new CrafleetError("NOT_RUNNING", "Server is not running.", 3);
         await runnerRequest(record, "command", text);
     }
 }

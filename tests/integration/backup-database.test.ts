@@ -162,7 +162,7 @@ describe("SQL dump/restore command boundaries", () => {
             id: "players",
             kind,
             host: "127.0.0.1",
-            database: "craflet_fixture",
+            database: "crafleet_fixture",
             user: "fixture",
             password: { env: "TEST_DB_PASSWORD" },
         };

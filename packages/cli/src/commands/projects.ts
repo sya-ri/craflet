@@ -8,8 +8,8 @@ import {
     nearestFile,
     validateManagedProject,
     workspaceProjects,
-} from "@craflet/adapters";
-import { CrafletError, diagnosticsFailed } from "@craflet/core";
+} from "@crafleet/adapters";
+import { CrafleetError, diagnosticsFailed } from "@crafleet/core";
 import { type Command, Option } from "commander";
 import type { CommandContext } from "./context.js";
 
@@ -71,7 +71,7 @@ export function registerProjectCommands(
             directory: dir,
             name: manifest.name,
             server: manifest.server,
-            next: "Review craflet.yaml, then run craflet install and craflet doctor.",
+            next: "Review crafleet.yaml, then run crafleet install and crafleet doctor.",
         };
     });
     const importer = program
@@ -101,7 +101,7 @@ export function registerProjectCommands(
             stopped?: boolean;
         }>();
         if (!options.stopped)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "SOURCE_STOPPED_REQUIRED",
                 "Stop the original server, then explicitly pass --stopped.",
                 3,
@@ -129,7 +129,7 @@ export function registerProjectCommands(
     const workspaceInit = workspace
         .command("init [patterns...]")
         .description(
-            "Create craflet-workspace.yaml; existing projects are not modified.",
+            "Create crafleet-workspace.yaml; existing projects are not modified.",
         );
     context.action(workspaceInit, async ([patterns], command) => {
         const values =
@@ -151,7 +151,7 @@ export function registerProjectCommands(
         async (_, command) => {
             const directories = await workspaceProjects(context.cwd(command));
             if (!directories.length)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "EMPTY_SELECTION",
                     "No workspace projects found.",
                     2,
@@ -188,7 +188,7 @@ export function registerProjectCommands(
         async (_, command) => {
             const cwd = context.cwd(command);
             const options = context.globals(command);
-            const file = await nearestFile(cwd, "craflet.yaml");
+            const file = await nearestFile(cwd, "crafleet.yaml");
             const dirs =
                 options.recursive || options.filter?.length
                     ? (await context.projects(command)).map(

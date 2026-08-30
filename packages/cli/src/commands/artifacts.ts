@@ -12,14 +12,14 @@ import {
     removePlugins,
     serverSource,
     validateManagedProjectLock,
-} from "@craflet/adapters";
+} from "@crafleet/adapters";
 import {
     type LockedArtifact,
     type LockFile,
     parsePluginSource,
     parseServerSource,
     stableStringify,
-} from "@craflet/core";
+} from "@crafleet/core";
 import type { Command } from "commander";
 import type { CommandContext } from "./context.js";
 

@@ -1,8 +1,8 @@
 import {
     type ArtifactContext,
-    CrafletError,
+    CrafleetError,
     type SourceSpec,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { type } from "arktype";
 import {
     type DownloadSpec,
@@ -55,7 +55,7 @@ export async function resolveSpigot(
                     context.minecraftVersion?.startsWith(`${item}.`),
             )
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "COMPATIBILITY_UNVERIFIED",
                 "SpigotMC does not declare compatibility with this Minecraft version. Its version labels are not SemVer ranges.",
                 3,
@@ -93,7 +93,7 @@ export async function resolveSpigot(
             );
             if (versions.length < 100) break;
             if (page === 9)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "VERSION_LOOKUP_LIMIT",
                     "SpigotMC version label lookup exceeded its limit. Use a version ID instead.",
                     3,
@@ -101,7 +101,7 @@ export async function resolveSpigot(
         }
         const selected = matches[0];
         if (!selected || matches.length !== 1)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "AMBIGUOUS_VERSION",
                 "SpigotMC labels are opaque and may repeat. Select an exact version ID.",
                 3,

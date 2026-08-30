@@ -22,15 +22,15 @@ import {
     readState,
     saveState,
     writeYaml,
-} from "@craflet/adapters";
+} from "@crafleet/adapters";
 import {
     type BackupMetadata,
-    CRAFLET_VERSION,
-    CrafletError,
+    CRAFLEET_VERSION,
+    CrafleetError,
     type LockedArtifact,
     parseSource,
     stableStringify,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCli } from "../../packages/cli/src/application.js";
 import { artifactJar, artifactZip } from "./artifacts-fixture.js";
@@ -45,7 +45,7 @@ const entryUrl = pathToFileURL(path.resolve("packages/cli/dist/cli.mjs")).href;
 const originalExitCode = process.exitCode;
 
 beforeEach(async () => {
-    root = await mkdtemp(path.join(temporaryParent, "craflet-cli-"));
+    root = await mkdtemp(path.join(temporaryParent, "crafleet-cli-"));
     project = path.join(root, "server 日本語");
     home = path.join(root, "home");
     await writeFile(
@@ -67,7 +67,7 @@ beforeEach(async () => {
         version: "1.21.11",
         source: `file:${path.join(root, "server.jar")}`,
     });
-    vi.stubEnv("CRAFLET_HOME", home);
+    vi.stubEnv("CRAFLEET_HOME", home);
     vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
         output += String(chunk);
         return true;
@@ -83,7 +83,7 @@ afterEach(async () => {
     vi.unstubAllEnvs();
     if (
         path.dirname(root) !== temporaryParent ||
-        !path.basename(root).startsWith("craflet-cli-")
+        !path.basename(root).startsWith("crafleet-cli-")
     )
         throw new Error("Unsafe fixture cleanup target");
     await rm(root, { recursive: true, force: true });
@@ -136,7 +136,7 @@ async function initializeWorkspaceProjects(
             version: "4.1.1",
         });
         if (spec.group || spec.repository)
-            await writeYaml(path.join(directory, "craflet.yaml"), {
+            await writeYaml(path.join(directory, "crafleet.yaml"), {
                 ...manifest,
                 backup: {
                     ...manifest.backup,
@@ -183,7 +183,9 @@ describe("CLI usage and package-style project management", () => {
         expect((await loadProject(target, home)).manifest.id).toMatch(
             /^[a-f0-9-]{36}$/,
         );
-        expect((await command(["--version"])).reply.help).toBe(CRAFLET_VERSION);
+        expect((await command(["--version"])).reply.help).toBe(
+            CRAFLEET_VERSION,
+        );
     });
 
     it.each([
@@ -217,7 +219,7 @@ describe("CLI usage and package-style project management", () => {
 
             expect(execution.reply.error?.code).toBe("SERVER_PLATFORM");
             await expect(
-                stat(path.join(target, "craflet.yaml")),
+                stat(path.join(target, "crafleet.yaml")),
             ).rejects.toMatchObject({ code: "ENOENT" });
             await expect(
                 stat(path.join(home, "eula.json")),
@@ -240,7 +242,7 @@ describe("CLI usage and package-style project management", () => {
         expect(failure.code).toBe(3);
         expect(failure.reply.error?.code).toBe("CONFIRMATION_REQUIRED");
         await expect(
-            stat(path.join(rejected, "craflet.yaml")),
+            stat(path.join(rejected, "crafleet.yaml")),
         ).rejects.toMatchObject({
             code: "ENOENT",
         });
@@ -356,9 +358,9 @@ describe("CLI usage and package-style project management", () => {
         async ({ args: parts }) => {
             const execution = await command([...parts, "--help"]);
             expect(execution.code).toBe(0);
-            expect(execution.reply.help).toContain("Usage:");
+            expect(execution.reply.help).toMatch(/^Usage: crafleet(?:\s|$)/u);
             await expect(
-                stat(path.join(project, ".craflet")),
+                stat(path.join(project, ".crafleet")),
             ).rejects.toMatchObject({ code: "ENOENT" });
         },
     );
@@ -423,7 +425,7 @@ describe("CLI usage and package-style project management", () => {
     });
     it("can diagnose and stop after a user breaks the declaration, without printing its secret value", async () => {
         await writeFile(
-            path.join(project, "craflet.yaml"),
+            path.join(project, "crafleet.yaml"),
             "password: do-not-print-this-secret\n",
         );
         const diagnostic = await command(["doctor"]);
@@ -464,7 +466,7 @@ describe("CLI usage and package-style project management", () => {
         expect(initialized.output).toContain(
             'Created Velocity server "human-output"',
         );
-        expect(initialized.output).toContain("Next: Review craflet.yaml");
+        expect(initialized.output).toContain("Next: Review crafleet.yaml");
         expect(initialized.output).not.toContain('"directory"');
     });
 
@@ -510,7 +512,7 @@ describe("CLI usage and package-style project management", () => {
 
     it("rejects global plugin declaration key collisions before grouped latest checks", async () => {
         const configured = await loadProject(project, home);
-        await writeYaml(path.join(project, "craflet.yaml"), {
+        await writeYaml(path.join(project, "crafleet.yaml"), {
             ...configured.manifest,
             plugins: {
                 Foo: "modrinth:foo@1.0",
@@ -532,9 +534,9 @@ describe("CLI usage and package-style project management", () => {
     });
 
     it("sanitizes human log tails without changing JSON string results", async () => {
-        await mkdir(path.join(project, ".craflet"), { recursive: true });
+        await mkdir(path.join(project, ".crafleet"), { recursive: true });
         const log = "line\tvalue\n\u001b]52;c;payload\u0007\rend   \n\n";
-        await writeFile(path.join(project, ".craflet/server.log"), log);
+        await writeFile(path.join(project, ".crafleet/server.log"), log);
 
         const human = await command(["logs"], project, false);
         expect(human.output).toBe("line\tvalue\n?]52;c;payload??end   \n\n");
@@ -568,7 +570,7 @@ describe("CLI artifact and pending contracts", () => {
             version: "1.21.11",
             build: "120",
         };
-        await writeYaml(path.join(project, "craflet.yaml"), {
+        await writeYaml(path.join(project, "crafleet.yaml"), {
             ...configured.manifest,
             server: { ...configured.manifest.server, source: serverSource },
             plugins: { Example: pluginSource },
@@ -585,7 +587,7 @@ describe("CLI artifact and pending contracts", () => {
         plugin.source = pluginSource;
         plugin.version = "Example release 1.0";
         await writeYaml(
-            path.join(configured.lockRoot, "craflet-lock.yaml"),
+            path.join(configured.lockRoot, "crafleet-lock.yaml"),
             lock,
         );
         const state = await readState(project);
@@ -613,7 +615,7 @@ describe("CLI artifact and pending contracts", () => {
         expect(matchingList.output).not.toContain("opaque-current-id");
         expect(matchingList.output).not.toContain(root);
 
-        await writeYaml(path.join(project, "craflet.yaml"), {
+        await writeYaml(path.join(project, "crafleet.yaml"), {
             ...configured.manifest,
             server: { ...configured.manifest.server, source: serverSource },
             plugins: {
@@ -631,7 +633,7 @@ describe("CLI artifact and pending contracts", () => {
         expect(staleList.output).not.toContain("opaque-current-id");
         expect(staleList.output).not.toContain(root);
 
-        await writeYaml(path.join(project, "craflet.yaml"), {
+        await writeYaml(path.join(project, "crafleet.yaml"), {
             ...configured.manifest,
             server: { ...configured.manifest.server, source: serverSource },
             plugins: {},
@@ -642,7 +644,7 @@ describe("CLI artifact and pending contracts", () => {
         );
         expect(pendingOnlyList.output).not.toContain("none declared");
 
-        await writeYaml(path.join(project, "craflet.yaml"), {
+        await writeYaml(path.join(project, "crafleet.yaml"), {
             ...configured.manifest,
             server: { ...configured.manifest.server, source: serverSource },
             plugins: { Example: pluginSource },
@@ -714,7 +716,7 @@ describe("CLI artifact and pending contracts", () => {
             "latest 121 (update available)",
         );
 
-        await writeYaml(path.join(project, "craflet.yaml"), {
+        await writeYaml(path.join(project, "crafleet.yaml"), {
             ...configured.manifest,
             server: {
                 type: "paper",
@@ -815,13 +817,13 @@ describe("CLI artifact and pending contracts", () => {
             ),
         ).toContain("42");
         const lock = await readFile(
-            path.join(project, "craflet-lock.yaml"),
+            path.join(project, "crafleet-lock.yaml"),
             "utf8",
         );
         await result(["deploy", "discard", "--yes"]);
         expect((await readState(project)).pending).toBeUndefined();
         expect(
-            await readFile(path.join(project, "craflet-lock.yaml"), "utf8"),
+            await readFile(path.join(project, "crafleet-lock.yaml"), "utf8"),
         ).toBe(lock);
     });
     it("reports absent names, duplicate declarations and frozen mismatches", async () => {
@@ -868,13 +870,13 @@ describe("CLI artifact and pending contracts", () => {
         ].map((args) => ({ args })),
     )("provides a nonmutating preview for $args", async ({ args }) => {
         const manifest = await readFile(
-            path.join(project, "craflet.yaml"),
+            path.join(project, "crafleet.yaml"),
             "utf8",
         );
         await result([...args, "--dry-run"]);
-        expect(await readFile(path.join(project, "craflet.yaml"), "utf8")).toBe(
-            manifest,
-        );
+        expect(
+            await readFile(path.join(project, "crafleet.yaml"), "utf8"),
+        ).toBe(manifest);
         await expect(stat(home)).rejects.toMatchObject({ code: "ENOENT" });
     });
     it("previews a prepared Paper installation without starting Java and stops idempotently", async () => {
@@ -1113,8 +1115,8 @@ describe("workspace selection through the CLI", () => {
             version: "4.1.1",
         });
         alpha.plugins.Example = "modrinth:example@1";
-        await writeYaml(path.join(alphaDir, "craflet.yaml"), alpha);
-        await writeYaml(path.join(betaDir, "craflet.yaml"), beta);
+        await writeYaml(path.join(alphaDir, "crafleet.yaml"), alpha);
+        await writeYaml(path.join(betaDir, "crafleet.yaml"), beta);
         const latest = vi
             .spyOn(NodeArtifactStore.prototype, "latest")
             .mockRejectedValue(new Error("Provider preflight failed."));
@@ -1126,7 +1128,7 @@ describe("workspace selection through the CLI", () => {
         expect(latest).not.toHaveBeenCalled();
 
         beta.plugins.Broken = "not-a-source";
-        await writeYaml(path.join(betaDir, "craflet.yaml"), beta);
+        await writeYaml(path.join(betaDir, "crafleet.yaml"), beta);
         expect(
             (await command(["-r", "plugins", "--latest"], root)).reply.error
                 ?.code,
@@ -1134,7 +1136,7 @@ describe("workspace selection through the CLI", () => {
         expect(latest).not.toHaveBeenCalled();
 
         beta.server.source = "not-a-source";
-        await writeYaml(path.join(betaDir, "craflet.yaml"), beta);
+        await writeYaml(path.join(betaDir, "crafleet.yaml"), beta);
         for (const args of [
             ["-r", "server", "check"],
             ["-r", "server", "--latest"],
@@ -1147,9 +1149,9 @@ describe("workspace selection through the CLI", () => {
 
         delete beta.plugins.Broken;
         delete beta.server.source;
-        await writeYaml(path.join(betaDir, "craflet.yaml"), beta);
-        await mkdir(path.join(betaDir, ".craflet"), { recursive: true });
-        await writeFile(path.join(betaDir, ".craflet/state.json"), "not-json");
+        await writeYaml(path.join(betaDir, "crafleet.yaml"), beta);
+        await mkdir(path.join(betaDir, ".crafleet"), { recursive: true });
+        await writeFile(path.join(betaDir, ".crafleet/state.json"), "not-json");
         for (const args of [
             ["-r", "plugins", "--latest"],
             ["-r", "server", "--latest"],
@@ -1177,7 +1179,7 @@ describe("workspace selection through the CLI", () => {
                           Broken: "modrinth:broken@1",
                           Partner: "modrinth:partner@1",
                       };
-            await writeYaml(path.join(directory, "craflet.yaml"), manifest);
+            await writeYaml(path.join(directory, "crafleet.yaml"), manifest);
         }
         const server = {
             source: parseSource(`file:${path.join(root, "server.jar")}`),
@@ -1301,7 +1303,7 @@ describe("workspace selection through the CLI", () => {
         for (const corruption of corruptions) {
             const lock = structuredClone(baseLock);
             corruption.mutate(lock);
-            await writeYaml(path.join(root, "craflet-lock.yaml"), lock);
+            await writeYaml(path.join(root, "crafleet-lock.yaml"), lock);
             latest.mockClear();
 
             const execution = await command(["-r", "plugins", "check"], root);
@@ -1321,7 +1323,7 @@ describe("workspace selection through the CLI", () => {
                 kind: "paper",
                 version: "1.21.11",
             });
-            await writeYaml(path.join(directory, "craflet.yaml"), {
+            await writeYaml(path.join(directory, "crafleet.yaml"), {
                 ...manifest,
                 backup: { ...manifest.backup, group: "shared" },
             });
@@ -1352,7 +1354,7 @@ describe("CLI routing to backup and lifecycle ports", () => {
         const start = vi
             .spyOn(NodeDeploymentManager.prototype, "start")
             .mockRejectedValue(
-                new CrafletError("CANCELLED", "Operation cancelled.", 130),
+                new CrafleetError("CANCELLED", "Operation cancelled.", 130),
             );
         const execution = await command(["-r", "start"], root);
         expect(execution.code).toBe(130);
@@ -1386,9 +1388,9 @@ describe("CLI routing to backup and lifecycle ports", () => {
             detached: true,
         });
 
-        await mkdir(path.join(project, ".craflet"), { recursive: true });
+        await mkdir(path.join(project, ".crafleet"), { recursive: true });
         await writeFile(
-            path.join(project, ".craflet/server.log"),
+            path.join(project, ".crafleet/server.log"),
             "follow\tline\n\u001b]52;c;payload\u0007\rend\n",
         );
         const humanExecution = command(["logs", "--follow"], project, false);
@@ -1419,7 +1421,7 @@ describe("CLI routing to backup and lifecycle ports", () => {
     });
     async function configured() {
         const context = await loadProject(project, home);
-        await writeYaml(path.join(project, "craflet.yaml"), {
+        await writeYaml(path.join(project, "crafleet.yaml"), {
             ...context.manifest,
             backup: { ...context.manifest.backup, repository: "main" },
         });
@@ -1650,7 +1652,7 @@ describe("CLI routing to backup and lifecycle ports", () => {
         vi.spyOn(NodeDeploymentManager.prototype, "restart").mockImplementation(
             async function (this: NodeDeploymentManager) {
                 if (this.context.manifest.name === "beta")
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "STOP_TIMEOUT",
                         "Stop was not confirmed.",
                         3,
@@ -1716,7 +1718,7 @@ describe("CLI routing to backup and lifecycle ports", () => {
                 const name = this.context.manifest.name;
                 applied.push(name);
                 if (name === "beta")
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "DEPLOY_FAILED",
                         "Unsafe\u001b[31m failure\nline",
                         3,
@@ -1781,7 +1783,7 @@ describe("CLI routing to backup and lifecycle ports", () => {
         const groupRecover = vi
             .spyOn(NodeRecoveryGroup.prototype, "recover")
             .mockRejectedValue(
-                new CrafletError(
+                new CrafleetError(
                     "GROUP_RECOVERY_FAILED",
                     "Group recovery stopped.",
                     4,
@@ -1820,12 +1822,12 @@ describe("CLI routing to backup and lifecycle ports", () => {
             { name: "delta" },
         ]);
         await mkdir(
-            path.join(root, "servers", "charlie", ".craflet", "runner.json"),
+            path.join(root, "servers", "charlie", ".crafleet", "runner.json"),
             { recursive: true },
         );
-        await mkdir(path.join(root, ".craflet"), { recursive: true });
+        await mkdir(path.join(root, ".crafleet"), { recursive: true });
         await writeFile(
-            path.join(root, ".craflet", "group-restore.json"),
+            path.join(root, ".crafleet", "group-restore.json"),
             "{}\n",
         );
         const checked: string[] = [];
@@ -1879,7 +1881,7 @@ describe("CLI routing to backup and lifecycle ports", () => {
                 const name = this.context.manifest.name;
                 discarded.push(name);
                 if (name === "beta")
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "DISCARD_FAILED",
                         "Pending state could not be removed.",
                         4,
@@ -1967,7 +1969,7 @@ describe("CLI routing to backup and lifecycle ports", () => {
                 ok: false,
                 code: "OPERATION_FAILED",
                 message:
-                    "Backup creation failed; inspect this recovery unit with craflet doctor before retrying.",
+                    "Backup creation failed; inspect this recovery unit with crafleet doctor before retrying.",
             },
             {
                 project: "delta",
@@ -2008,7 +2010,7 @@ describe("CLI routing to backup and lifecycle ports", () => {
                 kind: "velocity",
                 version: "4.1.1",
             });
-            await writeYaml(path.join(directory, "craflet.yaml"), {
+            await writeYaml(path.join(directory, "crafleet.yaml"), {
                 ...manifest,
                 backup: {
                     ...manifest.backup,

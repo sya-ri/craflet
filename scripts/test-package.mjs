@@ -13,10 +13,12 @@ import path from "node:path";
 
 const root = process.cwd();
 const temporaryParent = await realpath(tmpdir());
-const temporary = await mkdtemp(path.join(temporaryParent, "craflet-package-"));
+const temporary = await mkdtemp(
+    path.join(temporaryParent, "crafleet-package-"),
+);
 const env = {
     ...process.env,
-    CRAFLET_HOME: path.join(temporary, "home"),
+    CRAFLEET_HOME: path.join(temporary, "home"),
     NO_COLOR: "1",
     npm_config_update_notifier: "false",
 };
@@ -74,7 +76,7 @@ try {
     const tarball = path.join(
         root,
         "artifacts",
-        `craflet-${manifest.version}.tgz`,
+        `crafleet-${manifest.version}.tgz`,
     );
     await writeFile(
         path.join(temporary, "package.json"),
@@ -89,11 +91,14 @@ try {
         "--package-lock=false",
         tarball,
     ]);
-    const installed = path.join(temporary, "node_modules/craflet");
+    const installed = path.join(temporary, "node_modules/crafleet");
     const published = JSON.parse(
         await readFile(path.join(installed, "package.json"), "utf8"),
     );
-    assert.equal(published.name, "craflet");
+    assert.equal(published.name, "crafleet");
+    assert.deepEqual(published.bin, {
+        crafleet: "./dist/cli.mjs",
+    });
     assert.equal(published.engines?.node, ">=24.20.0 <27");
     assert.equal(published.publishConfig?.access, "public");
     assert.equal(
@@ -103,13 +108,13 @@ try {
     assert.equal(published.publishConfig?.tag, "latest");
     assert.equal(
         published.repository?.url,
-        "git+https://github.com/sya-ri/craflet.git",
+        "git+https://github.com/sya-ri/crafleet.git",
     );
     assert.equal(
         published.homepage,
-        "https://github.com/sya-ri/craflet#readme",
+        "https://github.com/sya-ri/crafleet#readme",
     );
-    assert.equal(published.bugs, "https://github.com/sya-ri/craflet/issues");
+    assert.equal(published.bugs, "https://github.com/sya-ri/crafleet/issues");
     assert.equal(
         Object.keys(published.dependencies ?? {}).length,
         0,
@@ -149,11 +154,11 @@ try {
     );
     assert.deepEqual(await readdir(path.join(installed, "docs")), ["assets"]);
     assert.deepEqual(await readdir(path.join(installed, "docs/assets")), [
-        "craflet-demo.gif",
+        "crafleet-demo.gif",
     ]);
     assert.deepEqual(
-        await readFile(path.join(installed, "docs/assets/craflet-demo.gif")),
-        await readFile(path.join(root, "docs/assets/craflet-demo.gif")),
+        await readFile(path.join(installed, "docs/assets/crafleet-demo.gif")),
+        await readFile(path.join(root, "docs/assets/crafleet-demo.gif")),
         "The tarball must contain the exact README terminal demo.",
     );
     const entry = path.join(installed, "dist/cli.mjs");
@@ -184,15 +189,19 @@ try {
         ).ok,
         true,
     );
-    for (const file of [
-        "runner.mjs",
-        "schemas/craflet.schema.json",
-        "schemas/craflet-workspace.schema.json",
-        "schemas/craflet-lock.schema.json",
-    ])
+    const schemas = [
+        "schemas/crafleet.schema.json",
+        "schemas/crafleet-workspace.schema.json",
+        "schemas/crafleet-lock.schema.json",
+    ];
+    assert.deepEqual(
+        (await readdir(path.join(installed, "dist/schemas"))).sort(),
+        schemas.map((file) => path.basename(file)).sort(),
+    );
+    for (const file of ["runner.mjs", ...schemas])
         assert((await readFile(path.join(installed, "dist", file))).length > 0);
     const npxDirectory = await mkdtemp(
-        path.join(temporaryParent, "craflet-npx-"),
+        path.join(temporaryParent, "crafleet-npx-"),
     );
     try {
         const output = run(
@@ -207,18 +216,18 @@ try {
                 "--package",
                 tarball,
                 "--",
-                "craflet",
+                "crafleet",
                 "--version",
             ],
             npxDirectory,
         );
         assert.equal(output.trim(), manifest.version);
     } finally {
-        await cleanup(npxDirectory, "craflet-npx-");
+        await cleanup(npxDirectory, "crafleet-npx-");
     }
     console.log(
         `Verified exact tarball: ${tarball}\nIsolated npm installation and npx-equivalent execution passed.`,
     );
 } finally {
-    await cleanup(temporary, "craflet-package-");
+    await cleanup(temporary, "crafleet-package-");
 }

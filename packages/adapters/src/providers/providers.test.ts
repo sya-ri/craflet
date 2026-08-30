@@ -1,4 +1,4 @@
-import { type ArtifactContext, parseSource } from "@craflet/core";
+import { type ArtifactContext, parseSource } from "@crafleet/core";
 import { describe, expect, it, vi } from "vitest";
 import { ProviderHttp } from "./http.js";
 import { resolveRemote } from "./index.js";

@@ -1,4 +1,4 @@
-import { CrafletError, isConfigRecord } from "@craflet/core";
+import { CrafleetError, isConfigRecord } from "@crafleet/core";
 import { type ConfigDocument, parseConfigDocument } from "../formats/config.js";
 import {
     atomicWrite,
@@ -16,7 +16,7 @@ export interface EulaDocument {
 }
 
 function changed(): never {
-    throw new CrafletError(
+    throw new CrafleetError(
         "EULA_CHANGED",
         "The EULA file changed while it was being inspected. Review it and retry.",
         3,
@@ -26,18 +26,18 @@ function changed(): never {
 function readFailure(reason: BoundedFileFailure): never {
     if (reason === "changed") changed();
     if (reason === "unsafe")
-        throw new CrafletError(
+        throw new CrafleetError(
             "EULA_UNSAFE",
             "The EULA target must be a regular file without symbolic or hard links.",
             3,
         );
     if (reason === "too-large")
-        throw new CrafletError(
+        throw new CrafleetError(
             "EULA_SIZE",
             "The EULA file exceeds the 64 KiB safety limit.",
             3,
         );
-    throw new CrafletError(
+    throw new CrafleetError(
         "EULA_UNREADABLE",
         "The EULA file cannot be read safely. Inspect it locally; its contents are omitted.",
         3,
@@ -63,7 +63,7 @@ export async function readEulaText(
         }).decode(snapshot.bytes);
     } catch (error) {
         signal?.throwIfAborted();
-        if (error instanceof CrafletError) throw error;
+        if (error instanceof CrafleetError) throw error;
         return readFailure("unreadable");
     }
 }
@@ -78,7 +78,7 @@ function parseEulaDocument(text: string): ConfigDocument {
         // eula.txt uses Java properties despite its .txt extension.
         return parseConfigDocument("eula.properties", text);
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "EULA_INVALID",
             "The EULA file is not an unambiguous Java properties document. Inspect it locally before retrying.",
             3,
@@ -123,7 +123,7 @@ export async function writeAcceptedEula(
     if (hasAcceptedEula(text)) return false;
     const document = parseEulaDocument(text);
     if (!isConfigRecord(document.value))
-        throw new CrafletError("EULA_INVALID", "Invalid EULA properties.", 3);
+        throw new CrafleetError("EULA_INVALID", "Invalid EULA properties.", 3);
     let updated = document.render({ ...document.value, eula: "true" });
     if (!text.includes("\n") && text.includes("\r"))
         updated = updated.replaceAll("\n", "\r");

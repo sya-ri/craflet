@@ -9,7 +9,7 @@ import {
     javaRequirement,
     parseJavaVersion,
 } from "./doctor.js";
-import { CrafletError, invariant } from "./errors.js";
+import { CrafleetError, invariant } from "./errors.js";
 import {
     LockSchema,
     newProject,
@@ -30,7 +30,7 @@ describe("project schema", () => {
                 field === "retention"
                     ? { ...value, backup: { files: [], retention: [] } }
                     : { ...value, [field]: [] };
-            expect(() => validateProject(patched)).toThrow(CrafletError);
+            expect(() => validateProject(patched)).toThrow(CrafleetError);
             expect(ProjectSchema.toJsonSchema()).toMatchObject({
                 properties: {
                     plugins: { type: "object" },
@@ -81,16 +81,16 @@ describe("project schema", () => {
             { ...entry, plugins: [] },
             { ...entry, requests: { ...entry.requests, plugins: [] } },
         ]) {
-            expect(() => validateProjectLock(changed)).toThrow(CrafletError);
+            expect(() => validateProjectLock(changed)).toThrow(CrafleetError);
             expect(() =>
                 validateLock({ lockVersion: 1, projects: { ".": changed } }),
-            ).toThrow(CrafletError);
+            ).toThrow(CrafleetError);
         }
         expect(() => validateLock({ lockVersion: 1, projects: [] })).toThrow(
-            CrafletError,
+            CrafleetError,
         );
-        expect(() => validateProjectLock({})).toThrow(CrafletError);
-        expect(() => validateLock({})).toThrow(CrafletError);
+        expect(() => validateProjectLock({})).toThrow(CrafleetError);
+        expect(() => validateLock({})).toThrow(CrafleetError);
         expect(LockSchema.toJsonSchema()).toMatchObject({
             properties: { projects: { type: "object" } },
         });
@@ -124,7 +124,7 @@ describe("project schema", () => {
                 ...newProject("test", "paper", "26.2"),
                 ...patch,
             }),
-        ).toThrow(CrafletError);
+        ).toThrow(CrafleetError);
     });
     it("does not include secret inputs in messages", () => {
         expect(() =>
@@ -212,7 +212,7 @@ describe("Java and health decisions", () => {
 describe("safety decisions", () => {
     it.each(["starting", "running", "stopping", "unknown"] as const)(
         "rejects %s for file replacement",
-        (status) => expect(() => assertStopped(status)).toThrow(CrafletError),
+        (status) => expect(() => assertStopped(status)).toThrow(CrafleetError),
     );
     it("allows confirmed stopped state and no automatic post-spawn rollback", () => {
         expect(() => assertStopped("stopped")).not.toThrow();
@@ -223,6 +223,8 @@ describe("safety decisions", () => {
         expect(shouldResumeBackup(true, false, false)).toBe(false);
         expect(shouldResumeBackup(true, true, true)).toBe(false);
         expect(() => invariant(true, "test", "test")).not.toThrow();
-        expect(() => invariant(false, "test", "test", 2)).toThrow(CrafletError);
+        expect(() => invariant(false, "test", "test", 2)).toThrow(
+            CrafleetError,
+        );
     });
 });

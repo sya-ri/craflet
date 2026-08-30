@@ -22,7 +22,7 @@ const parent = await realpath(os.tmpdir());
 const roots = new Set<string>();
 
 export async function backupTestDirectory(): Promise<string> {
-    const directory = await mkdtemp(path.join(parent, "craflet-backup-test-"));
+    const directory = await mkdtemp(path.join(parent, "crafleet-backup-test-"));
     roots.add(directory);
     return directory;
 }
@@ -31,7 +31,7 @@ export async function cleanupBackupTestDirectories(): Promise<void> {
     for (const directory of roots) {
         if (
             path.dirname(directory) !== parent ||
-            !path.basename(directory).startsWith("craflet-backup-test-")
+            !path.basename(directory).startsWith("crafleet-backup-test-")
         )
             throw new Error("Unsafe test cleanup");
         await rm(directory, { recursive: true, force: true });
@@ -85,7 +85,7 @@ async function runAclTestScript(script: string, file: string): Promise<string> {
             Buffer.from(script, "utf16le").toString("base64"),
         ],
         {
-            env: { ...process.env, CRAFLET_TEST_ACL_PATH: file },
+            env: { ...process.env, CRAFLEET_TEST_ACL_PATH: file },
             windowsHide: true,
             timeout: 15000,
             maxBuffer: 8192,
@@ -98,11 +98,11 @@ export async function addForeignBackupTestAcl(file: string): Promise<void> {
     await runAclTestScript(
         `
 $ErrorActionPreference = 'Stop'
-$acl = [System.IO.File]::GetAccessControl($env:CRAFLET_TEST_ACL_PATH)
+$acl = [System.IO.File]::GetAccessControl($env:CRAFLEET_TEST_ACL_PATH)
 $foreign = [System.Security.Principal.SecurityIdentifier]::new('${FOREIGN_BACKUP_TEST_SID}')
 $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($foreign, [System.Security.AccessControl.FileSystemRights]::Read, [System.Security.AccessControl.AccessControlType]::Allow)
 $acl.AddAccessRule($rule)
-[System.IO.File]::SetAccessControl($env:CRAFLET_TEST_ACL_PATH, $acl)
+[System.IO.File]::SetAccessControl($env:CRAFLEET_TEST_ACL_PATH, $acl)
 `,
         file,
     );
@@ -117,17 +117,17 @@ $ErrorActionPreference = 'Stop'
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 # Elevated runners can create fixture directories owned by Administrators.
 # Establish the intended owner before removing WRITE_OWNER from the DACL.
-$existing = [System.IO.Directory]::GetAccessControl($env:CRAFLET_TEST_ACL_PATH)
+$existing = [System.IO.Directory]::GetAccessControl($env:CRAFLEET_TEST_ACL_PATH)
 if ($existing.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) {
     $existing.SetOwner($sid)
-    [System.IO.Directory]::SetAccessControl($env:CRAFLET_TEST_ACL_PATH, $existing)
+    [System.IO.Directory]::SetAccessControl($env:CRAFLEET_TEST_ACL_PATH, $existing)
 }
 $acl = [System.Security.AccessControl.DirectorySecurity]::new()
 $acl.SetAccessRuleProtection($true, $false)
 $inherit = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
 $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($sid, [System.Security.AccessControl.FileSystemRights]::Modify, $inherit, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow)
 $acl.AddAccessRule($rule)
-[System.IO.Directory]::SetAccessControl($env:CRAFLET_TEST_ACL_PATH, $acl)
+[System.IO.Directory]::SetAccessControl($env:CRAFLEET_TEST_ACL_PATH, $acl)
 `,
         directory,
     );
@@ -144,7 +144,7 @@ export async function readWindowsBackupTestAcl(file: string): Promise<{
         `
 $ErrorActionPreference = 'Stop'
 $current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-if ([System.IO.Directory]::Exists($env:CRAFLET_TEST_ACL_PATH)) { $acl = [System.IO.Directory]::GetAccessControl($env:CRAFLET_TEST_ACL_PATH) } else { $acl = [System.IO.File]::GetAccessControl($env:CRAFLET_TEST_ACL_PATH) }
+if ([System.IO.Directory]::Exists($env:CRAFLEET_TEST_ACL_PATH)) { $acl = [System.IO.Directory]::GetAccessControl($env:CRAFLEET_TEST_ACL_PATH) } else { $acl = [System.IO.File]::GetAccessControl($env:CRAFLEET_TEST_ACL_PATH) }
 $rules = $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])
 $allow = [System.Collections.Generic.List[string]]::new()
 $deny = [System.Collections.Generic.List[string]]::new()

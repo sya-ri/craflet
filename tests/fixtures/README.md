@@ -8,7 +8,7 @@ node tests/fixtures/build.mjs --with-servers --verify-reproducible
 ```
 
 Use the exact JDK from `mise.toml`. The builder checks both `java` and `javac` against
-`servers.lock.json`; it finds the JDK using `CRAFLET_TEST_JAVA_HOME`, then `JAVA_HOME`,
+`servers.lock.json`; it finds the JDK using `CRAFLEET_TEST_JAVA_HOME`, then `JAVA_HOME`,
 then `mise where java`. This avoids a different Java installation on `PATH`.
 
 All generated files are under the ignored `artifacts/fixtures/` directory. The
@@ -21,12 +21,12 @@ must match the lock's SHA-256 and size.
 
 | Platform | Plugin ID / data directory | JARs |
 | --- | --- | --- |
-| Bukkit | `CrafletBukkitFixture` | `bukkit-v1.jar`, `bukkit-v2.jar` |
-| Paper | `CrafletPaperFixture` | `paper-v1.jar`, `paper-v2.jar` |
-| Velocity | `crafletvelocityfixture` | `velocity-v1.jar`, `velocity-v2.jar` |
+| Bukkit | `CrafleetBukkitFixture` | `bukkit-v1.jar`, `bukkit-v2.jar` |
+| Paper | `CrafleetPaperFixture` | `paper-v1.jar`, `paper-v2.jar` |
+| Velocity | `crafleetvelocityfixture` | `velocity-v1.jar`, `velocity-v2.jar` |
 
 Revisions `v1` and `v2` have descriptor versions `1.0.0` and `2.0.0`. Each plugin
-writes these files under `runtime/plugins/<ID>/` when launched with Craflet:
+writes these files under `runtime/plugins/<ID>/` when launched with Crafleet:
 
 - `enabled-version.txt`: version loaded at startup, ending in a newline.
 - `config.yml`: generated only on the first startup; later starts preserve the file.
@@ -48,8 +48,8 @@ and a fixed ZIP timestamp. `--verify-reproducible` compiles each JAR twice in se
 directories and compares the resulting SHA-256.
 
 For a workspace consistency test, set both
-`-Dcraflet.fixture.sharedDirectory=<isolated-directory>` and
-`-Dcraflet.fixture.instance=<unique-name>` on a fixture server. Its plugin creates
+`-Dcrafleet.fixture.sharedDirectory=<isolated-directory>` and
+`-Dcrafleet.fixture.instance=<unique-name>` on a fixture server. Its plugin creates
 `<unique-name>.running` while enabled and removes it during graceful shutdown.
 The group E2E explicitly includes that shared directory in the backup patterns;
 no running markers may appear in its one group snapshot.
@@ -65,7 +65,7 @@ Paper also checks that Java changes `world/level.dat` after the snapshot and tha
 applying the snapshot restores its exact SHA-256 before Java starts again. Its
 flat-world generator settings come from the official 26.2 `classic_flat` preset.
 
-Only a dedicated disposable fault test enables `-Dcraflet.fixture.allowFaults=true`.
+Only a dedicated disposable fault test enables `-Dcrafleet.fixture.allowFaults=true`.
 With that flag, `stop-delay-ms.txt` requests a finite shutdown delay (at most ten
 seconds), and `crash.request` asks the fixture to halt its own JVM with exit code 17.
 Normal fixtures ignore both files. This tests stop timeout without an automatic
@@ -89,8 +89,8 @@ Create projects, worlds, homes, database files, and backup repositories only in 
 isolated test temporary directory. Paper may require additional network access
 on its first launch; these plugin fixtures do not imply a fully offline server
 bootstrap. Paper initialization asks for EULA acceptance when needed and records
-consent for the current OS user in `CRAFLET_HOME/eula.json`; startup reuses a valid
-record. The Paper scenario checks the mandatory `CRAFLET_E2E_EULA=true` test-user
+consent for the current OS user in `CRAFLEET_HOME/eula.json`; startup reuses a valid
+record. The Paper scenario checks the mandatory `CRAFLEET_E2E_EULA=true` test-user
 consent guard before any accepting command. On its fresh test home, plain JSON
 `init` must fail with `CONFIRMATION_REQUIRED` without creating a manifest or
 consent record. The explicitly authorized `init --yes` records acceptance in the
@@ -102,8 +102,8 @@ runtime file's bytes and modification time.
 
 Recent Paper versions generate `management-server-secret` in `server.properties`.
 Use `${secret:TEST_MANAGEMENT_SECRET}` in the test's base config, map it to the
-`CRAFLET_TEST_MANAGEMENT_SECRET` environment variable in the project manifest, and
-pass a fixture-only value to all relevant Craflet processes. Never capture an
+`CRAFLEET_TEST_MANAGEMENT_SECRET` environment variable in the project manifest, and
+pass a fixture-only value to all relevant Crafleet processes. Never capture an
 unregistered generated secret into Git or hide a missing test secret.
 
 After building the CLI and fixtures, run the actual CLI tests:
@@ -114,27 +114,27 @@ pnpm exec vitest run --project e2e tests/e2e/real-server.test.ts -t Velocity
 ```
 
 The complete `pnpm test:e2e` suite intentionally fails the Paper test unless
-`CRAFLET_E2E_EULA=true` was explicitly supplied by a user who accepted the EULA.
+`CRAFLEET_E2E_EULA=true` was explicitly supplied by a user who accepted the EULA.
 The harness never sets this permission flag and does not silently skip Paper.
-Each suite uses a fresh Craflet home; each test has separate projects, ports and
+Each suite uses a fresh Crafleet home; each test has separate projects, ports and
 backup repositories. The harness confirms server shutdown before deleting test
 data. Failed tests retain evidence under
-`.test-tmp/real-e2e-*/`; `CRAFLET_E2E_KEEP=true` also keeps successful runs.
+`.test-tmp/real-e2e-*/`; `CRAFLEET_E2E_KEEP=true` also keeps successful runs.
 The retained `diagnostics/` directory contains CLI command outcomes, the last 400
 lines of each runner log, and shutdown status. Known fixture secrets are redacted;
 runtime configs, worlds, database files and backup repositories are not copied
 into the diagnostic upload directory.
 
 To test the actual distribution instead of the development bundle, pack it and
-set `CRAFLET_E2E_PACKAGE` to the tarball path before invoking Vitest:
+set `CRAFLEET_E2E_PACKAGE` to the tarball path before invoking Vitest:
 
 ```sh
-CRAFLET_VERSION="$(node -p "require('./packages/cli/package.json').version")"
+CRAFLEET_VERSION="$(node -p "require('./packages/cli/package.json').version")"
 pnpm --dir packages/cli pack --pack-destination "$PWD/artifacts"
-CRAFLET_E2E_PACKAGE="artifacts/craflet-${CRAFLET_VERSION}.tgz" pnpm exec vitest run --project e2e tests/e2e/real-server.test.ts -t Velocity
+CRAFLEET_E2E_PACKAGE="artifacts/crafleet-${CRAFLEET_VERSION}.tgz" pnpm exec vitest run --project e2e tests/e2e/real-server.test.ts -t Velocity
 ```
 
-In PowerShell, set `$env:CRAFLET_E2E_PACKAGE` before running the same Vitest command.
+In PowerShell, set `$env:CRAFLEET_E2E_PACKAGE` before running the same Vitest command.
 The harness copies and hashes that tarball, then uses `npm install --offline
 --ignore-scripts` in a fresh temporary directory outside the repository. This
 prevents missing bundled dependencies from being resolved through workspace

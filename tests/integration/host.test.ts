@@ -7,7 +7,7 @@ import {
     rm,
     writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NodeArtifactStore } from "../../packages/adapters/src/filesystem/artifact-store.js";
@@ -15,7 +15,7 @@ import { NodeConfigManager } from "../../packages/adapters/src/filesystem/config
 import { diagnoseProject } from "../../packages/adapters/src/filesystem/doctor.js";
 import {
     backupService,
-    crafletHome,
+    crafleetHome,
     readRepositories,
     setupBackup,
 } from "../../packages/adapters/src/filesystem/host.js";
@@ -39,7 +39,7 @@ let project: string;
 let home: string;
 let repository: string;
 beforeEach(async () => {
-    root = await mkdtemp(path.join(temporaryParent, "craflet-host-"));
+    root = await mkdtemp(path.join(temporaryParent, "crafleet-host-"));
     project = path.join(root, "project");
     home = path.join(root, "home");
     repository = path.join(root, "repository");
@@ -75,7 +75,7 @@ afterEach(async () => {
     vi.unstubAllEnvs();
     if (
         path.dirname(root) !== temporaryParent ||
-        !path.basename(root).startsWith("craflet-host-")
+        !path.basename(root).startsWith("crafleet-host-")
     )
         throw new Error("Unsafe cleanup target");
     await rm(root, { recursive: true, force: true });
@@ -102,13 +102,18 @@ function fakeRepositoryTool() {
 }
 describe("host repository registration", () => {
     it("uses the test home override without changing the user profile", async () => {
-        vi.stubEnv("CRAFLET_HOME", home);
-        expect(crafletHome()).toBe(home);
+        vi.stubEnv("CRAFLEET_HOME", home);
+        expect(crafleetHome()).toBe(home);
         expect(await readRepositories(home)).toEqual({});
         expect(
             await backupService(await loadProject(project, home)),
         ).toBeUndefined();
     });
+    it("uses the Crafleet directory under the user profile by default", () => {
+        vi.stubEnv("CRAFLEET_HOME", "");
+        expect(crafleetHome()).toBe(path.resolve(homedir(), ".crafleet"));
+    });
+
     it.each(
         [
             null,
@@ -137,7 +142,7 @@ describe("host repository registration", () => {
         const tools = fakeRepositoryTool();
         const context = await loadProject(project, home);
         tools.setup.mockImplementation(async (alias) => {
-            await writeYaml(path.join(project, "craflet.yaml"), {
+            await writeYaml(path.join(project, "crafleet.yaml"), {
                 ...context.manifest,
                 java: { args: ["-Xmx3G"] },
             });
@@ -202,7 +207,7 @@ describe("host repository registration", () => {
         const tools = fakeRepositoryTool();
         const context = await loadProject(project, home);
         const before = await readFile(
-            path.join(project, "craflet.yaml"),
+            path.join(project, "crafleet.yaml"),
             "utf8",
         );
         await mkdir(path.join(home, "repositories.lock"), { recursive: true });
@@ -221,9 +226,9 @@ describe("host repository registration", () => {
             }),
         ).rejects.toThrow("repository failure");
         expect(await readRepositories(home)).toEqual({});
-        expect(await readFile(path.join(project, "craflet.yaml"), "utf8")).toBe(
-            before,
-        );
+        expect(
+            await readFile(path.join(project, "crafleet.yaml"), "utf8"),
+        ).toBe(before);
     });
     it("rejects unsafe alias or relative destination before touching registry", async () => {
         const context = await loadProject(project, home);
@@ -275,7 +280,7 @@ describe("read-only doctor", () => {
             ]),
         );
         await expect(
-            readFile(path.join(project, ".craflet/state.json")),
+            readFile(path.join(project, ".crafleet/state.json")),
         ).rejects.toMatchObject({ code: "ENOENT" });
     });
     it("detects missing, matched and changed active JARs by streaming their actual bytes", async () => {
@@ -333,19 +338,19 @@ describe("read-only doctor", () => {
         "manifest-transaction.json",
         "import-incomplete.json",
     ])("detects interrupted %s", async (name) => {
-        await mkdir(path.join(project, ".craflet"));
-        await writeFile(path.join(project, ".craflet", name), "{}");
+        await mkdir(path.join(project, ".crafleet"));
+        await writeFile(path.join(project, ".crafleet", name), "{}");
         expect(await item("deployment.recovery")).toMatchObject({
             status: "fail",
         });
     });
     it("identifies malformed lock and state independently", async () => {
         await writeFile(
-            path.join(project, "craflet-lock.yaml"),
+            path.join(project, "crafleet-lock.yaml"),
             "invalid: true",
         );
-        await mkdir(path.join(project, ".craflet"));
-        await writeFile(path.join(project, ".craflet/state.json"), "{");
+        await mkdir(path.join(project, ".crafleet"));
+        await writeFile(path.join(project, ".crafleet/state.json"), "{");
         expect(await item("project.lock")).toMatchObject({ status: "fail" });
         expect(await item("deployment.state")).toMatchObject({
             status: "fail",
@@ -353,7 +358,7 @@ describe("read-only doctor", () => {
     });
     it("does not mistake a missing NAS, unregistered alias or plain file for a repository", async () => {
         const context = await loadProject(project, home);
-        await writeYaml(path.join(project, "craflet.yaml"), {
+        await writeYaml(path.join(project, "crafleet.yaml"), {
             ...context.manifest,
             backup: { ...context.manifest.backup, repository: "main" },
         });

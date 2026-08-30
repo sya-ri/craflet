@@ -3,12 +3,12 @@ import { access } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import {
-    CrafletError,
+    CrafleetError,
     type Diagnostic,
     javaRequirement,
     type ProjectManifest,
     parseJavaVersion,
-} from "@craflet/core";
+} from "@crafleet/core";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,7 +18,7 @@ export async function javaExecutable(command = "java"): Promise<string> {
         return command;
     }
     if (command.includes("/") || command.includes("\\"))
-        throw new CrafletError(
+        throw new CrafleetError(
             "JAVA_PATH",
             "An explicit Java path must be absolute.",
             2,
@@ -41,7 +41,7 @@ export async function javaExecutable(command = "java"): Promise<string> {
             }
         }
     }
-    throw new CrafletError(
+    throw new CrafleetError(
         "JAVA_MISSING",
         "Java was not found. Install a compatible JDK or set java.command to its absolute path.",
         3,

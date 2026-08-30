@@ -21,7 +21,7 @@ const MANIFEST_PATH = "packages/cli/package.json";
 export const RECEIPT_PATH = "artifacts/release-receipt.json";
 const RELEASE_LOCK_PATH = "artifacts/.release-publish.lock";
 const NPM_REGISTRY = "https://registry.npmjs.org/";
-const RELEASE_REPOSITORY = "sya-ri/craflet";
+const RELEASE_REPOSITORY = "sya-ri/crafleet";
 const RELEASE_SIGNER = "3C7F5488B337C1D85A8620122162A8E62C120348";
 const VERSION_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u;
 const SHA256_PATTERN = /^[a-f\d]{64}$/u;
@@ -147,8 +147,8 @@ async function readManifest(root) {
     } catch (error) {
         fail(`${MANIFEST_PATH} is not valid JSON.`, error);
     }
-    if (manifest?.name !== "craflet")
-        fail(`${MANIFEST_PATH} must describe the craflet package.`);
+    if (manifest?.name !== "crafleet")
+        fail(`${MANIFEST_PATH} must describe the crafleet package.`);
     if (
         typeof manifest.version !== "string" ||
         !VERSION_PATTERN.test(manifest.version)
@@ -158,7 +158,7 @@ async function readManifest(root) {
 }
 
 function releaseIdentity(root, version) {
-    const relativeTarball = `artifacts/craflet-${version}.tgz`;
+    const relativeTarball = `artifacts/crafleet-${version}.tgz`;
     return {
         tag: `v${version}`,
         relativeTarball,
@@ -489,7 +489,7 @@ export async function publishRelease(options = {}) {
         if (publisherStarted)
             throw new AggregateError(
                 [operationError, ...cleanupErrors],
-                `npm publication did not complete cleanly. npm may have accepted craflet@${checked.receipt.version}; query the registry before retrying.`,
+                `npm publication did not complete cleanly. npm may have accepted crafleet@${checked.receipt.version}; query the registry before retrying.`,
             );
         if (cleanupErrors.length > 0) {
             throw new AggregateError(
@@ -502,7 +502,7 @@ export async function publishRelease(options = {}) {
     if (cleanupErrors.length > 0 && publisherCompleted)
         throw new AggregateError(
             cleanupErrors,
-            `npm reported success, but release cleanup failed. npm may have accepted craflet@${checked.receipt.version}; query the registry before retrying.`,
+            `npm reported success, but release cleanup failed. npm may have accepted crafleet@${checked.receipt.version}; query the registry before retrying.`,
         );
     return checked;
 }

@@ -34,7 +34,7 @@ function asset(
 }
 
 const fixtureBzip = Buffer.from(
-    "QlpoOTFBWSZTWWhOGGgAAALRgAAQQAArJB5AIAAxANAA1NGTZA70jHQpP0DcULyc0XckU4UJBoThhoA=",
+    "QlpoOTFBWSZTWQqX2GQAAALRgAAQQAArJB5AIAAxANABE0w01PSTPjldL2MBYqrZaN+LuSKcKEgFS+wyAA==",
     "base64",
 );
 const versionRunner = async () => ({
@@ -48,7 +48,7 @@ describe("pinned restic bootstrap", () => {
         const descriptor = asset(fixtureBzip);
         expect(
             decodeVerifiedResticBzip(fixtureBzip, descriptor).toString("utf8"),
-        ).toBe("craflet restic fixture\n");
+        ).toBe("crafleet restic fixture\n");
         expect(() =>
             verifyResticArchive(Buffer.from("bad"), descriptor),
         ).toThrow(/SHA256/u);
@@ -195,7 +195,7 @@ describe("pinned restic bootstrap", () => {
             bootstrap.prepare({ offline: true }),
         ).rejects.toMatchObject({
             code: "RESTIC_OFFLINE",
-            message: expect.stringContaining("craflet tools prepare restic"),
+            message: expect.stringContaining("crafleet tools prepare restic"),
         });
         expect(await readFile(binary, "utf8")).toBe("tampered");
     });

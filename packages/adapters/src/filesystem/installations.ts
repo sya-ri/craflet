@@ -5,7 +5,7 @@ import {
     type ArtifactContext,
     type ArtifactStore,
     type ConfigBundle,
-    CrafletError,
+    CrafleetError,
     formatSource,
     type PluginIdentity,
     type ProjectLock,
@@ -17,7 +17,7 @@ import {
     stableStringify,
     validatePluginIdentities,
     validatePluginSet,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { registerCacheProject } from "./cache.js";
 import { NodeConfigManager } from "./config.js";
 import {
@@ -101,8 +101,8 @@ export function installationFingerprint(
 }
 
 async function assertDeploymentRecovered(project: ProjectContext) {
-    if (await exists(path.join(project.dir, ".craflet/deploy.json")))
-        throw new CrafletError(
+    if (await exists(path.join(project.dir, ".crafleet/deploy.json")))
+        throw new CrafleetError(
             "RECOVERY_REQUIRED",
             "A deployment must be recovered before installing.",
             4,
@@ -110,12 +110,12 @@ async function assertDeploymentRecovered(project: ProjectContext) {
 }
 
 async function assertManifestRecovered(root: string): Promise<string> {
-    const journal = path.join(root, ".craflet/manifest-transaction.json");
-    await assertNoSymlinks(root, ".craflet/manifest-transaction.json");
+    const journal = path.join(root, ".crafleet/manifest-transaction.json");
+    await assertNoSymlinks(root, ".crafleet/manifest-transaction.json");
     if (await exists(journal))
-        throw new CrafletError(
+        throw new CrafleetError(
             "RECOVERY_REQUIRED",
-            "An interrupted manifest transaction needs craflet recover.",
+            "An interrupted manifest transaction needs crafleet recover.",
             4,
         );
     return journal;
@@ -127,7 +127,7 @@ function assertKnownPluginUpdates(
 ): void {
     for (const name of options.updatePlugins ?? [])
         if (!Object.hasOwn(manifest.plugins, name))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "PLUGIN_UNKNOWN",
                 `Unknown managed plugin: ${name}`,
                 2,
@@ -140,16 +140,16 @@ function exactSource(
     target: "plugin" | "server",
 ): SourceInput {
     if (!exactVersion.trim())
-        throw new CrafletError(
+        throw new CrafleetError(
             "UPDATE_VERSION",
             "--to requires a non-empty version.",
             2,
         );
     const source = parseSource(input);
     if (source.provider === "file")
-        throw new CrafletError(
+        throw new CrafleetError(
             "UPDATE_VERSION",
-            `--to cannot set a version for a local ${target} JAR. Replace the file, then run craflet ${target === "plugin" ? "plugins" : "server"} update.`,
+            `--to cannot set a version for a local ${target} JAR. Replace the file, then run crafleet ${target === "plugin" ? "plugins" : "server"} update.`,
             2,
         );
     if (source.provider === "paper") source.build = exactVersion;
@@ -169,19 +169,19 @@ export function validateInstallRequest(
             options.updateAllPlugins ||
             selected.length > 0)
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "FROZEN_LOCK",
             "A frozen install cannot select server or plugin updates.",
             2,
         );
     if (options.to !== undefined && typeof options.to !== "string")
-        throw new CrafletError(
+        throw new CrafleetError(
             "UPDATE_VERSION",
             "--to requires a version string.",
             2,
         );
     if (options.updateAllPlugins && selected.length)
-        throw new CrafletError(
+        throw new CrafleetError(
             "UPDATE_OPTIONS",
             "Choose named plugins or all plugins, not both.",
             2,
@@ -191,7 +191,7 @@ export function validateInstallRequest(
             (options.updateServer ? 1 : 0) +
             (options.updateAllPlugins ? 2 : selected.length);
         if (exactTargets !== 1)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "UPDATE_VERSION",
                 "--to requires exactly one server or plugin update target.",
                 2,
@@ -216,7 +216,7 @@ export function validateInstallRequest(
         else {
             const name = selected[0];
             if (!name)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "UPDATE_VERSION",
                     "--to requires exactly one plugin update target.",
                     2,
@@ -250,7 +250,7 @@ function assertFrozenPluginSet(
         ...Object.keys(old?.requests.plugins ?? {}),
     ]);
     if ([...locked].some((name) => !Object.hasOwn(manifest.plugins, name)))
-        throw new CrafletError(
+        throw new CrafleetError(
             "FROZEN_LOCK",
             "Removed plugins require a lockfile update.",
             2,
@@ -283,7 +283,7 @@ function validateInstallation(
     options.signal?.throwIfAborted();
     const manifest = structuredClone(project.manifest);
     if (options.frozen && old?.name !== manifest.name)
-        throw new CrafletError(
+        throw new CrafleetError(
             "FROZEN_LOCK",
             "The project identity does not match the lockfile.",
             2,
@@ -292,7 +292,7 @@ function validateInstallation(
         parseServerSource(serverSource(manifest), manifest.server.type),
     );
     if (options.frozen && (!old || old.requests.server !== serverRequest))
-        throw new CrafletError(
+        throw new CrafleetError(
             "FROZEN_LOCK",
             "The server declaration does not match the lockfile.",
             2,
@@ -315,7 +315,7 @@ function validateInstallation(
             options.frozen &&
             (!old?.plugins[name] || old.requests.plugins[name] !== request)
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "FROZEN_LOCK",
                 `Plugin ${name} does not match the lockfile.`,
                 2,
@@ -323,13 +323,13 @@ function validateInstallation(
         if (!artifact) continue;
         parsePluginSource(artifact.source);
         if (!artifact.identity)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "NOT_PLUGIN",
                 `No supported plugin descriptor was found for ${name}.`,
                 2,
             );
         if (artifact.identity.id !== name)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "PLUGIN_IDENTITY",
                 `Plugin ${name} has an inconsistent locked identity.`,
                 3,
@@ -469,13 +469,13 @@ async function planInstallation(
                 : await store.resolve(source, context);
         parsePluginSource(artifact.source);
         if (!artifact.identity)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "NOT_PLUGIN",
                 `No supported plugin descriptor was found for ${name}.`,
                 2,
             );
         if (artifact.identity.id !== name)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "PLUGIN_IDENTITY",
                 `Plugin ${name} resolves to ${artifact.identity.id}; identity changes require an explicit remove/add.`,
                 3,
@@ -549,7 +549,7 @@ export function assertManifestJournalLimits(
         bytes > MAX_MANIFEST_JOURNAL_BYTES ||
         changes > MAX_MANIFEST_JOURNAL_CHANGES
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "MANIFEST_TOO_LARGE",
             "The planned manifest transaction exceeds recovery limits. Select fewer projects or reduce input size; no declaration or installation state was changed.",
             3,
@@ -637,8 +637,8 @@ export interface InstallPreparation {
     >;
 }
 
-function concurrentInput(): CrafletError {
-    return new CrafletError(
+function concurrentInput(): CrafleetError {
+    return new CrafleetError(
         "CONCURRENT_EDIT",
         "A project declaration, shared lockfile or installation state changed while the operation was being prepared. Reload the project and retry; no newer input was overwritten.",
         3,
@@ -653,7 +653,7 @@ async function inputText(
     if (!(await exists(file))) return null;
     const info = await lstat(file);
     if (!info.isFile() || info.size > maximum)
-        throw new CrafletError(
+        throw new CrafleetError(
             "INPUT_SIZE",
             "An installation input is not a bounded regular text file.",
             3,
@@ -664,7 +664,7 @@ async function inputText(
             ignoreBOM: true,
         }).decode(await readFile(file));
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "INVALID_INPUT",
             "Installation inputs must be valid UTF-8 text; input values are omitted.",
             2,
@@ -678,14 +678,14 @@ export async function snapshotInstallInputs(
 ): Promise<InstallInputSnapshot> {
     const root = installRoot(projects);
     const lockText = await inputText(
-        path.join(root, "craflet-lock.yaml"),
+        path.join(root, "crafleet-lock.yaml"),
         MAX_YAML_BYTES,
     );
     parseLockText(lockText);
     const entries: InstallInputSnapshot["projects"][number][] = [];
     for (const project of projects) {
         const manifestText = await inputText(
-            path.join(project.dir, "craflet.yaml"),
+            path.join(project.dir, "crafleet.yaml"),
             MAX_YAML_BYTES,
         );
         if (
@@ -695,7 +695,7 @@ export async function snapshotInstallInputs(
         )
             throw concurrentInput();
         const stateText = await inputText(
-            path.join(project.dir, ".craflet/state.json"),
+            path.join(project.dir, ".crafleet/state.json"),
             32 * 1024 * 1024,
         );
         parseStateText(stateText);
@@ -709,7 +709,7 @@ async function assertInstallInputs(
 ): Promise<void> {
     if (
         (await inputText(
-            path.join(snapshot.root, "craflet-lock.yaml"),
+            path.join(snapshot.root, "crafleet-lock.yaml"),
             MAX_YAML_BYTES,
         )) !== snapshot.lockText
     )
@@ -717,11 +717,11 @@ async function assertInstallInputs(
     for (const project of snapshot.projects) {
         if (
             (await inputText(
-                path.join(project.dir, "craflet.yaml"),
+                path.join(project.dir, "crafleet.yaml"),
                 MAX_YAML_BYTES,
             )) !== project.manifestText ||
             (await inputText(
-                path.join(project.dir, ".craflet/state.json"),
+                path.join(project.dir, ".crafleet/state.json"),
                 32 * 1024 * 1024,
             )) !== project.stateText
         )
@@ -737,7 +737,7 @@ function installRoot(projects: readonly ProjectContext[]): string {
         new Set(projects.map((project) => project.dir.toLowerCase())).size !==
             projects.length
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "WORKSPACE_ROOT",
             "Select distinct projects from one workspace.",
             2,
@@ -772,7 +772,7 @@ function assertSnapshotJournalCapacity(snapshot: InstallInputSnapshot): void {
     const changes: FileChange[] = snapshot.projects.flatMap((entry) => [
         {
             relative: path
-                .relative(snapshot.root, path.join(entry.dir, "craflet.yaml"))
+                .relative(snapshot.root, path.join(entry.dir, "crafleet.yaml"))
                 .replaceAll(path.sep, "/"),
             before: entry.manifestText,
             after: "",
@@ -781,7 +781,7 @@ function assertSnapshotJournalCapacity(snapshot: InstallInputSnapshot): void {
             relative: path
                 .relative(
                     snapshot.root,
-                    path.join(entry.dir, ".craflet/state.json"),
+                    path.join(entry.dir, ".crafleet/state.json"),
                 )
                 .replaceAll(path.sep, "/"),
             before: entry.stateText,
@@ -789,7 +789,7 @@ function assertSnapshotJournalCapacity(snapshot: InstallInputSnapshot): void {
         },
     ]);
     changes.push({
-        relative: "craflet-lock.yaml",
+        relative: "crafleet-lock.yaml",
         before: snapshot.lockText,
         after: "",
     });
@@ -906,7 +906,7 @@ export async function installProjects(
             if (!initial) throw concurrentInput();
             const plan = await planInstallation(input, store, options);
             lock.projects[project.lockKey] = plan.lock;
-            const file = path.join(project.dir, "craflet.yaml");
+            const file = path.join(project.dir, "crafleet.yaml");
             const text = await yamlText(
                 file,
                 plan.manifest,
@@ -921,7 +921,7 @@ export async function installProjects(
                 relative: path
                     .relative(
                         root,
-                        path.join(project.dir, ".craflet/state.json"),
+                        path.join(project.dir, ".crafleet/state.json"),
                     )
                     .replaceAll(path.sep, "/"),
                 before: initial.stateText,
@@ -938,10 +938,10 @@ export async function installProjects(
             });
         }
         changes.push({
-            relative: "craflet-lock.yaml",
+            relative: "crafleet-lock.yaml",
             before: snapshot.lockText,
             after: await yamlText(
-                path.join(root, "craflet-lock.yaml"),
+                path.join(root, "crafleet-lock.yaml"),
                 lock,
                 snapshot.lockText,
             ),
@@ -962,7 +962,7 @@ export async function installProjects(
         }
         for (const project of projects)
             await ensurePrivateDirectory(
-                await assertNoSymlinks(project.dir, ".craflet"),
+                await assertNoSymlinks(project.dir, ".crafleet"),
             );
         await assertInstallInputs(snapshot);
         await atomicWrite(journalFile, journalText);
@@ -986,9 +986,9 @@ export async function installProjects(
             }
             await rm(journalFile);
         } catch {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "MANIFEST_INTERRUPTED",
-                "Manifest transaction interrupted. Run craflet recover before another mutation.",
+                "Manifest transaction interrupted. Run crafleet recover before another mutation.",
                 4,
             );
         }
@@ -999,26 +999,26 @@ export async function installProjects(
         return results;
     };
     if (options.dryRun) return perform();
-    await ensurePrivateDirectory(await assertNoSymlinks(root, ".craflet"));
-    return withMutex(path.join(root, ".craflet/operation.lock"), perform);
+    await ensurePrivateDirectory(await assertNoSymlinks(root, ".crafleet"));
+    return withMutex(path.join(root, ".crafleet/operation.lock"), perform);
 }
 
 export async function recoverManifests(
     root: string,
     dryRun = false,
 ): Promise<boolean> {
-    const file = path.join(root, ".craflet/manifest-transaction.json");
+    const file = path.join(root, ".crafleet/manifest-transaction.json");
     const perform = async () => {
-        await assertNoSymlinks(root, ".craflet/manifest-transaction.json");
+        await assertNoSymlinks(root, ".crafleet/manifest-transaction.json");
         if (!(await exists(file))) return false;
         if ((await lstat(file)).size > MAX_MANIFEST_JOURNAL_BYTES)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "JOURNAL_INVALID",
                 "Manifest journal exceeds its size limit.",
                 4,
             );
         const invalid = () =>
-            new CrafletError(
+            new CrafleetError(
                 "JOURNAL_INVALID",
                 "Invalid manifest recovery journal; input values are omitted.",
                 4,
@@ -1068,7 +1068,7 @@ export async function recoverManifests(
                 throw invalid();
             const normalized = change.relative.replaceAll("\\", "/");
             if (
-                !/(^|\/)(craflet\.yaml|craflet-lock\.yaml|\.craflet\/state\.json)$/.test(
+                !/(^|\/)(crafleet\.yaml|crafleet-lock\.yaml|\.crafleet\/state\.json)$/.test(
                     normalized,
                 ) ||
                 path.posix.isAbsolute(normalized) ||
@@ -1085,7 +1085,7 @@ export async function recoverManifests(
                 ? await readFile(target, "utf8")
                 : null;
             if (current !== change.before && current !== change.after)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RECOVERY_CONFLICT",
                     "A manifest was edited after interruption; recover it manually.",
                     4,
@@ -1106,7 +1106,7 @@ export async function recoverManifests(
                         ? await readFile(target, "utf8")
                         : null) !== change.current
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "RECOVERY_CONFLICT",
                         "A manifest changed during recovery; remaining changes require review.",
                         4,
@@ -1119,9 +1119,9 @@ export async function recoverManifests(
         }
         return true;
     };
-    await assertNoSymlinks(root, ".craflet/manifest-transaction.json");
+    await assertNoSymlinks(root, ".crafleet/manifest-transaction.json");
     if (!(await exists(file))) return false;
     return dryRun
         ? perform()
-        : withMutex(path.join(root, ".craflet/operation.lock"), perform);
+        : withMutex(path.join(root, ".crafleet/operation.lock"), perform);
 }

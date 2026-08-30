@@ -1,6 +1,6 @@
 import {
     type ArtifactStore,
-    CrafletError,
+    CrafleetError,
     formatSource,
     type LockedArtifact,
     type ProjectLock,
@@ -11,7 +11,7 @@ import {
     type SourceInput,
     stableStringify,
     validatePluginIdentities,
-} from "@craflet/core";
+} from "@crafleet/core";
 import {
     artifactContext,
     type InstallOptions,
@@ -29,7 +29,7 @@ export async function addPlugins(
 ): Promise<unknown> {
     for (const source of sources) parsePluginSource(source);
     if (options.frozen)
-        throw new CrafletError(
+        throw new CrafleetError(
             "FROZEN_LOCK",
             "Adding plugins requires a lockfile update.",
             2,
@@ -49,7 +49,7 @@ export async function addPlugins(
     for (const project of next) {
         const namespace = preparation.pluginNamespaces.get(project.dir);
         if (!namespace)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "CONCURRENT_EDIT",
                 "The prepared project set no longer matches the requested projects.",
                 3,
@@ -62,16 +62,16 @@ export async function addPlugins(
             );
             parsePluginSource(artifact.source);
             if (!artifact.identity)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "NOT_PLUGIN",
                     "The source does not contain a supported plugin descriptor.",
                     2,
                 );
             const id = artifact.identity.id;
             if (Object.hasOwn(project.manifest.plugins, id))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "PLUGIN_EXISTS",
-                    `Plugin ${id} is already declared. Use craflet plugins update or craflet plugins remove first.`,
+                    `Plugin ${id} is already declared. Use crafleet plugins update or crafleet plugins remove first.`,
                     2,
                 );
             validatePluginIdentities(
@@ -99,7 +99,7 @@ export async function removePlugins(
     for (const project of next)
         for (const name of names) {
             if (!Object.hasOwn(project.manifest.plugins, name))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "PLUGIN_UNKNOWN",
                     `Plugin ${name} is not declared.`,
                     2,
@@ -145,7 +145,7 @@ export function pluginUpdateEntries(
         portablePluginJarName(name);
         const source = project.manifest.plugins[name];
         if (source === undefined)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "PLUGIN_UNKNOWN",
                 `Unknown plugin: ${name}`,
                 2,

@@ -1,12 +1,12 @@
 import {
     type ConfigFormat,
-    CrafletError,
+    CrafleetError,
     configEqual,
     configFormat,
     isConfigRecord,
     mergeConfigText,
     mergeConfigValues,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { type Document, isScalar, parseDocument, visit } from "yaml";
 
@@ -19,7 +19,7 @@ export interface ConfigDocument {
 
 function invalid(): never {
     // Parser errors often contain source excerpts, including credentials.
-    throw new CrafletError(
+    throw new CrafleetError(
         "CONFIG_INVALID",
         "A configuration file cannot be parsed safely. Inspect it locally; its contents have not been included in this error.",
         3,
@@ -27,7 +27,7 @@ function invalid(): never {
 }
 
 function unsupported(): never {
-    throw new CrafletError(
+    throw new CrafleetError(
         "CONFIG_UNSUPPORTED",
         "This configuration uses a structure that cannot be safely merged automatically.",
         3,
@@ -339,7 +339,7 @@ export function parseConfigDocument(
             },
         };
     } catch (error) {
-        if (error instanceof CrafletError) throw error;
+        if (error instanceof CrafleetError) throw error;
         invalid();
     }
 }

@@ -2,13 +2,13 @@ import { chmod, lstat, mkdir, open, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import {
     type BackupSecretResolver,
-    CrafletError,
+    CrafleetError,
     type DatabaseBackupArtifact,
     type DatabaseBackupConfig,
     type DatabaseBackupPort,
     type MysqlBackupConfig,
     validateBackupIdentifier,
-} from "@craflet/core";
+} from "@crafleet/core";
 import {
     hashBackupFile,
     privateBackupDirectory,
@@ -28,7 +28,7 @@ const NON_INNODB_QUERY =
 
 function mysqlOption(value: string): string {
     if (value.includes("\0"))
-        throw new CrafletError(
+        throw new CrafleetError(
             "DATABASE_CONFIG",
             "Database option values cannot contain NUL bytes.",
             2,
@@ -69,7 +69,7 @@ function addDatabaseId(
     validateBackupIdentifier(id, `Database ${operation} ID`);
     const key = id.toLowerCase();
     if (seen.has(key))
-        throw new CrafletError(
+        throw new CrafleetError(
             "DATABASE_DUPLICATE",
             `Each database ${operation} ID must be unique.`,
             2,
@@ -103,7 +103,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
                 const source = this.sqlitePath(config.path);
                 await assertNoSymlinks(source);
                 if (!(await lstat(source)).isFile())
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "DATABASE_SOURCE",
                         "SQLite backup sources must be regular files.",
                         3,
@@ -141,7 +141,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
         const destination = path.join(directory, name);
         await assertNoSymlinks(destination);
         if (await exists(destination))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "DATABASE_DESTINATION",
                 "A database dump destination already exists.",
                 3,
@@ -186,7 +186,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
                         ...(signal ? { signal } : {}),
                     });
                     if (result.exitCode !== 0)
-                        throw new CrafletError(
+                        throw new CrafleetError(
                             "DATABASE_DUMP",
                             "Database dump failed; client output is withheld to protect secrets.",
                             3,
@@ -195,7 +195,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
             }
             const integrity = await hashBackupFile(destination);
             if (integrity.bytes === 0)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "DATABASE_DUMP",
                     "The database client produced an empty dump.",
                     3,
@@ -218,7 +218,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
         options: { confirm: boolean; signal?: AbortSignal },
     ): Promise<void> {
         if (!options.confirm)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "DATABASE_RESTORE_CONFIRM",
                 "Database restoration requires an explicit target and confirmation after a pre-restore backup.",
                 3,
@@ -226,7 +226,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
         validateBackupIdentifier(config.id, "Database backup ID");
         await assertNoSymlinks(file);
         if (!(await lstat(file)).isFile())
-            throw new CrafletError(
+            throw new CrafleetError(
                 "DATABASE_DUMP",
                 "The database restore input must be a regular file.",
                 3,
@@ -236,14 +236,14 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
             const target = this.sqlitePath(config.path);
             await assertNoSymlinks(target);
             if (path.resolve(file) === path.resolve(target))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "DATABASE_RESTORE_SOURCE",
                     "The restore input and target must differ.",
                     3,
                 );
             for (const suffix of ["-wal", "-shm", "-journal"]) {
                 if (await exists(`${target}${suffix}`))
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "DATABASE_SQLITE_BUSY",
                         "SQLite sidecar files are present. Verify the database is stopped and cleanly closed before restoration.",
                         3,
@@ -252,7 +252,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
             await mkdir(path.dirname(target), { recursive: true });
             const temporary = await privateBackupDirectory(
                 path.dirname(target),
-                ".craflet-sqlite-",
+                ".crafleet-sqlite-",
             );
             try {
                 const staged = path.join(temporary, "restored.sqlite3");
@@ -284,7 +284,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
                 ...(options.signal ? { signal: options.signal } : {}),
             });
             if (result.exitCode !== 0)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "DATABASE_RESTORE_PARTIAL",
                     "Database restoration failed and may have applied some statements. Keep all writers stopped and recover explicitly.",
                     3,
@@ -333,7 +333,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
                 ? identifiesMaria
                 : !identifiesMaria && expectedClient.test(result.stdout);
         if (result.exitCode !== 0 || !matchesKind)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "DATABASE_CLIENT",
                 `The configured ${operation} client does not match the selected database kind.`,
                 3,
@@ -377,7 +377,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
                 result.exitCode !== 0 ||
                 (!backup && result.stdout.trim() !== "1")
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "DATABASE_PREFLIGHT",
                     backup
                         ? "Database authentication or access preflight failed; client output is withheld to protect secrets."
@@ -385,7 +385,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
                     3,
                 );
             if (backup && result.stdout.trim())
-                throw new CrafletError(
+                throw new CrafleetError(
                     "DATABASE_ENGINE",
                     "Consistent SQL dumps currently require all base tables to use InnoDB. Other table engines require a separate locking strategy.",
                     3,
@@ -400,7 +400,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
             /[\0\r\n]/u.test(config.host) ||
             !/^[\p{L}\p{N}_][\p{L}\p{N}_$-]{0,63}$/u.test(config.database)
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "DATABASE_CONFIG",
                 "The database host, user, or database name is invalid.",
                 2,
@@ -412,7 +412,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
                 config.port < 1 ||
                 config.port > 65535)
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "DATABASE_CONFIG",
                 "The database port must be between 1 and 65535.",
                 2,
@@ -422,7 +422,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
             !["localhost", "127.0.0.1", "::1"].includes(config.host) &&
             !config.sslCa
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "DATABASE_TLS",
                 "A non-loopback database requires sslCa for verified TLS.",
                 3,
@@ -436,7 +436,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
     ): Promise<T> {
         const password = await this.secrets(config.password);
         if (!password || password.includes("\0") || password.length > 65536)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_SECRET",
                 "A required database secret is missing or invalid.",
                 3,
@@ -447,7 +447,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
         if (caPath) {
             await assertNoSymlinks(caPath);
             if (!(await lstat(caPath)).isFile())
-                throw new CrafletError(
+                throw new CrafleetError(
                     "DATABASE_TLS",
                     "sslCa must identify a regular CA certificate file.",
                     3,
@@ -506,7 +506,7 @@ export class NodeDatabaseBackupAdapter implements DatabaseBackupPort {
                 result.length !== 1 ||
                 Object.values(result[0] ?? {})[0] !== "ok"
             ) {
-                throw new CrafletError(
+                throw new CrafleetError(
                     "DATABASE_SQLITE_CHECK",
                     "The SQLite backup failed its integrity check.",
                     3,

@@ -26,7 +26,7 @@ const roots: string[] = [];
 const temporaryParent = await realpath(os.tmpdir());
 
 async function fixture(files: Record<string, string> = {}): Promise<string> {
-    const root = await mkdtemp(path.join(temporaryParent, "craflet-config-"));
+    const root = await mkdtemp(path.join(temporaryParent, "crafleet-config-"));
     roots.push(root);
     for (const [relative, text] of Object.entries(files))
         await put(root, relative, text);
@@ -51,7 +51,7 @@ afterEach(async () => {
     for (const root of roots.splice(0)) {
         if (
             path.dirname(root) !== temporaryParent ||
-            !path.basename(root).startsWith("craflet-config-")
+            !path.basename(root).startsWith("crafleet-config-")
         )
             throw new Error("Invalid test cleanup root");
         await rm(root, { recursive: true, force: true });
@@ -118,7 +118,7 @@ describe("configuration capture and deployment", () => {
             ).value,
         ).toEqual({ port: 25566n, motd: "new" });
         const state = JSON.parse(
-            await get(root, ".craflet/config-state.json"),
+            await get(root, ".crafleet/config-state.json"),
         ) as { files: Record<string, { observed: string }> };
         expect(state.files["plugins/Example/config.yml"]?.observed).toContain(
             "port: 25565",
@@ -138,7 +138,7 @@ describe("configuration capture and deployment", () => {
         const manager = new NodeConfigManager(root);
         await manager.track("a.yml");
         const before = await stat(path.join(root, "config/a.yml"));
-        const observation = await get(root, ".craflet/config-state.json");
+        const observation = await get(root, ".crafleet/config-state.json");
         expect(await manager.capture()).toEqual({
             captured: [],
             unchanged: ["a.yml"],
@@ -149,7 +149,9 @@ describe("configuration capture and deployment", () => {
             before.mtimeMs,
             before.ino,
         ]);
-        expect(await get(root, ".craflet/config-state.json")).toBe(observation);
+        expect(await get(root, ".crafleet/config-state.json")).toBe(
+            observation,
+        );
         await put(root, "runtime/a.yml", "value: text\n");
         await manager.capture();
         expect(await get(root, "config/a.yml")).toBe(original);
@@ -166,7 +168,7 @@ describe("configuration capture and deployment", () => {
         await put(root, "config/a.json", '{"value":2}');
         await put(root, "runtime/a.json", '{"value":3}');
         await put(root, "runtime/b.json", '{"value":4}');
-        const state = await get(root, ".craflet/config-state.json");
+        const state = await get(root, ".crafleet/config-state.json");
         expect(
             (await manager.diff()).find((file) => file.relative === "a.json")
                 ?.conflicts,
@@ -175,7 +177,7 @@ describe("configuration capture and deployment", () => {
             { relative: "a.json", paths: ["/value"] },
         ]);
         expect(await get(root, "config/b.json")).toBe('{"value":1}');
-        expect(await get(root, ".craflet/config-state.json")).toBe(state);
+        expect(await get(root, ".crafleet/config-state.json")).toBe(state);
         await expect(manager.prepare()).rejects.toMatchObject({
             code: "CONFIG_CONFLICT",
         });
@@ -216,7 +218,7 @@ describe("configuration capture and deployment", () => {
         const manager = new NodeConfigManager(root);
         const first = await manager.prepare();
         await expect(
-            get(root, ".craflet/config-state.json"),
+            get(root, ".crafleet/config-state.json"),
         ).rejects.toMatchObject({ code: "ENOENT" });
         await manager.assertUnchanged(first);
         await put(root, "config/a.json", '{"value":2}');
@@ -291,7 +293,7 @@ describe("configuration capture and deployment", () => {
         await manager.track("a.json");
         await put(root, "config/a.json", '{"value":2}');
         await put(root, "config/new.json", '{"created":true}');
-        const originalState = await get(root, ".craflet/config-state.json");
+        const originalState = await get(root, ".crafleet/config-state.json");
         const bundle = await manager.prepare();
         await manager.apply(bundle);
         await manager.restore(
@@ -299,7 +301,7 @@ describe("configuration capture and deployment", () => {
         );
         expect(await get(root, "runtime/a.json")).toBe('{"value":1}');
         expect(await get(root, "config/a.json")).toBe('{"value":2}');
-        expect(await get(root, ".craflet/config-state.json")).toBe(
+        expect(await get(root, ".crafleet/config-state.json")).toBe(
             originalState,
         );
         await expect(get(root, "runtime/new.json")).rejects.toMatchObject({
@@ -439,7 +441,7 @@ describe("configuration capture and deployment", () => {
         const manager = new NodeConfigManager(root);
         await manager.track("a.txt");
         await manager.track("b.txt");
-        const state = await get(root, ".craflet/config-state.json");
+        const state = await get(root, ".crafleet/config-state.json");
         await put(root, "runtime/a.txt", "new-a");
         await put(root, "runtime/b.txt", "new-b");
         const write = io.atomicWrite;
@@ -455,7 +457,7 @@ describe("configuration capture and deployment", () => {
         });
         expect(await get(root, "config/a.txt")).toBe("old-a");
         expect(await get(root, "config/b.txt")).toBe("old-b");
-        expect(await get(root, ".craflet/config-state.json")).toBe(state);
+        expect(await get(root, ".crafleet/config-state.json")).toBe(state);
         expect(await get(root, "runtime/a.txt")).toBe("new-a");
     });
 
@@ -489,7 +491,7 @@ describe("configuration capture and deployment", () => {
         const root = await fixture({ "runtime/a.txt": "old" });
         const manager = new NodeConfigManager(root);
         await manager.track("a.txt");
-        const state = await get(root, ".craflet/config-state.json");
+        const state = await get(root, ".crafleet/config-state.json");
         await put(root, "runtime/a.txt", "new");
         const write = io.atomicWrite;
         let failed = false;
@@ -498,7 +500,7 @@ describe("configuration capture and deployment", () => {
                 await write(file, content, mode);
                 if (
                     !failed &&
-                    file === path.join(root, ".craflet/config-state.json")
+                    file === path.join(root, ".crafleet/config-state.json")
                 ) {
                     failed = true;
                     throw new Error("post-commit failure");
@@ -509,7 +511,7 @@ describe("configuration capture and deployment", () => {
             code: "CONFIG_CAPTURE_FAILED",
         });
         expect(await get(root, "config/a.txt")).toBe("old");
-        expect(await get(root, ".craflet/config-state.json")).toBe(state);
+        expect(await get(root, ".crafleet/config-state.json")).toBe(state);
     });
 
     it("can restore an interrupted runtime apply before any replacement process starts", async () => {
@@ -520,7 +522,7 @@ describe("configuration capture and deployment", () => {
         const manager = new NodeConfigManager(root);
         await manager.track("a.txt");
         await manager.track("b.txt");
-        const state = await get(root, ".craflet/config-state.json");
+        const state = await get(root, ".crafleet/config-state.json");
         await put(root, "config/a.txt", "new-a");
         await put(root, "config/b.txt", "new-b");
         const bundle = await manager.prepare();
@@ -539,7 +541,7 @@ describe("configuration capture and deployment", () => {
         await manager.restore(bundle);
         expect(await get(root, "runtime/a.txt")).toBe("old-a");
         expect(await get(root, "runtime/b.txt")).toBe("old-b");
-        expect(await get(root, ".craflet/config-state.json")).toBe(state);
+        expect(await get(root, ".crafleet/config-state.json")).toBe(state);
     });
 
     it("does not turn a failed untrack into a runtime deletion", async () => {
@@ -550,7 +552,7 @@ describe("configuration capture and deployment", () => {
         const fault = vi
             .spyOn(io, "atomicWrite")
             .mockImplementation(async (file, content, mode) => {
-                if (file === path.join(root, ".craflet/config-state.json"))
+                if (file === path.join(root, ".crafleet/config-state.json"))
                     throw new Error("state write failed");
                 return write(file, content, mode);
             });
@@ -593,8 +595,8 @@ describe("configuration security", () => {
             password: secret,
             port: 1,
         });
-        for (const relative of await listFiles(path.join(root, ".craflet")))
-            expect(await get(root, `.craflet/${relative}`)).not.toContain(
+        for (const relative of await listFiles(path.join(root, ".crafleet")))
+            expect(await get(root, `.crafleet/${relative}`)).not.toContain(
                 "fixture-secret",
             );
         expect(await get(root, "config/settings.json")).toContain(
@@ -644,7 +646,7 @@ describe("configuration security", () => {
         ).rejects.toMatchObject({ code: "CONFIG_BUNDLE_INVALID" });
         await put(
             root,
-            ".craflet/config-state.json",
+            ".crafleet/config-state.json",
             '{"do-not-print-credential"',
         );
         await expect(manager.list()).rejects.toMatchObject({
@@ -657,7 +659,7 @@ describe("configuration security", () => {
         }
         await put(
             root,
-            ".craflet/config-state.json",
+            ".crafleet/config-state.json",
             JSON.stringify({
                 schemaVersion: 1,
                 files: {

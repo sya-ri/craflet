@@ -1,6 +1,6 @@
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
-import type { ServerStatus } from "@craflet/core";
+import type { ServerStatus } from "@crafleet/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOwnedEulaOperationJournal } from "../../packages/adapters/src/filesystem/eula.js";
 import { ensureUserEulaConsent } from "../../packages/adapters/src/filesystem/eula-consent.js";
@@ -157,7 +157,7 @@ describe("recovery group selection on an actual workspace", () => {
         for (const project of projects) {
             delete project.manifest.backup.group;
             await writeYaml(
-                path.join(project.dir, "craflet.yaml"),
+                path.join(project.dir, "crafleet.yaml"),
                 project.manifest,
             );
         }
@@ -168,7 +168,7 @@ describe("recovery group selection on an actual workspace", () => {
         } as const;
         projects[0].manifest.backup.databases = [database, database];
         await writeYaml(
-            path.join(projects[0].dir, "craflet.yaml"),
+            path.join(projects[0].dir, "crafleet.yaml"),
             projects[0].manifest,
         );
         expect(
@@ -176,7 +176,7 @@ describe("recovery group selection on an actual workspace", () => {
         ).toHaveLength(1);
         delete projects[1].manifest.backup.repository;
         await writeYaml(
-            path.join(projects[1].dir, "craflet.yaml"),
+            path.join(projects[1].dir, "crafleet.yaml"),
             projects[1].manifest,
         );
         const selected = await resolveBackupBatches(projects, {
@@ -201,7 +201,7 @@ describe("recovery group selection on an actual workspace", () => {
                 },
             ];
             await writeYaml(
-                path.join(project.dir, "craflet.yaml"),
+                path.join(project.dir, "crafleet.yaml"),
                 project.manifest,
             );
         }
@@ -304,7 +304,7 @@ describe("one-snapshot group file and database selection", () => {
 
     it("does not let one member select another member's private state", async () => {
         const { projects, makeBackup } = await backupGroupFixture();
-        projects[0].manifest.backup.files.push("../beta/.craflet/**");
+        projects[0].manifest.backup.files.push("../beta/.crafleet/**");
         await expect((await makeBackup()).plan()).rejects.toMatchObject({
             code: "BACKUP_SELF_INCLUSION",
         });
@@ -525,7 +525,7 @@ describe("group lifecycle coordinates real backup and deployment state", () => {
                 ),
         ).toThrow();
         await writeJson(
-            path.join(fixture.workspace, ".craflet/group-restore.json"),
+            path.join(fixture.workspace, ".crafleet/group-restore.json"),
             { incomplete: true },
         );
         await expect(group.createBackup()).rejects.toMatchObject({
@@ -543,7 +543,7 @@ describe("group lifecycle coordinates real backup and deployment state", () => {
             fixture.projects.map((project) => readState(project.dir)),
         );
         const lock = await readFile(
-            path.join(fixture.workspace, "craflet-lock.yaml"),
+            path.join(fixture.workspace, "crafleet-lock.yaml"),
         );
         const group = new NodeRecoveryGroup(fixture.batch, fixture.store);
         const controlled = controlledStatuses(group, ["stopped", "stopped"]);
@@ -569,14 +569,14 @@ describe("group lifecycle coordinates real backup and deployment state", () => {
             ),
         ).toEqual([undefined, undefined]);
         expect(
-            await readFile(path.join(fixture.workspace, "craflet-lock.yaml")),
+            await readFile(path.join(fixture.workspace, "crafleet-lock.yaml")),
         ).toEqual(lock);
         expect(
             controlled.starts.every((start) => start.mock.calls.length === 0),
         ).toBe(true);
         expect(
             await exists(
-                path.join(fixture.workspace, ".craflet/group-operation.json"),
+                path.join(fixture.workspace, ".crafleet/group-operation.json"),
             ),
         ).toBe(false);
     });
@@ -599,7 +599,7 @@ describe("group lifecycle coordinates real backup and deployment state", () => {
         );
         const journalFile = path.join(
             fixture.workspace,
-            ".craflet/group-operation.json",
+            ".crafleet/group-operation.json",
         );
         expect(await readJson(journalFile)).toMatchObject({
             phase: "applying",
@@ -642,7 +642,7 @@ describe("group lifecycle coordinates real backup and deployment state", () => {
         );
         const file = path.join(
             fixture.workspace,
-            ".craflet/group-operation.json",
+            ".crafleet/group-operation.json",
         );
         await writeJson(file, {
             schemaVersion: 1,
@@ -772,7 +772,7 @@ describe("group lifecycle coordinates real backup and deployment state", () => {
                 await exists(
                     path.join(
                         fixture.workspace,
-                        ".craflet/group-operation.json",
+                        ".crafleet/group-operation.json",
                     ),
                 ),
             ).toBe(false);
@@ -805,7 +805,7 @@ describe("group lifecycle coordinates real backup and deployment state", () => {
         expect(Buffer.byteLength(content)).toBeGreaterThan(64 * 1024);
         const journalFile = path.join(
             fixture.workspace,
-            ".craflet/group-operation.json",
+            ".crafleet/group-operation.json",
         );
         const owned = createOwnedEulaOperationJournal(journalFile, content);
         const tampered = content.replace(
@@ -816,7 +816,7 @@ describe("group lifecycle coordinates real backup and deployment state", () => {
         expect(Buffer.byteLength(tampered)).toBe(Buffer.byteLength(content));
         await writeBackupTestFile(
             fixture.workspace,
-            ".craflet/group-operation.json",
+            ".crafleet/group-operation.json",
             tampered,
         );
 
@@ -827,7 +827,7 @@ describe("group lifecycle coordinates real backup and deployment state", () => {
 
         await writeBackupTestFile(
             fixture.workspace,
-            ".craflet/group-operation.json",
+            ".crafleet/group-operation.json",
             content,
         );
         await expect(

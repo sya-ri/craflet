@@ -16,13 +16,13 @@ import path from "node:path";
 import {
     type ArtifactContext,
     type ArtifactStore,
-    CrafletError,
+    CrafleetError,
     type LockedArtifact,
     type PluginIdentity,
     parseServerSource,
     type SourceInput,
     type SourceSpec,
-} from "@craflet/core";
+} from "@crafleet/core";
 import picomatch from "picomatch";
 import { inspectOptionalPluginJar, inspectPluginJar } from "../formats/jar.js";
 import {
@@ -52,7 +52,7 @@ function verifyLock(artifact: Pick<LockedArtifact, "sha256" | "size">): void {
         !Number.isSafeInteger(artifact.size) ||
         artifact.size < 0
     ) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "INVALID_ARTIFACT_LOCK",
             "The artifact lock needs a lowercase SHA-256 and a non-negative safe byte size.",
             3,
@@ -64,7 +64,7 @@ function verifyHashes(hashes: NonNullable<DownloadSpec["hashes"]>): void {
     for (const [algorithm, value] of Object.entries(hashes)) {
         const length = { sha256: 64, sha512: 128, sha1: 40 }[algorithm];
         if (!length || !new RegExp(`^[a-f\\d]{${length}}$`, "iu").test(value)) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "PROVIDER_METADATA_INVALID",
                 "The published checksum is invalid.",
                 3,
@@ -75,7 +75,7 @@ function verifyHashes(hashes: NonNullable<DownloadSpec["hashes"]>): void {
 
 async function* responseBytes(response: Response): AsyncGenerator<Uint8Array> {
     if (!response.body)
-        throw new CrafletError(
+        throw new CrafleetError(
             "DOWNLOAD_EMPTY",
             "The provider returned no JAR data.",
             3,
@@ -113,7 +113,7 @@ export class NodeArtifactStore implements ArtifactStore {
 
     private cachePath(sha256: string): string {
         if (!/^[a-f\d]{64}$/u.test(sha256))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "INVALID_ARTIFACT_LOCK",
                 "Invalid SHA-256 cache key.",
                 3,
@@ -135,7 +135,7 @@ export class NodeArtifactStore implements ArtifactStore {
         if (!(await exists(file))) return undefined;
         const info = await lstat(file);
         if (!info.isFile() || info.size !== artifact.size)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "CACHE_CORRUPT",
                 "A cached artifact has an unexpected size or file type.",
                 3,
@@ -147,7 +147,7 @@ export class NodeArtifactStore implements ArtifactStore {
         ))
             hash.update(chunk);
         if (hash.digest("hex") !== artifact.sha256)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "CACHE_CORRUPT",
                 "A cached artifact failed SHA-256 verification.",
                 3,
@@ -176,7 +176,7 @@ export class NodeArtifactStore implements ArtifactStore {
                 depth: number,
             ): Promise<void> => {
                 if (depth > 64)
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "LOCAL_GLOB_LIMIT",
                         "The local source glob is too broad.",
                         3,
@@ -187,7 +187,7 @@ export class NodeArtifactStore implements ArtifactStore {
                 for (const entry of entries) {
                     context.signal?.throwIfAborted();
                     if (++visited > this.maximumGlobEntries)
-                        throw new CrafletError(
+                        throw new CrafleetError(
                             "LOCAL_GLOB_LIMIT",
                             "The local source glob is too broad.",
                             3,
@@ -201,7 +201,7 @@ export class NodeArtifactStore implements ArtifactStore {
                     ) {
                         matches.push(candidate);
                         if (matches.length > 1)
-                            throw new CrafletError(
+                            throw new CrafleetError(
                                 "LOCAL_GLOB_AMBIGUOUS",
                                 "A local JAR glob must match exactly one file.",
                                 3,
@@ -212,7 +212,7 @@ export class NodeArtifactStore implements ArtifactStore {
             const root = scan.base || path.parse(absolute).root;
             if (await exists(root)) await walk(root, 0);
             if (matches.length !== 1 || !matches[0])
-                throw new CrafletError(
+                throw new CrafleetError(
                     "LOCAL_SOURCE_MISSING",
                     "The local JAR glob matched no files.",
                     3,
@@ -224,7 +224,7 @@ export class NodeArtifactStore implements ArtifactStore {
             !(await exists(selected)) ||
             !(await stat(selected)).isFile()
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "LOCAL_SOURCE_MISSING",
                 "The local source must be an existing JAR file.",
                 3,
@@ -232,7 +232,7 @@ export class NodeArtifactStore implements ArtifactStore {
         }
         const canonical = await realpath(selected);
         if ((await stat(canonical)).size > this.maximum)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "ARTIFACT_TOO_LARGE",
                 "The local JAR exceeds the artifact size limit.",
                 3,
@@ -249,7 +249,7 @@ export class NodeArtifactStore implements ArtifactStore {
         const expectedHashes = expected.hashes ?? {};
         verifyHashes(expectedHashes);
         if (expected.size !== undefined && expected.size > this.maximum)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "ARTIFACT_TOO_LARGE",
                 "The artifact exceeds the configured size limit.",
                 3,
@@ -298,7 +298,7 @@ export class NodeArtifactStore implements ArtifactStore {
                         size > this.maximum ||
                         (expected.size !== undefined && size > expected.size)
                     )
-                        throw new CrafletError(
+                        throw new CrafleetError(
                             "ARTIFACT_TOO_LARGE",
                             "The downloaded JAR exceeds its declared or configured size.",
                             3,
@@ -308,7 +308,7 @@ export class NodeArtifactStore implements ArtifactStore {
                     await handle.writeFile(chunk);
                 }
                 if (expected.size !== undefined && size !== expected.size)
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "ARTIFACT_SIZE_MISMATCH",
                         "The JAR size differs from the locked or published size.",
                         3,
@@ -327,7 +327,7 @@ export class NodeArtifactStore implements ArtifactStore {
                     digests[algorithm as keyof typeof digests] !==
                     value.toLowerCase()
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "ARTIFACT_HASH_MISMATCH",
                         "The JAR differs from the locked or published checksum.",
                         3,
@@ -383,7 +383,7 @@ export class NodeArtifactStore implements ArtifactStore {
         } catch (error) {
             if (
                 spec.source.provider === "spigotmc" &&
-                error instanceof CrafletError &&
+                error instanceof CrafleetError &&
                 ["DOWNLOAD_HTTP", "INVALID_JAR"].includes(error.code)
             )
                 return manualDownload(
@@ -438,7 +438,7 @@ export class NodeArtifactStore implements ArtifactStore {
     ): Promise<string> {
         const source = parseServerSource(artifact.source, context.serverKind);
         if (artifact.size > this.maximum)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "ARTIFACT_TOO_LARGE",
                 "The artifact exceeds the configured size limit.",
                 3,
@@ -460,7 +460,7 @@ export class NodeArtifactStore implements ArtifactStore {
             return bytes.file;
         }
         if (!artifact.url)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "LOCKED_URL_MISSING",
                 "This lock has no exact download URL. Resolve it online before deployment.",
                 3,

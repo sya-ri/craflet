@@ -7,14 +7,14 @@ import {
     type BackupConfig,
     type BackupPlan,
     type BackupRoot,
-    CrafletError,
+    CrafleetError,
     coldGroupBackup,
     type DatabaseBackupConfig,
     DEFAULT_BACKUP_FILES,
     type GroupBackupMember,
     stableStringify,
     validateBackupIdentifier,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { type } from "arktype";
 import {
     type NodeBackupDependencies,
@@ -63,7 +63,7 @@ export function validateRecoveryGroup(
     validateBackupIdentifier(group, "Recovery group");
     const first = projects[0];
     if (!first)
-        throw new CrafletError(
+        throw new CrafleetError(
             "EMPTY_SELECTION",
             "The recovery group is empty.",
             2,
@@ -77,9 +77,9 @@ export function validateRecoveryGroup(
             pathKey(project.home) !== pathKey(first.home) ||
             project.manifest.backup?.group !== group
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_GROUP_MEMBERSHIP",
-                "A recovery group must contain members of the same declared group, workspace, and Craflet home.",
+                "A recovery group must contain members of the same declared group, workspace, and Crafleet home.",
                 3,
             );
         if (
@@ -87,7 +87,7 @@ export function validateRecoveryGroup(
             directories.has(pathKey(project.dir)) ||
             identities.has(runtimeRootId(project))
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_GROUP_MEMBERSHIP",
                 "Recovery group members must have distinct project paths and persistent IDs.",
                 3,
@@ -161,7 +161,7 @@ export async function collectGroupBackupMetadata(
                 expected &&
                 expected.get(project.lockKey) !== (installation?.id ?? null)
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_GROUP_STATE_CHANGED",
                     "A group member's active installation changed during the operation.",
                     4,
@@ -183,7 +183,7 @@ export async function assertCleanRecoveryGroup(
 ): Promise<void> {
     const first = projects[0];
     if (!first)
-        throw new CrafletError(
+        throw new CrafleetError(
             "EMPTY_SELECTION",
             "The recovery group is empty.",
             2,
@@ -192,7 +192,7 @@ export async function assertCleanRecoveryGroup(
     for (const file of journals) {
         await assertNoSymlinks(file);
         if (await exists(file))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RECOVERY_REQUIRED",
                 "Recover the interrupted member or group operation first.",
                 4,
@@ -208,7 +208,7 @@ export async function resolveBackupBatches(
         !first ||
         projects.some((project) => project.lockRoot !== first.lockRoot)
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "WORKSPACE_ROOT",
             "Select projects from one workspace.",
             2,
@@ -252,7 +252,7 @@ export async function resolveBackupBatches(
                         members[0]?.manifest.backup?.group,
                 ))
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_GROUP_REQUIRED",
                 "Projects sharing a configured database must declare the same backup.group.",
                 3,
@@ -280,7 +280,7 @@ export async function resolveBackupBatches(
             options.complete &&
             members.some((member) => !selected.has(pathKey(member.dir)))
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_GROUP_PARTIAL",
                 `Recovery group ${group} must be selected in full. Use -r or filters that select every member.`,
                 3,
@@ -315,7 +315,7 @@ export async function createGroupBackupService(
             (project) => project.manifest.backup?.repository !== repository,
         )
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_GROUP_REPOSITORY",
             "Every recovery group member must use the same repository alias.",
             3,
@@ -332,7 +332,7 @@ export async function createGroupBackupService(
                 identities.has(identity) &&
                 identities.get(identity) !== database.id
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_GROUP_DATABASE",
                     "Use the same backup database ID for every reference to a shared database.",
                     3,
@@ -342,7 +342,7 @@ export async function createGroupBackupService(
                 stableStringify(databases.get(database.id)) !==
                     stableStringify(config)
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_GROUP_DATABASE",
                     "A group database ID maps to different database settings.",
                     3,
@@ -358,7 +358,7 @@ export async function createGroupBackupService(
                 stableStringify(retention),
         )
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_GROUP_RETENTION",
             "Every recovery group member must use the same retention policy.",
             3,
@@ -368,7 +368,7 @@ export async function createGroupBackupService(
         repositories,
         group,
         projectId: digest(
-            `craflet-group-v1:${group}:${projects
+            `crafleet-group-v1:${group}:${projects
                 .map((project) => project.manifest.id ?? project.lockKey)
                 .sort()
                 .join(",")}`,
@@ -396,7 +396,7 @@ export async function createGroupBackupService(
             const sources = new Set<string>();
             const warnings: string[] = [];
             const forbidden = projects.flatMap((project) => [
-                path.join(project.dir, ".craflet"),
+                path.join(project.dir, ".crafleet"),
                 path.join(project.dir, ".git"),
             ]);
             const plans = await Promise.all(
@@ -409,7 +409,7 @@ export async function createGroupBackupService(
                 if (!project) throw new Error("Missing group member");
                 for (const root of plan.roots) {
                     if (forbidden.some((file) => pathsOverlap(root.path, file)))
-                        throw new CrafletError(
+                        throw new CrafleetError(
                             "BACKUP_SELF_INCLUSION",
                             "A group root overlaps a member's private state or Git directory.",
                             3,
@@ -457,7 +457,7 @@ export async function createGroupBackupService(
                                 : pathContains(candidate.path, file.source),
                         );
                     if (!root)
-                        throw new CrafletError(
+                        throw new CrafleetError(
                             "BACKUP_ROOT",
                             "A selected group file has no declared root.",
                             3,
@@ -482,7 +482,7 @@ export async function createGroupBackupService(
             }
             const bytes = files.reduce((total, file) => total + file.size, 0);
             if (!Number.isSafeInteger(bytes))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_FILE_SIZE",
                     "The selected group backup exceeds the supported size range.",
                     3,
@@ -530,7 +530,7 @@ export class NodeRecoveryGroup {
         } = {},
     ) {
         if (!batch.group || !batch.projects[0])
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_GROUP",
                 "Expected a complete recovery group.",
                 2,
@@ -550,11 +550,11 @@ export class NodeRecoveryGroup {
         );
     }
     private get journalFile(): string {
-        return path.join(this.root, ".craflet/group-operation.json");
+        return path.join(this.root, ".crafleet/group-operation.json");
     }
     private backup(): NodeBackupService {
         if (!this.batch.backup)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_REQUIRED",
                 "Configure a repository for every recovery group member.",
                 3,
@@ -571,9 +571,9 @@ export class NodeRecoveryGroup {
     async createBackup(leaveStopped = false, dryRun = false): Promise<unknown> {
         const backup = this.backup();
         if (dryRun) return backup.plan();
-        await ensurePrivateDirectory(path.join(this.root, ".craflet"));
+        await ensurePrivateDirectory(path.join(this.root, ".crafleet"));
         return withMutex(
-            path.join(this.root, ".craflet/operation.lock"),
+            path.join(this.root, ".crafleet/operation.lock"),
             async () => {
                 await assertCleanRecoveryGroup(this.batch.projects);
                 const fixed = new Map(
@@ -590,7 +590,7 @@ export class NodeRecoveryGroup {
                         startActive: async () => {
                             const activeId = fixed.get(manager.context.lockKey);
                             if (!activeId)
-                                throw new CrafletError(
+                                throw new CrafleetError(
                                     "ACTIVE_MISSING",
                                     "The group member has no active installation.",
                                     3,
@@ -619,9 +619,9 @@ export class NodeRecoveryGroup {
     ): Promise<unknown> {
         if (dryRun)
             return Promise.all(this.managers.map((manager) => manager.plan()));
-        await ensurePrivateDirectory(path.join(this.root, ".craflet"));
+        await ensurePrivateDirectory(path.join(this.root, ".crafleet"));
         return withMutex(
-            path.join(this.root, ".craflet/operation.lock"),
+            path.join(this.root, ".crafleet/operation.lock"),
             async () => {
                 await assertCleanRecoveryGroup(this.batch.projects);
                 const statuses = await Promise.all(
@@ -652,7 +652,7 @@ export class NodeRecoveryGroup {
                     pending &&
                     statuses.some((status) => status.status === "running")
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "GROUP_RESTART_REQUIRED",
                         "Use restart with the complete group to apply pending while any member is running.",
                         3,
@@ -720,7 +720,7 @@ export class NodeRecoveryGroup {
                         const active = (await readState(manager.context.dir))
                             .active;
                         if (!active)
-                            throw new CrafletError(
+                            throw new CrafleetError(
                                 "ACTIVE_MISSING",
                                 "The group member has no active installation.",
                                 3,
@@ -744,7 +744,7 @@ export class NodeRecoveryGroup {
             await readJson<unknown>(
                 await assertNoSymlinks(
                     this.root,
-                    ".craflet/group-operation.json",
+                    ".crafleet/group-operation.json",
                 ),
             ),
         );
@@ -761,7 +761,7 @@ export class NodeRecoveryGroup {
                     ),
             )
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "GROUP_JOURNAL",
                 "The recovery group membership does not match the operation journal.",
                 4,
@@ -773,7 +773,7 @@ export class NodeRecoveryGroup {
         if (journal.phase === "applying")
             for (const manager of this.managers) await manager.recover();
         return withMutex(
-            path.join(this.root, ".craflet/operation.lock"),
+            path.join(this.root, ".crafleet/operation.lock"),
             async () => {
                 if (journal.phase === "applying")
                     for (const manager of this.managers) {
@@ -783,7 +783,7 @@ export class NodeRecoveryGroup {
                         )?.nextId;
                         if (state.active?.id === intended) continue;
                         if (!state.pending || state.pending.id !== intended)
-                            throw new CrafletError(
+                            throw new CrafleetError(
                                 "GROUP_RECOVERY_CONFLICT",
                                 "A group member changed after interruption; it was not overwritten.",
                                 4,
@@ -798,7 +798,7 @@ export class NodeRecoveryGroup {
                         (member) => member.key === manager.context.lockKey,
                     )?.nextId;
                     if (current !== intended)
-                        throw new CrafletError(
+                        throw new CrafleetError(
                             "GROUP_RECOVERY_CONFLICT",
                             "A recovered group member no longer matches the recorded active installation.",
                             4,

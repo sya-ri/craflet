@@ -1,6 +1,6 @@
 export type ExitCode = 1 | 2 | 3 | 4 | 130;
 
-export class CrafletError extends Error {
+export class CrafleetError extends Error {
     constructor(
         readonly code: string,
         message: string,
@@ -8,7 +8,7 @@ export class CrafletError extends Error {
         readonly hint?: string,
     ) {
         super(message);
-        this.name = "CrafletError";
+        this.name = "CrafleetError";
     }
 }
 
@@ -18,5 +18,5 @@ export function invariant(
     message: string,
     exitCode: ExitCode = 3,
 ): asserts condition {
-    if (!condition) throw new CrafletError(code, message, exitCode);
+    if (!condition) throw new CrafleetError(code, message, exitCode);
 }

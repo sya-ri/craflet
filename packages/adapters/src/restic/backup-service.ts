@@ -28,13 +28,13 @@ import {
     type BackupService,
     type BackupSetupOptions,
     type BackupSnapshot,
-    CrafletError,
+    CrafleetError,
     type DatabaseBackupPort,
     type PreparedBackupTool,
     retentionArguments,
     validateBackupIdentifier,
     validateSnapshotId,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { NodeDatabaseBackupAdapter } from "../database/backup.js";
 import {
     checkBackupSpace,
@@ -102,7 +102,7 @@ function parseJson(value: string): unknown {
     try {
         return JSON.parse(value) as unknown;
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_JSON",
             "The backup repository returned malformed JSON.",
             3,
@@ -112,7 +112,7 @@ function parseJson(value: string): unknown {
 
 function successful(result: BackupProcessResult, operation: string): void {
     if (result.exitCode !== 0) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_REPOSITORY",
             `Restic ${operation} failed with exit code ${result.exitCode}; diagnostic output is withheld to protect secrets.`,
             3,
@@ -187,7 +187,7 @@ export class NodeBackupService implements BackupService {
         let result = await this.execute(context, ["cat", "config"], options);
         if (result.exitCode === 10) {
             if (!options.initialize || !options.confirm) {
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_REPOSITORY_UNINITIALIZED",
                     "This repository is not initialized. Use explicit --init and confirmation during backup setup.",
                     3,
@@ -195,7 +195,7 @@ export class NodeBackupService implements BackupService {
             }
             const parent = path.dirname(context.repository.path);
             if (!(await exists(parent)) || !(await lstat(parent)).isDirectory())
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_REPOSITORY_PARENT",
                     "The repository parent directory must already exist; verify that the NAS or local destination is mounted.",
                     3,
@@ -205,7 +205,7 @@ export class NodeBackupService implements BackupService {
                     !(await lstat(context.repository.path)).isDirectory() ||
                     (await readdir(context.repository.path)).length > 0
                 ) {
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "BACKUP_REPOSITORY_NONEMPTY",
                         "Refusing to initialize a repository in a nonempty directory.",
                         3,
@@ -226,7 +226,7 @@ export class NodeBackupService implements BackupService {
         const id = this.repositoryId(result.stdout);
         const expected = options.expectedId ?? context.repository.id;
         if (expected && expected !== id)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_REPOSITORY_ID",
                 "The repository ID does not match the explicitly expected repository.",
                 3,
@@ -237,7 +237,7 @@ export class NodeBackupService implements BackupService {
     async plan(): Promise<BackupPlan> {
         const forbidden = [
             this.home,
-            path.join(this.projectDir, ".craflet"),
+            path.join(this.projectDir, ".crafleet"),
             path.join(this.projectDir, ".git"),
             ...Object.values(this.config.repositories ?? {}).map(
                 (repository) => repository.path,
@@ -253,9 +253,9 @@ export class NodeBackupService implements BackupService {
               );
         for (const root of plan.roots) {
             if (forbidden.some((location) => pathsOverlap(root.path, location)))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_SELF_INCLUSION",
-                    "A selected root overlaps a repository or Craflet working directory.",
+                    "A selected root overlaps a repository or Crafleet working directory.",
                     3,
                 );
         }
@@ -303,14 +303,14 @@ export class NodeBackupService implements BackupService {
         options: BackupOperationOptions = {},
     ): Promise<BackupCreateResult> {
         if (!record(active))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_ACTIVE_METADATA",
                 "Active metadata must be a JSON object smaller than 4 MiB.",
                 2,
             );
         const activeJson = backupJson(active);
         if (activeJson.length > MAX_ACTIVE_METADATA_BYTES)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_ACTIVE_METADATA",
                 "Active metadata must be a JSON object smaller than 4 MiB.",
                 2,
@@ -371,7 +371,7 @@ export class NodeBackupService implements BackupService {
                 [
                     "backup",
                     "--tag",
-                    "craflet",
+                    "crafleet",
                     "--tag",
                     this.projectTag(),
                     "--group-by",
@@ -387,7 +387,7 @@ export class NodeBackupService implements BackupService {
                 (item) => record(item) && item.message_type === "summary",
             );
             if (!record(summary) || typeof summary.snapshot_id !== "string")
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_SNAPSHOT",
                     "Restic reported success without a snapshot ID.",
                     3,
@@ -420,7 +420,7 @@ export class NodeBackupService implements BackupService {
         const parsed = parseJson(result.stdout);
         if (parsed === null) return [];
         if (!Array.isArray(parsed))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_JSON",
                 "Restic returned an invalid snapshot list.",
                 3,
@@ -433,7 +433,7 @@ export class NodeBackupService implements BackupService {
                 !Array.isArray(snapshot.tags) ||
                 !snapshot.tags.includes(this.projectTag())
             ) {
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_JSON",
                     "Restic returned invalid or unrelated snapshot metadata.",
                     3,
@@ -527,7 +527,7 @@ export class NodeBackupService implements BackupService {
         await this.validateRestoreTarget(target);
         await ensurePrivateDirectory(target);
         await this.validateRestoreTarget(target);
-        const marker = path.join(target, ".craflet-restore-incomplete.json");
+        const marker = path.join(target, ".crafleet-restore-incomplete.json");
         const markerFile = await open(marker, "wx", 0o600);
         try {
             await markerFile.writeFile(
@@ -543,7 +543,7 @@ export class NodeBackupService implements BackupService {
         }
         const temporary = await privateBackupDirectory(
             target,
-            ".craflet-restore-work-",
+            ".crafleet-restore-work-",
         );
         const expected = backupArchiveFiles(metadata);
         try {
@@ -581,7 +581,7 @@ export class NodeBackupService implements BackupService {
                 integrity.sha256 !== file.sha256 ||
                 integrity.bytes !== file.size
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_RESTORE_VERIFY",
                     "A restored file does not match its recorded digest.",
                     3,
@@ -596,7 +596,7 @@ export class NodeBackupService implements BackupService {
                 integrity.sha256 !== database.sha256 ||
                 integrity.bytes !== database.bytes
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_RESTORE_VERIFY",
                     "A restored database dump does not match its recorded digest.",
                     3,
@@ -621,7 +621,7 @@ export class NodeBackupService implements BackupService {
             !isDeepStrictEqual(restoredMetadata, metadata) ||
             !isDeepStrictEqual(restoredActive, metadata.active)
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_RESTORE_VERIFY",
                 "Restored active metadata does not match the selected snapshot.",
                 3,
@@ -640,9 +640,9 @@ export class NodeBackupService implements BackupService {
                 pathsOverlap(target, repository.path),
             )
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_RESTORE_TARGET",
-                "Restore into a separate empty directory outside the project, Craflet home, and repositories.",
+                "Restore into a separate empty directory outside the project, Crafleet home, and repositories.",
                 3,
             );
         }
@@ -651,7 +651,7 @@ export class NodeBackupService implements BackupService {
             (!(await lstat(target)).isDirectory() ||
                 (await readdir(target)).length > 0)
         ) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_RESTORE_TARGET",
                 "The restore destination must be an empty directory.",
                 3,
@@ -689,7 +689,7 @@ export class NodeBackupService implements BackupService {
             );
         const requiredBytes = dataBytes + archiveBytes + 16 * 1024 * 1024;
         if (!Number.isSafeInteger(requiredBytes))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_SPACE",
                 "The snapshot exceeds the supported exact size range.",
                 3,
@@ -713,7 +713,7 @@ export class NodeBackupService implements BackupService {
     ): Promise<{ applied: boolean; plan: unknown[] }> {
         const retention = retentionArguments(this.config.retention ?? {});
         if (options.apply && !options.confirm)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_PRUNE_CONFIRM",
                 "Deleting snapshots requires explicit apply and confirmation.",
                 3,
@@ -736,7 +736,7 @@ export class NodeBackupService implements BackupService {
         successful(preview, "retention preview");
         const parsed = parseJson(preview.stdout);
         if (!Array.isArray(parsed))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_JSON",
                 "Restic returned an invalid retention preview.",
                 3,
@@ -750,7 +750,7 @@ export class NodeBackupService implements BackupService {
     }
 
     private projectTag(): string {
-        return `craflet-project:${this.projectId}`;
+        return `crafleet-project:${this.projectId}`;
     }
 
     private async context(
@@ -758,7 +758,7 @@ export class NodeBackupService implements BackupService {
         requireId = true,
     ): Promise<RepositoryContext> {
         if (!alias)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_REPOSITORY",
                 "Select a named backup repository with backup setup before creating backups.",
                 2,
@@ -766,7 +766,7 @@ export class NodeBackupService implements BackupService {
         validateBackupIdentifier(alias, "Repository alias");
         const repository = this.config.repositories?.[alias];
         if (!repository)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_REPOSITORY",
                 `Unknown backup repository alias: ${alias}`,
                 2,
@@ -776,14 +776,14 @@ export class NodeBackupService implements BackupService {
             requireId &&
             (!repository.id || !/^[a-f0-9]{64}$/u.test(repository.id))
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_REPOSITORY_ID",
                 "The repository alias must have an ID pinned by backup setup.",
                 3,
             );
         const password = await this.secrets(repository.password);
         if (!password || password.includes("\0") || password.length > 65536)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_SECRET",
                 "A required repository secret is missing or invalid.",
                 3,
@@ -801,7 +801,7 @@ export class NodeBackupService implements BackupService {
             repository === path.parse(repository).root ||
             repository.includes("\0")
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_REPOSITORY_PATH",
                 "Choose an explicit absolute local or mounted NAS directory, not a filesystem root or remote backend URL.",
                 2,
@@ -811,7 +811,7 @@ export class NodeBackupService implements BackupService {
             pathsOverlap(repository, this.runtime) ||
             pathsOverlap(repository, this.temporaryRoot)
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_SELF_INCLUSION",
                 "The backup repository must not overlap runtime data or staging directories.",
                 3,
@@ -825,7 +825,7 @@ export class NodeBackupService implements BackupService {
             typeof parsed.id !== "string" ||
             !/^[a-f0-9]{64}$/u.test(parsed.id)
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_REPOSITORY_ID",
                 "Restic returned an invalid repository ID.",
                 3,
@@ -840,7 +840,7 @@ export class NodeBackupService implements BackupService {
         const result = await this.execute(context, ["cat", "config"], options);
         successful(result, "repository inspection");
         if (this.repositoryId(result.stdout) !== context.repository.id)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_REPOSITORY_ID",
                 "The repository ID changed. Verify the destination or NAS mount before continuing.",
                 3,
@@ -913,7 +913,7 @@ export class NodeBackupService implements BackupService {
                 !node.path.startsWith("/") ||
                 !["file", "dir"].includes(String(node.type))
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_RESTORE_TREE",
                     "The snapshot contains unsupported or linked filesystem entries.",
                     3,
@@ -921,7 +921,7 @@ export class NodeBackupService implements BackupService {
             const relative = validateBackupRelativePath(node.path.slice(1));
             if (node.type === "dir") {
                 if (!directories.has(relative) || seenDirectories.has(relative))
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "BACKUP_RESTORE_TREE",
                         "The snapshot contains undeclared or duplicate directories.",
                         3,
@@ -931,7 +931,7 @@ export class NodeBackupService implements BackupService {
             }
             const expected = allowed.get(relative);
             if (!expected || found.has(relative) || node.size !== expected.size)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_RESTORE_TREE",
                     "The snapshot contains undeclared, duplicate or incorrectly sized files.",
                     3,
@@ -939,7 +939,7 @@ export class NodeBackupService implements BackupService {
             found.add(relative);
         }
         if (found.size !== allowed.size)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_RESTORE_TREE",
                 "The snapshot is missing files declared in its manifest.",
                 3,

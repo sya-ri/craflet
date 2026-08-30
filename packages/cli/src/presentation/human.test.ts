@@ -26,7 +26,7 @@ describe("human CLI result presentation", () => {
             directory: "/srv/minecraft/survival",
             name: "survival",
             server: { type: "paper", version: "26.2", build: "120" },
-            next: "Review craflet.yaml, then run craflet install.",
+            next: "Review crafleet.yaml, then run crafleet install.",
         });
 
         expect(output).toContain(
@@ -60,7 +60,7 @@ describe("human CLI result presentation", () => {
             "survival: pending ready; declared plugins: LuckPerms, spark",
         );
         expect(output).toContain("Running JARs were not replaced.");
-        expect(output).toContain("craflet restart");
+        expect(output).toContain("crafleet restart");
         expect(output).not.toContain("pending-id");
     });
 
@@ -216,7 +216,7 @@ describe("human CLI result presentation", () => {
                 ],
             },
         ]);
-        expect(local).toContain("craflet server update");
+        expect(local).toContain("crafleet server update");
         expect(local).not.toContain("--server");
     });
 
@@ -413,7 +413,7 @@ describe("human CLI result presentation", () => {
         ]);
         expect(checked).toContain("A: locked 1 is the latest version");
         expect(checked).toContain("B: locked 1 -> latest v2");
-        expect(checked).toContain("craflet plugins update -- --local-plugin");
+        expect(checked).toContain("crafleet plugins update -- --local-plugin");
     });
 
     it("renders scalar, recursive, empty, and real lifecycle plan states", () => {
@@ -754,7 +754,7 @@ describe("human CLI result presentation", () => {
         expect(preview).toContain(
             "abcdef012345  2026-08-01T00:00:00Z (daily, weekly)",
         );
-        expect(preview).toContain("craflet backup prune --apply");
+        expect(preview).toContain("crafleet backup prune --apply");
         expect(applied).toContain(
             "Applied retention and pruned repository data; 2 snapshots removed.",
         );
@@ -888,7 +888,7 @@ describe("human CLI result presentation", () => {
             applied: true,
             preRestoreSnapshot: "abcdef0123456789",
             pendingDiscarded: true,
-            cleanupRequired: "/srv/network/.craflet/restore-staging",
+            cleanupRequired: "/srv/network/.crafleet/restore-staging",
         });
         const groupPreview = render(
             "backup apply",
@@ -926,7 +926,7 @@ describe("human CLI result presentation", () => {
             "The previous pending installation was discarded.",
         );
         expect(applied).toContain(
-            "Warning: temporary restore data still requires cleanup at /srv/network/.craflet/restore-staging.",
+            "Warning: temporary restore data still requires cleanup at /srv/network/.crafleet/restore-staging.",
         );
     });
 

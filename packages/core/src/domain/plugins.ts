@@ -1,5 +1,5 @@
 import type { PluginIdentity, ServerKind } from "./artifacts.js";
-import { CrafletError } from "./errors.js";
+import { CrafleetError } from "./errors.js";
 
 /** The loaded identity remains unchanged; reject filenames unsafe on any supported host. */
 export function portablePluginJarName(id: string): string {
@@ -11,7 +11,7 @@ export function portablePluginJarName(id: string): string {
         ["__proto__", "constructor", "prototype"].includes(id.toLowerCase()) ||
         /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(id)
     ) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "JAR_PATH",
             "The plugin identity cannot be represented as a portable managed JAR filename.",
             3,
@@ -29,7 +29,7 @@ function pluginIdentifiers(
     const claim = (value: string) => {
         const name = value.toLowerCase();
         if (names.has(name))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "DUPLICATE_PLUGIN",
                 `Multiple plugins claim the identifier ${name}.`,
                 3,
@@ -44,7 +44,7 @@ function pluginIdentifiers(
         portablePluginJarName(plugin.id);
         const velocityPlugin = plugin.format === "velocity";
         if ((serverKind === "velocity") !== velocityPlugin) {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "PLUGIN_PLATFORM",
                 `Plugin ${plugin.id} is not a ${serverKind} plugin.`,
                 3,
@@ -83,7 +83,7 @@ export function validatePluginSet(
         }
     }
     if (missing.length) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "MISSING_PLUGIN_DEPENDENCY",
             missing.join("; "),
             3,

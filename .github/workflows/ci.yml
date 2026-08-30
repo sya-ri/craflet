@@ -1,4 +1,4 @@
-name: Craflet verification
+name: Crafleet verification
 
 on:
     pull_request:
@@ -51,8 +51,8 @@ jobs:
             # Set this repository variable to "true" only after explicitly
             # accepting https://www.minecraft.net/eula for test servers.
             # An unset value fails Paper E2E; it is never silently skipped.
-            CRAFLET_E2E_EULA: ${{ vars.CRAFLET_E2E_EULA }}
-            CRAFLET_TEST_RESTIC: "1"
+            CRAFLEET_E2E_EULA: ${{ vars.CRAFLEET_E2E_EULA }}
+            CRAFLEET_TEST_RESTIC: "1"
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
@@ -78,7 +78,7 @@ jobs:
             - name: Select the verified package for real server tests
               run: >-
                   node -e "const fs=require('node:fs'),v=require('./packages/cli/package.json').version;
-                  fs.appendFileSync(process.env.GITHUB_ENV,'CRAFLET_E2E_PACKAGE=artifacts/craflet-'+v+'.tgz\n')"
+                  fs.appendFileSync(process.env.GITHUB_ENV,'CRAFLEET_E2E_PACKAGE=artifacts/crafleet-'+v+'.tgz\n')"
             - name: Build locked real server and plugin fixtures
               run: node tests/fixtures/build.mjs --with-servers --verify-reproducible
             - name: Real Paper and Velocity E2E using the verified tarball
@@ -104,18 +104,18 @@ jobs:
                 include:
                     - kind: mysql
                       image: mysql:26.7.0@sha256:66aec17cd21a956029b83f083b813073859e8355dc1a00e55df6ba02f0e32345
-                      health: mysqladmin ping -h 127.0.0.1 --user=root --password=craflet-disposable-ci-password --silent
+                      health: mysqladmin ping -h 127.0.0.1 --user=root --password=crafleet-disposable-ci-password --silent
                     - kind: mariadb
                       image: mariadb:12.3.3@sha256:dd9b303aed4f4890ed09f766d8ca9ddfd176c0c6f6267feff53b3192ec65a979
-                      health: mariadb-admin ping -h 127.0.0.1 --user=root --password=craflet-disposable-ci-password --silent
+                      health: mariadb-admin ping -h 127.0.0.1 --user=root --password=crafleet-disposable-ci-password --silent
         services:
             database:
                 image: ${{ matrix.image }}
                 env:
-                    MYSQL_ROOT_PASSWORD: craflet-disposable-ci-password
-                    MYSQL_DATABASE: craflet_test_service
-                    MARIADB_ROOT_PASSWORD: craflet-disposable-ci-password
-                    MARIADB_DATABASE: craflet_test_service
+                    MYSQL_ROOT_PASSWORD: crafleet-disposable-ci-password
+                    MYSQL_DATABASE: crafleet_test_service
+                    MARIADB_ROOT_PASSWORD: crafleet-disposable-ci-password
+                    MARIADB_DATABASE: crafleet_test_service
                 options: >-
                     --health-cmd="${{ matrix.health }}"
                     --health-interval=5s
@@ -123,13 +123,13 @@ jobs:
                     --health-retries=30
         env:
             CI: "true"
-            CRAFLET_TEST_DATABASE_KIND: ${{ matrix.kind }}
-            CRAFLET_TEST_DATABASE_NAME: craflet_test_service
-            CRAFLET_TEST_DATABASE_USER: root
-            CRAFLET_TEST_DATABASE_PASSWORD: craflet-disposable-ci-password
-            CRAFLET_TEST_DATABASE_PORT: "3306"
-            CRAFLET_TEST_DATABASE_DUMP_COMMAND: ${{ github.workspace }}/tests/support/database-dump.mjs
-            CRAFLET_TEST_DATABASE_CLIENT_COMMAND: ${{ github.workspace }}/tests/support/database-client.mjs
+            CRAFLEET_TEST_DATABASE_KIND: ${{ matrix.kind }}
+            CRAFLEET_TEST_DATABASE_NAME: crafleet_test_service
+            CRAFLEET_TEST_DATABASE_USER: root
+            CRAFLEET_TEST_DATABASE_PASSWORD: crafleet-disposable-ci-password
+            CRAFLEET_TEST_DATABASE_PORT: "3306"
+            CRAFLEET_TEST_DATABASE_DUMP_COMMAND: ${{ github.workspace }}/tests/support/database-dump.mjs
+            CRAFLEET_TEST_DATABASE_CLIENT_COMMAND: ${{ github.workspace }}/tests/support/database-client.mjs
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
@@ -146,7 +146,7 @@ jobs:
             - run: chmod +x tests/support/database-dump.mjs tests/support/database-client.mjs
             - name: Dump and restore actual data using the matching server clients
               env:
-                  CRAFLET_TEST_DATABASE_CONTAINER: ${{ job.services.database.id }}
+                  CRAFLEET_TEST_DATABASE_CONTAINER: ${{ job.services.database.id }}
               run: pnpm exec vitest run --project integration tests/integration/backup-database-service.test.ts
 
     required:
@@ -171,7 +171,7 @@ jobs:
             github.event_name == 'push' &&
             startsWith(github.ref, 'refs/tags/v') &&
             github.ref_protected == true &&
-            vars.CRAFLET_NPM_TRUSTED_PUBLISHING == 'true'
+            vars.CRAFLEET_NPM_TRUSTED_PUBLISHING == 'true'
         needs: [required]
         runs-on: ubuntu-latest
         environment: npm
@@ -197,7 +197,7 @@ jobs:
               shell: bash
               run: |
                   expected='3C7F5488B337C1D85A8620122162A8E62C120348'
-                  gnupg_home="$RUNNER_TEMP/craflet-release-gnupg"
+                  gnupg_home="$RUNNER_TEMP/crafleet-release-gnupg"
                   install -d -m 700 "$gnupg_home"
                   export GNUPGHOME="$gnupg_home"
                   echo "GNUPGHOME=$gnupg_home" >> "$GITHUB_ENV"

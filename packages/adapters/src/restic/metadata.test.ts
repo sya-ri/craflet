@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { BackupMetadata } from "@craflet/core";
+import type { BackupMetadata } from "@crafleet/core";
 import { describe, expect, it } from "vitest";
 import {
     backupArchiveDirectories,

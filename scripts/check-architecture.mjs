@@ -6,9 +6,9 @@ import { pathToFileURL } from "node:url";
 import { build } from "tsdown";
 
 const packages = {
-    core: "@craflet/core",
-    adapters: "@craflet/adapters",
-    cli: "craflet",
+    core: "@crafleet/core",
+    adapters: "@crafleet/adapters",
+    cli: "crafleet",
 };
 const allowed = { core: [], adapters: ["core"], cli: ["core", "adapters"] };
 const runtimeExtension = /\.[cm]?[jt]sx?$/;
@@ -350,7 +350,7 @@ export function architecturePlugin({
     root = path.resolve(root);
     let graph;
     return {
-        name: "craflet-resolved-architecture",
+        name: "crafleet-resolved-architecture",
         transform(code, id) {
             if (kindOf(root, id))
                 inspectSource(
@@ -412,7 +412,7 @@ export async function checkArchitecture(root = process.cwd()) {
                 assert.equal(version, "workspace:*");
             } else {
                 assert(
-                    !dependency.startsWith("@craflet/"),
+                    !dependency.startsWith("@crafleet/"),
                     `Unknown private package: ${dependency}`,
                 );
                 assert(

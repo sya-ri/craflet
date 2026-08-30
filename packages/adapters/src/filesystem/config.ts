@@ -10,12 +10,12 @@ import {
     type ConfigDiff,
     type ConfigFileInfo,
     type ConfigState,
-    CrafletError,
+    CrafleetError,
     configFormat,
     type SecretReference,
     validateConfigBundle,
     validateConfigState,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { mergeConfigDocuments } from "../formats/config.js";
 import {
     assertNoSymlinks,
@@ -46,7 +46,7 @@ export function normalizeConfigRelative(relative: string): string {
         ) ||
         /\.jar$/i.test(normalized)
     ) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "CONFIG_PATH",
             "Configuration paths must be portable relative file paths without links, traversal, or JAR files.",
             3,
@@ -82,7 +82,7 @@ function cloneState(state: ConfigState): ConfigState {
 }
 
 function stale(): never {
-    throw new CrafletError(
+    throw new CrafleetError(
         "CONFIG_CHANGED",
         "Configuration changed after it was inspected. Recreate the pending configuration after reviewing the changes.",
         3,
@@ -99,22 +99,22 @@ async function readManagedText(
     try {
         const stat = await lstat(file);
         if (!stat.isFile() || stat.size > maximum)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "CONFIG_UNSUPPORTED",
                 "A managed configuration is not a bounded regular text file.",
                 3,
             );
         const data = await readFile(file);
         if (data.length > maximum)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "CONFIG_UNSUPPORTED",
                 "A managed configuration exceeds the supported size.",
                 3,
             );
         return new TextDecoder("utf-8", { fatal: true }).decode(data);
     } catch (error) {
-        if (error instanceof CrafletError) throw error;
-        throw new CrafletError(
+        if (error instanceof CrafleetError) throw error;
+        throw new CrafleetError(
             "CONFIG_UNREADABLE",
             "A managed configuration cannot be read safely.",
             3,
@@ -131,7 +131,7 @@ async function writeManagedText(
     if (text === null) {
         if (await exists(file)) {
             if (!(await lstat(file)).isFile())
-                throw new CrafletError(
+                throw new CrafleetError(
                     "CONFIG_PATH",
                     "Refusing to remove a configuration directory or non-file.",
                     3,
@@ -163,7 +163,7 @@ export class NodeConfigManager {
         this.projectDir = path.resolve(projectDir);
         this.baseDir = path.join(this.projectDir, "config");
         this.runtimeDir = path.join(this.projectDir, "runtime");
-        this.stateDir = path.join(this.projectDir, ".craflet");
+        this.stateDir = path.join(this.projectDir, ".crafleet");
         this.projectId = createHash("sha256")
             .update(
                 process.platform === "win32"
@@ -190,7 +190,7 @@ export class NodeConfigManager {
         try {
             input = JSON.parse(raw);
         } catch {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "CONFIG_STATE_INVALID",
                 "Configuration observation state cannot be parsed safely.",
                 3,
@@ -199,7 +199,7 @@ export class NodeConfigManager {
         const state = validateConfigState(input);
         for (const relative of Object.keys(state.files))
             if (normalizeConfigRelative(relative) !== relative)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "CONFIG_STATE_INVALID",
                     "Configuration state contains a non-canonical path.",
                     3,
@@ -234,7 +234,7 @@ export class NodeConfigManager {
             new Set(paths.map((relative) => relative.toLowerCase())).size !==
                 paths.length
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "CONFIG_PATH",
                 "Configuration paths collide across platforms or exceed the supported file count.",
                 3,
@@ -340,7 +340,7 @@ export class NodeConfigManager {
             const base = await readManagedText(this.baseDir, relative);
             const raw = await readManagedText(this.runtimeDir, relative);
             if (base === null && raw === null)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "CONFIG_NOT_FOUND",
                     "The configuration does not exist in the base or runtime tree.",
                     3,
@@ -377,7 +377,7 @@ export class NodeConfigManager {
             const state = await this.state();
             const base = await readManagedText(this.baseDir, relative);
             if (base === null && !Object.hasOwn(state.files, relative))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "CONFIG_NOT_TRACKED",
                     "The configuration is not tracked.",
                     3,
@@ -436,7 +436,7 @@ export class NodeConfigManager {
             bundle.projectId !== this.projectId ||
             bundle.stateFingerprint !== fingerprint(bundle.state)
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "CONFIG_BUNDLE_INVALID",
                 "Pending configuration belongs to another project or has inconsistent observations.",
                 3,
@@ -444,7 +444,7 @@ export class NodeConfigManager {
         const names = new Set<string>();
         for (const [relative, entry] of Object.entries(bundle.state.files)) {
             if (normalizeConfigRelative(relative) !== relative)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "CONFIG_BUNDLE_INVALID",
                     "Pending configuration has an invalid observation path.",
                     3,
@@ -462,7 +462,7 @@ export class NodeConfigManager {
                 file.observed !==
                     (bundle.state.files[file.relative]?.observed ?? null)
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "CONFIG_BUNDLE_INVALID",
                     "Pending configuration contains duplicate, invalid, or inconsistent paths.",
                     3,
@@ -499,7 +499,7 @@ export class NodeConfigManager {
                 expected.conflicts.length > 0 ||
                 expected.content !== file.content
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "CONFIG_BUNDLE_INVALID",
                     "Pending configuration does not match its source snapshots.",
                     3,
@@ -538,7 +538,7 @@ export class NodeConfigManager {
         );
         const files = await this.snapshot(state, secrets);
         if (files.some((file) => file.conflicts.length > 0))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "CONFIG_CONFLICT",
                 "Configuration has unresolved changes. Review config diff and resolve the affected files before preparing a deployment.",
                 3,
@@ -617,7 +617,7 @@ export class NodeConfigManager {
                     (await readManagedText(this.baseDir, file.relative)) !==
                     file.content
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "CONFIG_RECOVERY_REQUIRED",
                         "Configuration changed while capture was being recovered. Review the base files before retrying.",
                         3,
@@ -631,12 +631,12 @@ export class NodeConfigManager {
             )
                 await this.writeState(state);
             else if (currentState !== fingerprint(state))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "CONFIG_RECOVERY_REQUIRED",
                     "Configuration observations changed while capture was being recovered.",
                     3,
                 );
-            throw new CrafletError(
+            throw new CrafleetError(
                 "CONFIG_CAPTURE_FAILED",
                 "Configuration capture failed; completed base writes were reverted.",
                 3,
@@ -656,7 +656,7 @@ export class NodeConfigManager {
             const initial = new Set<string>();
             if (options.initial) {
                 if (!options.kind)
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "CONFIG_KIND",
                         "Initial configuration discovery requires the server kind.",
                         2,
@@ -691,7 +691,7 @@ export class NodeConfigManager {
                     file.base === null &&
                     file.runtime === null
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "CONFIG_NOT_FOUND",
                         "A selected configuration does not exist.",
                         3,
@@ -722,7 +722,7 @@ export class NodeConfigManager {
     async resolve(input: string, choice: "base" | "runtime"): Promise<void> {
         const relative = normalizeConfigRelative(input);
         if (choice !== "base" && choice !== "runtime")
-            throw new CrafletError(
+            throw new CrafleetError(
                 "CONFIG_RESOLUTION",
                 "Select base or runtime for a conflict resolution.",
                 2,
@@ -730,7 +730,7 @@ export class NodeConfigManager {
         await this.mutate(async () => {
             const state = await this.state();
             if (!(await this.tracked(state)).includes(relative))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "CONFIG_NOT_TRACKED",
                     "The configuration is not tracked.",
                     3,
@@ -743,7 +743,7 @@ export class NodeConfigManager {
                 (entry) => entry.relative === relative,
             );
             if (!file)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "CONFIG_NOT_FOUND",
                     "The configuration does not exist.",
                     3,
@@ -853,7 +853,7 @@ export class NodeConfigManager {
                 currentToken !== oldToken &&
                 currentToken !== newToken
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "CONFIG_RECOVERY_REQUIRED",
                     "Runtime configuration changed outside the pending deployment; refusing to overwrite it during recovery.",
                     3,
@@ -865,7 +865,7 @@ export class NodeConfigManager {
             currentState !== fingerprint(oldState) &&
             currentState !== fingerprint(appliedState)
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "CONFIG_RECOVERY_REQUIRED",
                 "Configuration observations changed outside the pending deployment; recovery requires review.",
                 3,
@@ -891,7 +891,7 @@ export class NodeConfigManager {
                     (await readManagedText(this.runtimeDir, file.relative)) !==
                     file.current
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "CONFIG_RECOVERY_REQUIRED",
                         "Runtime configuration changed during recovery; refusing to overwrite it.",
                         3,
@@ -953,7 +953,7 @@ export async function discoverConfigCandidates(
         "logs",
         "crash-reports",
         ".git",
-        ".craflet",
+        ".crafleet",
     ]);
     async function discoverWorld(
         directory: string,
@@ -961,7 +961,7 @@ export async function discoverConfigCandidates(
         depth: number,
     ): Promise<void> {
         if (++directories > 10_000 || depth > 16)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "CONFIG_DISCOVERY_LIMIT",
                 "World configuration discovery exceeded its bound; track additional files explicitly.",
                 3,

@@ -1,4 +1,4 @@
-import type { ArtifactContext, SourceSpec } from "@craflet/core";
+import type { ArtifactContext, SourceSpec } from "@crafleet/core";
 import { type } from "arktype";
 import {
     type DownloadSpec,

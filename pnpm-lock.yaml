@@ -4,7 +4,7 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-pnpmfileChecksum: sha256-81HXVFs1JN8ztJp7H0BEuf0DabgLulxwHkSY9w96QDg=
+pnpmfileChecksum: sha256-2S+mT4HemyhgI33PZSIpICQX7L5YFuntsd73/yKvrus=
 
 importers:
 
@@ -13,10 +13,10 @@ importers:
       '@biomejs/biome':
         specifier: 2.5.11
         version: 2.5.11
-      '@craflet/adapters':
+      '@crafleet/adapters':
         specifier: workspace:*
         version: link:packages/adapters
-      '@craflet/core':
+      '@crafleet/core':
         specifier: workspace:*
         version: link:packages/core
       '@types/node':
@@ -43,7 +43,7 @@ importers:
 
   packages/adapters:
     dependencies:
-      '@craflet/core':
+      '@crafleet/core':
         specifier: workspace:*
         version: link:../core
       arktype:
@@ -77,10 +77,10 @@ importers:
       '@clack/prompts':
         specifier: 1.7.0
         version: 1.7.0
-      '@craflet/adapters':
+      '@crafleet/adapters':
         specifier: workspace:*
         version: link:../adapters
-      '@craflet/core':
+      '@crafleet/core':
         specifier: workspace:*
         version: link:../core
       '@earendil-works/pi-tui':

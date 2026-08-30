@@ -1,5 +1,5 @@
 import { pathToFileURL } from "node:url";
-import { CrafletError } from "@craflet/core";
+import { CrafleetError } from "@crafleet/core";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as presentationOutput from "../presentation/output.js";
@@ -113,7 +113,7 @@ describe("interactive CLI boundaries", () => {
 
 describe("safe structured presentation", () => {
     it("passes only the nested command path and dry-run state to presentation", async () => {
-        const program = new Command().name("craflet").exitOverride();
+        const program = new Command().name("crafleet").exitOverride();
         const child = program
             .command("plugins")
             .command("update [plugins...]")
@@ -186,18 +186,18 @@ describe("safe structured presentation", () => {
             expect(stdout + stderr).not.toContain("do-not-print-secret");
             expect(process.exitCode).toBe(1);
             printError(
-                new CrafletError(
+                new CrafleetError(
                     "RECOVERY_REQUIRED",
                     "Recover first.",
                     4,
-                    "Run craflet recover.",
+                    "Run crafleet recover.",
                 ),
                 json,
             );
-            expect(stdout + stderr).toContain("Run craflet recover.");
+            expect(stdout + stderr).toContain("Run crafleet recover.");
             expect(process.exitCode).toBe(4);
             printError(
-                new CrafletError(
+                new CrafleetError(
                     "INVALID_INPUT",
                     "unsafe\u001b]52;c;payload\u0007\u202e",
                     2,

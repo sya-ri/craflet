@@ -1,12 +1,12 @@
 import { defineConfig } from "vitest/config";
-import { crafletVersionDefine } from "./scripts/version.mjs";
+import { crafleetVersionDefine } from "./scripts/version.mjs";
 
 export default defineConfig({
-    define: crafletVersionDefine,
+    define: crafleetVersionDefine,
     test: {
         server: {
             deps: {
-                inline: [/^@craflet\//u],
+                inline: [/^@crafleet\//u],
             },
         },
         projects: [

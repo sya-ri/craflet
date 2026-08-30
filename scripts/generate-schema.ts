@@ -1,13 +1,13 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { LockSchema, ProjectSchema, WorkspaceSchema } from "@craflet/core";
+import { LockSchema, ProjectSchema, WorkspaceSchema } from "@crafleet/core";
 
 const directory = path.resolve("packages/cli/dist/schemas");
 await mkdir(directory, { recursive: true });
 for (const [name, schema] of [
-    ["craflet", ProjectSchema],
-    ["craflet-workspace", WorkspaceSchema],
-    ["craflet-lock", LockSchema],
+    ["crafleet", ProjectSchema],
+    ["crafleet-workspace", WorkspaceSchema],
+    ["crafleet-lock", LockSchema],
 ] as const) {
     await writeFile(
         path.join(directory, `${name}.schema.json`),

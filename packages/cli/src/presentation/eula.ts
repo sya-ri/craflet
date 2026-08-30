@@ -1,7 +1,7 @@
 import { emitKeypressEvents, type Key } from "node:readline";
 import { PassThrough } from "node:stream";
 import { stripVTControlCharacters } from "node:util";
-import { CrafletError } from "@craflet/core";
+import { CrafleetError } from "@crafleet/core";
 
 export interface EulaDocument {
     path: string;
@@ -92,7 +92,7 @@ export function renderEulaFrame(
     const columns = dimension(terminal.columns, 80, 240);
     const rows = dimension(terminal.rows, 24, 100);
     if (columns < 40 || rows < 10)
-        throw new CrafletError(
+        throw new CrafleetError(
             "CONFIRMATION_REQUIRED",
             "EULA confirmation needs a terminal at least 40 columns wide and 10 rows high. Resize it and retry.",
             3,
@@ -170,16 +170,16 @@ export function handleEulaKey(
     };
 }
 
-function cancelled(): CrafletError {
-    return new CrafletError(
+function cancelled(): CrafleetError {
+    return new CrafleetError(
         "CANCELLED",
         "EULA confirmation was declined or cancelled; no consent was granted.",
         130,
     );
 }
 
-function terminalFailure(): CrafletError {
-    return new CrafletError(
+function terminalFailure(): CrafleetError {
+    return new CrafleetError(
         "EULA_TERMINAL",
         "The EULA confirmation could not be completed; no consent was granted.",
         3,
@@ -207,7 +207,7 @@ export async function confirmEula(
         !output.isTTY ||
         typeof input.setRawMode !== "function"
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "CONFIRMATION_REQUIRED",
             "EULA confirmation requires an interactive terminal outside CI. Read the agreement and explicitly pass --yes to accept without the UI.",
             3,
@@ -222,7 +222,7 @@ export async function confirmEula(
         let finished = false;
         let rawChanged = false;
         let alternateScreen = false;
-        const finish = (error?: CrafletError) => {
+        const finish = (error?: CrafleetError) => {
             if (finished) return;
             finished = true;
             let cleanupFailed = false;
@@ -273,7 +273,7 @@ export async function confirmEula(
                 output.write(`${CLEAR_SCREEN}${frame.text}`);
             } catch (error) {
                 finish(
-                    error instanceof CrafletError ? error : terminalFailure(),
+                    error instanceof CrafleetError ? error : terminalFailure(),
                 );
             }
         };

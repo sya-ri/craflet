@@ -1,4 +1,4 @@
-package dev.craflet.fixtures;
+package dev.crafleet.fixtures;
 
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
@@ -7,7 +7,7 @@ import java.nio.file.Path;
 
 public final class VelocityFixture {
     private final FixtureLifecycle lifecycle =
-            new FixtureLifecycle(Path.of("plugins", "crafletvelocityfixture"));
+            new FixtureLifecycle(Path.of("plugins", "crafleetvelocityfixture"));
 
     @Subscribe
     public void initialize(ProxyInitializeEvent event) {

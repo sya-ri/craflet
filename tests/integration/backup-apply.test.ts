@@ -5,10 +5,10 @@ import { DatabaseSync } from "node:sqlite";
 import {
     type BackupConfig,
     type BackupMetadata,
-    CrafletError,
+    CrafleetError,
     type DatabaseBackupConfig,
     stableStringify,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NodeDatabaseBackupAdapter } from "../../packages/adapters/src/database/backup.js";
 import { NodeArtifactStore } from "../../packages/adapters/src/filesystem/artifact-store.js";
@@ -85,7 +85,7 @@ async function fixture(
         source: "file:imports/server.jar",
     });
     manifest.plugins.Example = "file:imports/example.jar";
-    await writeYaml(path.join(dir, "craflet.yaml"), manifest);
+    await writeYaml(path.join(dir, "crafleet.yaml"), manifest);
     const server = artifactZip([
         {
             name: "META-INF/MANIFEST.MF",
@@ -109,7 +109,7 @@ async function fixture(
         repositories: {
             local: {
                 path: repository,
-                password: { env: "CRAFLET_FIXTURE_BACKUP_PASSWORD" },
+                password: { env: "CRAFLEET_FIXTURE_BACKUP_PASSWORD" },
                 id: TEST_REPOSITORY_ID,
             },
         },
@@ -224,7 +224,7 @@ async function execute(
     checkpoint?: (stage: string) => Promise<void>,
 ): Promise<void> {
     return io.withMutex(
-        path.join(current.context.lockRoot, ".craflet/operation.lock"),
+        path.join(current.context.lockRoot, ".crafleet/operation.lock"),
         () =>
             executePreparedRestore(
                 current.context,
@@ -317,7 +317,7 @@ describe("verified production restore application", () => {
         );
         current.context.manifest.plugins.Extra = "file:imports/extra.jar";
         await writeYaml(
-            path.join(current.dir, "craflet.yaml"),
+            path.join(current.dir, "crafleet.yaml"),
             current.context.manifest,
         );
         current.context = await loadProject(current.dir, current.home);
@@ -347,8 +347,8 @@ describe("verified production restore application", () => {
             offline: true,
         });
         const declarations = {
-            manifest: await readFile(path.join(current.dir, "craflet.yaml")),
-            lock: await readFile(path.join(current.dir, "craflet-lock.yaml")),
+            manifest: await readFile(path.join(current.dir, "crafleet.yaml")),
+            lock: await readFile(path.join(current.dir, "crafleet-lock.yaml")),
             base: await readFile(
                 path.join(current.dir, "config/server.properties"),
             ),
@@ -410,17 +410,17 @@ describe("verified production restore application", () => {
         expect((await readState(current.dir)).active?.lock).toEqual(
             current.active.lock,
         );
-        expect(await readFile(path.join(current.dir, "craflet.yaml"))).toEqual(
+        expect(await readFile(path.join(current.dir, "crafleet.yaml"))).toEqual(
             declarations.manifest,
         );
         expect(
-            await readFile(path.join(current.dir, "craflet-lock.yaml")),
+            await readFile(path.join(current.dir, "crafleet-lock.yaml")),
         ).toEqual(declarations.lock);
         expect(
             await readFile(path.join(current.dir, "config/server.properties")),
         ).toEqual(declarations.base);
         expect(
-            await io.exists(path.join(current.dir, ".craflet/restore.json")),
+            await io.exists(path.join(current.dir, ".crafleet/restore.json")),
         ).toBe(false);
     });
 
@@ -477,18 +477,18 @@ describe("verified production restore application", () => {
             const stop = vi
                 .spyOn(NodeServerController.prototype, "stop")
                 .mockRejectedValue(
-                    new CrafletError("FIXTURE_STOP", "fixture stop failure"),
+                    new CrafleetError("FIXTURE_STOP", "fixture stop failure"),
                 );
             if (failure === "artifact")
                 vi.spyOn(current.store, "ensure").mockRejectedValue(
-                    new CrafletError(
+                    new CrafleetError(
                         "FIXTURE_MISSING",
                         "exact old artifact unavailable",
                     ),
                 );
             if (failure === "backup")
                 vi.spyOn(current.backup, "prepare").mockRejectedValue(
-                    new CrafletError(
+                    new CrafleetError(
                         "FIXTURE_TOOL",
                         "fixture tool unavailable",
                     ),
@@ -498,7 +498,7 @@ describe("verified production restore application", () => {
                     NodeDatabaseBackupAdapter.prototype,
                     "preflightRestore",
                 ).mockRejectedValue(
-                    new CrafletError(
+                    new CrafleetError(
                         "FIXTURE_DATABASE",
                         "fixture database unavailable",
                     ),
@@ -511,7 +511,7 @@ describe("verified production restore application", () => {
                     current.store,
                     current.backup,
                 ),
-            ).rejects.toBeInstanceOf(CrafletError);
+            ).rejects.toBeInstanceOf(CrafleetError);
             expect(stop).toHaveBeenCalledTimes(failure === "stop" ? 1 : 0);
             expect(await tree(current.dir)).toEqual(before);
         },
@@ -534,18 +534,18 @@ describe("verified production restore application", () => {
                     current.store,
                     current.backup,
                 ),
-            ).rejects.toBeInstanceOf(CrafletError);
+            ).rejects.toBeInstanceOf(CrafleetError);
             expect(await tree(current.dir)).toEqual(before);
         },
     );
 
     it.each([
-        ".craflet/restore.json",
-        ".craflet/deploy.json",
-        ".craflet/import-incomplete.json",
-        ".craflet/manifest-transaction.json",
-        ".craflet/group-operation.json",
-        ".craflet/group-restore.json",
+        ".crafleet/restore.json",
+        ".crafleet/deploy.json",
+        ".crafleet/import-incomplete.json",
+        ".crafleet/manifest-transaction.json",
+        ".crafleet/group-operation.json",
+        ".crafleet/group-restore.json",
     ])(
         "blocks production application while %s awaits recovery",
         async (marker) => {
@@ -633,7 +633,11 @@ describe("restore extraction, mappings and protection boundaries", () => {
                 if (file) file.destination = "data/runtime/../../../outside";
             });
         if (problem === "incomplete")
-            await put(current.source, ".craflet-restore-incomplete.json", "{}");
+            await put(
+                current.source,
+                ".crafleet-restore-incomplete.json",
+                "{}",
+            );
         const before = await tree(current.dir);
         await expect(
             inspectBackupRestore(
@@ -642,7 +646,7 @@ describe("restore extraction, mappings and protection boundaries", () => {
                 {},
                 current.backup,
             ),
-        ).rejects.toBeInstanceOf(CrafletError);
+        ).rejects.toBeInstanceOf(CrafleetError);
         expect(await tree(current.dir)).toEqual(before);
     });
 
@@ -666,7 +670,7 @@ describe("restore extraction, mappings and protection boundaries", () => {
                     {},
                     current.backup,
                 ),
-            ).rejects.toBeInstanceOf(CrafletError);
+            ).rejects.toBeInstanceOf(CrafleetError);
         },
     );
 
@@ -735,7 +739,7 @@ describe("restore extraction, mappings and protection boundaries", () => {
                 current.store,
                 current.backup,
             ),
-        ).rejects.toBeInstanceOf(CrafletError);
+        ).rejects.toBeInstanceOf(CrafleetError);
         expect(stop).not.toHaveBeenCalled();
         expect(await tree(current.dir)).toEqual(before);
     });
@@ -815,7 +819,7 @@ describe("restore extraction, mappings and protection boundaries", () => {
                 { mappings },
                 current.backup,
             ),
-        ).rejects.toBeInstanceOf(CrafletError);
+        ).rejects.toBeInstanceOf(CrafleetError);
     });
 
     it("never deletes currently backed-up external roots absent from the snapshot", async () => {
@@ -887,7 +891,7 @@ describe("restore extraction, mappings and protection boundaries", () => {
             new NodeConfigManager(moved).prepareRestoredBundle(
                 current.active.config,
             ),
-        ).rejects.toBeInstanceOf(CrafletError);
+        ).rejects.toBeInstanceOf(CrafleetError);
         expect(
             (
                 await new NodeConfigManager(moved).prepareRestoredBundle(
@@ -922,12 +926,12 @@ describe("restore journal and interruption safety", () => {
                 await saveState(current.dir, { schemaVersion: 1 });
             const before = await tree(current.dir);
             await expect(execute(current, prepared)).rejects.toBeInstanceOf(
-                CrafletError,
+                CrafleetError,
             );
             expect(await tree(current.dir)).toEqual(before);
             expect(
                 await io.exists(
-                    path.join(current.dir, ".craflet/restore.json"),
+                    path.join(current.dir, ".crafleet/restore.json"),
                 ),
             ).toBe(false);
         }
@@ -1025,7 +1029,7 @@ describe("restore journal and interruption safety", () => {
         expect(
             (
                 await io.readJson<{ phase: string }>(
-                    path.join(current.dir, ".craflet/restore.json"),
+                    path.join(current.dir, ".crafleet/restore.json"),
                 )
             ).phase,
         ).toBe("applied");
@@ -1037,7 +1041,7 @@ describe("restore journal and interruption safety", () => {
         );
         expect(await readState(current.dir)).toEqual(state);
         expect(
-            await io.exists(path.join(current.dir, ".craflet/restore.json")),
+            await io.exists(path.join(current.dir, ".crafleet/restore.json")),
         ).toBe(false);
     });
 
@@ -1062,7 +1066,7 @@ describe("restore journal and interruption safety", () => {
                     throw new Error("interrupted");
                 }),
             ).rejects.toMatchObject({ code: "RESTORE_INTERRUPTED" });
-            const file = path.join(current.dir, ".craflet/restore.json");
+            const file = path.join(current.dir, ".crafleet/restore.json");
             const journal = await io.readJson<Record<string, unknown>>(file);
             const changes =
                 journal.changes as PreparedRestoreApplication["changes"];
@@ -1107,7 +1111,7 @@ describe("restore journal and interruption safety", () => {
                     current.store,
                     current.backup,
                 ),
-            ).rejects.toBeInstanceOf(CrafletError);
+            ).rejects.toBeInstanceOf(CrafleetError);
             expect(await tree(current.dir)).toEqual(before);
         },
     );
@@ -1124,7 +1128,7 @@ describe("restore journal and interruption safety", () => {
             ),
         ).rejects.toMatchObject({ code: "RESTORE_CONTEXT" });
         expect(
-            await io.exists(path.join(current.dir, ".craflet/restore.json")),
+            await io.exists(path.join(current.dir, ".crafleet/restore.json")),
         ).toBe(false);
     });
 
@@ -1138,7 +1142,7 @@ describe("restore journal and interruption safety", () => {
                 const result = await original(file);
                 if (
                     !changed &&
-                    path.basename(file).startsWith(".craflet-restore-") &&
+                    path.basename(file).startsWith(".crafleet-restore-") &&
                     path.dirname(file) ===
                         path.join(current.dir, "runtime/world")
                 ) {
@@ -1179,7 +1183,7 @@ describe("database restore confirmation and replay boundaries", () => {
             host: "localhost",
             database: "fixture",
             user: "fixture",
-            password: { env: "CRAFLET_FIXTURE_DATABASE_PASSWORD" },
+            password: { env: "CRAFLEET_FIXTURE_DATABASE_PASSWORD" },
         };
         await addDatabase(current, config, "SELECT 1;\n");
         await expect(
@@ -1217,7 +1221,7 @@ describe("database restore confirmation and replay boundaries", () => {
             host: "localhost",
             database: "fixture",
             user: "fixture",
-            password: { env: "CRAFLET_FIXTURE_DATABASE_PASSWORD" },
+            password: { env: "CRAFLEET_FIXTURE_DATABASE_PASSWORD" },
         };
         await addDatabase(current, config, "SELECT 1;\n");
         vi.spyOn(
@@ -1245,7 +1249,7 @@ describe("database restore confirmation and replay boundaries", () => {
         expect(restore).toHaveBeenCalledTimes(1);
         expect(await tree(current.dir)).toEqual(before);
         expect(
-            await io.readJson(path.join(current.dir, ".craflet/restore.json")),
+            await io.readJson(path.join(current.dir, ".crafleet/restore.json")),
         ).toMatchObject({
             phase: "database",
             databaseInProgress: "players",
@@ -1261,7 +1265,7 @@ describe("database restore confirmation and replay boundaries", () => {
             host: "localhost",
             database: "fixture",
             user: "fixture",
-            password: { env: "CRAFLET_FIXTURE_DATABASE_PASSWORD" },
+            password: { env: "CRAFLEET_FIXTURE_DATABASE_PASSWORD" },
         };
         await addDatabase(current, config, "SELECT 1;\n");
         vi.spyOn(
@@ -1288,7 +1292,7 @@ describe("database restore confirmation and replay boundaries", () => {
         );
         expect(restore).toHaveBeenCalledTimes(1);
         expect(
-            await io.exists(path.join(current.dir, ".craflet/restore.json")),
+            await io.exists(path.join(current.dir, ".crafleet/restore.json")),
         ).toBe(false);
     });
 
@@ -1361,7 +1365,7 @@ describe("database restore confirmation and replay boundaries", () => {
             const before = await tree(current.dir);
             await expect(
                 prepare(current, { databases: ["players"] }),
-            ).rejects.toBeInstanceOf(CrafletError);
+            ).rejects.toBeInstanceOf(CrafleetError);
             expect(await tree(current.dir)).toEqual(before);
         },
     );

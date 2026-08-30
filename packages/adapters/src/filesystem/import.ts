@@ -3,11 +3,11 @@ import { copyFile, lstat, mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import {
     type ArtifactStore,
-    CrafletError,
+    CrafleetError,
     portablePluginJarName,
     type ServerKind,
     validatePluginSet,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { hashBackupFile } from "./backup-files.js";
 import { installProjects } from "./installations.js";
 import {
@@ -40,7 +40,7 @@ export async function importProject(
         path.win32.isAbsolute(options.serverJar) ||
         !options.serverJar.toLowerCase().endsWith(".jar")
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "IMPORT_SERVER",
             "The selected server JAR must be a relative .jar path within the source directory.",
             2,
@@ -49,7 +49,7 @@ export async function importProject(
         .relative(source, containedPath(source, options.serverJar))
         .replaceAll(path.sep, "/");
     if (pathContains(source, target) || pathContains(target, source))
-        throw new CrafletError(
+        throw new CrafleetError(
             "IMPORT_OVERLAP",
             "The source and destination must be separate directory trees.",
             3,
@@ -57,27 +57,27 @@ export async function importProject(
     await assertNoSymlinks(source);
     await assertNoSymlinks(target);
     if ((await exists(target)) && (await readdir(target)).length)
-        throw new CrafletError(
+        throw new CrafleetError(
             "IMPORT_TARGET",
             "Import requires an empty destination directory.",
             3,
         );
-    if (await exists(path.join(source, ".craflet")))
-        throw new CrafletError(
+    if (await exists(path.join(source, ".crafleet")))
+        throw new CrafleetError(
             "IMPORT_MANAGED",
             "Do not import an already managed server; use its project or a verified backup restore.",
             3,
         );
     const serverJar = await assertNoSymlinks(source, serverRelative);
     if (!(await lstat(serverJar)).isFile())
-        throw new CrafletError(
+        throw new CrafleetError(
             "IMPORT_SERVER",
             "The selected server JAR must be an existing regular .jar file.",
             2,
         );
     const files = await listFiles(source);
     if (files.some((file) => /^plugins\/update\/.*\.jar$/i.test(file)))
-        throw new CrafletError(
+        throw new CrafleetError(
             "IMPORT_UPDATE",
             "Resolve the source server's plugins/update JARs before import.",
             3,
@@ -131,7 +131,7 @@ export async function importProject(
         await assertNoSymlinks(target, copy.target);
         const key = copy.target.normalize("NFC").toLowerCase();
         if (targets.has(key))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "IMPORT_COLLISION",
                 "Imported data and renamed JARs target the same path.",
                 3,
@@ -142,7 +142,7 @@ export async function importProject(
         const segments = file.split("/");
         for (let index = 1; index < segments.length; index++)
             if (targets.has(segments.slice(0, index).join("/")))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "IMPORT_COLLISION",
                     "Imported files collide with a target directory.",
                     3,
@@ -170,7 +170,7 @@ export async function importProject(
     });
     const marker = await assertNoSymlinks(
         target,
-        ".craflet/import-incomplete.json",
+        ".crafleet/import-incomplete.json",
     );
     await writeJson(marker, { schemaVersion: 1, source, phase: "copying" });
     try {
@@ -189,14 +189,14 @@ export async function importProject(
                 expected.sha256 !== actual.sha256 ||
                 expected.bytes !== actual.bytes
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "IMPORT_CHANGED",
                     "A source file changed during import; the incomplete destination was retained for inspection.",
                     3,
                 );
         }
         if (JSON.stringify(await listFiles(source)) !== JSON.stringify(files))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "IMPORT_CHANGED",
                 "The source file set changed during import.",
                 3,
@@ -206,14 +206,14 @@ export async function importProject(
                 (await hashBackupFile(await assertNoSymlinks(source, file)))
                     .sha256 !== integrity.get(file)?.sha256
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "IMPORT_CHANGED",
                     "A source file changed during import.",
                     3,
                 );
         for (const { identity, jarName } of plugins)
             manifest.plugins[identity.id] = `file:imports/plugins/${jarName}`;
-        await writeYaml(path.join(target, "craflet.yaml"), manifest);
+        await writeYaml(path.join(target, "crafleet.yaml"), manifest);
         const installation = await installProjects(
             [await loadProject(target, home)],
             store,
@@ -228,8 +228,8 @@ export async function importProject(
             next: "Configure a backup destination before starting the imported server. Capture selected configuration explicitly.",
         };
     } catch (error) {
-        if (error instanceof CrafletError) throw error;
-        throw new CrafletError(
+        if (error instanceof CrafleetError) throw error;
+        throw new CrafleetError(
             "IMPORT_INCOMPLETE",
             "Import did not complete. The original source was not modified, and the destination is blocked from starting; inspect it before retrying into an empty directory.",
             4,

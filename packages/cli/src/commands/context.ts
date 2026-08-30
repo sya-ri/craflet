@@ -4,7 +4,7 @@ import { confirm, isCancel, text } from "@clack/prompts";
 import {
     type BackupBatch,
     backupService,
-    crafletHome,
+    crafleetHome,
     NodeArtifactStore,
     NodeDeploymentManager,
     NodeRecoveryGroup,
@@ -13,8 +13,8 @@ import {
     type ProjectContext,
     resolveBackupBatches,
     selectProjects,
-} from "@craflet/adapters";
-import { type BackupService, CrafletError } from "@craflet/core";
+} from "@crafleet/adapters";
+import { type BackupService, CrafleetError } from "@crafleet/core";
 import type { Command } from "commander";
 import { confirmEula } from "../presentation/eula.js";
 import { printError, printResult } from "../presentation/output.js";
@@ -29,7 +29,7 @@ export interface Globals {
     dryRun?: boolean;
 }
 export class CommandContext {
-    readonly home = crafletHome();
+    readonly home = crafleetHome();
     readonly store = new NodeArtifactStore(this.home);
     readonly abort = new AbortController();
     readonly runnerEntry: string;
@@ -46,7 +46,7 @@ export class CommandContext {
                 signal: this.abort.signal,
             });
         } catch (error) {
-            if (error instanceof CrafletError && error.code === "CANCELLED")
+            if (error instanceof CrafleetError && error.code === "CANCELLED")
                 this.abort.abort();
             throw error;
         }
@@ -102,7 +102,7 @@ export class CommandContext {
     async one(command: Command): Promise<ProjectContext> {
         const projects = await this.projects(command);
         if (projects.length !== 1 || !projects[0])
-            throw new CrafletError(
+            throw new CrafleetError(
                 "SINGLE_PROJECT",
                 "This operation requires exactly one project.",
                 2,
@@ -113,11 +113,11 @@ export class CommandContext {
         const options = this.globals(command);
         if (options.recursive || options.filter?.length)
             return (await this.one(command)).dir;
-        const file = await nearestFile(this.cwd(command), "craflet.yaml");
+        const file = await nearestFile(this.cwd(command), "crafleet.yaml");
         if (!file)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "NO_PROJECT",
-                "No craflet.yaml was found.",
+                "No crafleet.yaml was found.",
                 2,
             );
         return path.dirname(file);
@@ -177,7 +177,7 @@ export class CommandContext {
         const options = this.globals(command);
         if (options.yes) return;
         if (options.json || !process.stdin.isTTY)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "CONFIRMATION_REQUIRED",
                 `${message} Supply --yes to confirm this explicitly requested operation.`,
                 3,
@@ -185,7 +185,7 @@ export class CommandContext {
         const answer = await confirm({ message, output: process.stderr });
         if (isCancel(answer) || !answer) {
             this.abort.abort();
-            throw new CrafletError("CANCELLED", "Operation cancelled.", 130);
+            throw new CrafleetError("CANCELLED", "Operation cancelled.", 130);
         }
     }
     async input(
@@ -196,14 +196,14 @@ export class CommandContext {
         if (value) return value;
         const options = this.globals(command);
         if (options.json || !process.stdin.isTTY || options.yes)
-            throw new CrafletError("INPUT_REQUIRED", message, 2);
+            throw new CrafleetError("INPUT_REQUIRED", message, 2);
         const answer = await text({ message, output: process.stderr });
         if (isCancel(answer)) {
             this.abort.abort();
-            throw new CrafletError("CANCELLED", "Operation cancelled.", 130);
+            throw new CrafleetError("CANCELLED", "Operation cancelled.", 130);
         }
         if (!answer.trim())
-            throw new CrafletError("INPUT_REQUIRED", message, 2);
+            throw new CrafleetError("INPUT_REQUIRED", message, 2);
         return answer;
     }
     action(

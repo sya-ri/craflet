@@ -1,4 +1,4 @@
-package dev.craflet.fixtures;
+package dev.crafleet.fixtures;
 
 import org.bukkit.plugin.java.JavaPlugin;
 

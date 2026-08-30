@@ -1,7 +1,0 @@
-interface:
-  display_name: "Craflet"
-  short_description: "Manage Paper and Velocity servers safely"
-  default_prompt: "Use $craflet to inspect and safely manage this Craflet server project."
-
-policy:
-  allow_implicit_invocation: true

@@ -1,4 +1,4 @@
-export const crafletVersion: string;
-export const crafletVersionDefine: Readonly<
-    Record<"__CRAFLET_VERSION__", string>
+export const crafleetVersion: string;
+export const crafleetVersionDefine: Readonly<
+    Record<"__CRAFLEET_VERSION__", string>
 >;

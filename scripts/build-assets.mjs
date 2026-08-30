@@ -5,6 +5,7 @@ import {
     readdir,
     readFile,
     realpath,
+    rm,
     writeFile,
 } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -26,10 +27,11 @@ execFileSync(
 );
 await copyFile(path.join(root, "LICENSE"), path.join(cli, "LICENSE"));
 await copyFile(path.join(root, "README.md"), path.join(cli, "README.md"));
+await rm(path.join(cli, "docs"), { recursive: true, force: true });
 await mkdir(path.join(cli, "docs/assets"), { recursive: true });
 await copyFile(
-    path.join(root, "docs/assets/craflet-demo.gif"),
-    path.join(cli, "docs/assets/craflet-demo.gif"),
+    path.join(root, "docs/assets/crafleet-demo.gif"),
+    path.join(cli, "docs/assets/crafleet-demo.gif"),
 );
 
 const visited = new Set();
@@ -72,7 +74,7 @@ async function collect(directory) {
     const identity = `${manifest.name}@${manifest.version}`;
     if (visited.has(identity)) return;
     visited.add(identity);
-    if (!manifest.private && manifest.name !== "craflet") {
+    if (!manifest.private && manifest.name !== "crafleet") {
         const names = (await readdir(directory)).filter((name) =>
             /^(licen[sc]e|copying|notice)(?:[._-]|$)/i.test(name),
         );
@@ -106,7 +108,9 @@ await writeFile(
 
 for (const name of ["cli.mjs", "runner.mjs"]) {
     const code = await readFile(path.join(cli, "dist", name), "utf8");
-    if (/\b(?:from|import)\s*[('" ]+(?:@craflet\/|\.\.\/.*\/src\/)/u.test(code))
+    if (
+        /\b(?:from|import)\s*[('" ]+(?:@crafleet\/|\.\.\/.*\/src\/)/u.test(code)
+    )
         throw new Error(`Unbundled private reference in ${name}`);
 }
 console.log("Generated schemas and complete third-party notices.");

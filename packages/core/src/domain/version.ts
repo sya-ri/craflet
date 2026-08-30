@@ -1,3 +1,3 @@
-declare const __CRAFLET_VERSION__: string;
+declare const __CRAFLEET_VERSION__: string;
 
-export const CRAFLET_VERSION = __CRAFLET_VERSION__;
+export const CRAFLEET_VERSION = __CRAFLEET_VERSION__;

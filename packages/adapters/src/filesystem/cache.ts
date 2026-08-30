@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readdir, rm, rmdir } from "node:fs/promises";
 import path from "node:path";
-import { CrafletError, type LockedArtifact } from "@craflet/core";
+import { CrafleetError, type LockedArtifact } from "@crafleet/core";
 import { type } from "arktype";
 import {
     assertNoSymlinks,
@@ -23,7 +23,7 @@ async function registry(home: string): Promise<string[]> {
     const file = await assertNoSymlinks(home, "cache/projects.json");
     if (!(await exists(file))) return [];
     const invalid = () =>
-        new CrafletError(
+        new CrafleetError(
             "CACHE_REGISTRY",
             "The cache project registry is invalid; pruning is disabled.",
             3,
@@ -150,14 +150,14 @@ export async function pruneArtifactCache(
                 const project = await loadProject(dir, home);
                 const operationLock = path.join(
                     project.lockRoot,
-                    ".craflet/operation.lock",
+                    ".crafleet/operation.lock",
                 );
                 if (
                     (!ownedLocks.has(key(operationLock)) &&
                         (await exists(operationLock))) ||
                     (await hasRecoveryJournal(project))
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "CACHE_BUSY",
                         "A registered project has an operation in progress or awaiting recovery.",
                         4,
@@ -176,7 +176,7 @@ export async function pruneArtifactCache(
                         ]);
             } catch (error) {
                 if (
-                    error instanceof CrafletError &&
+                    error instanceof CrafleetError &&
                     error.code === "CACHE_BUSY"
                 )
                     throw error;
@@ -208,7 +208,7 @@ export async function pruneArtifactCache(
                 );
                 const children = await readdir(directory);
                 if (children.some((child) => child !== "artifact.jar"))
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "CACHE_UNEXPECTED",
                         "Unexpected files in a cache object; it was not removed.",
                         3,
@@ -220,7 +220,7 @@ export async function pruneArtifactCache(
                     info.size !== entry.bytes ||
                     info.mtime.toISOString() !== entry.modifiedAt
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "CACHE_CHANGED",
                         "A cache object changed during prune planning; nothing was removed.",
                         3,
@@ -235,7 +235,7 @@ export async function pruneArtifactCache(
                     info.size !== deletion.entry.bytes ||
                     info.mtime.toISOString() !== deletion.entry.modifiedAt
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "CACHE_CHANGED",
                         "A cache object changed during pruning; remaining objects were retained.",
                         3,
@@ -260,7 +260,7 @@ export async function pruneArtifactCache(
                 const project = await loadProject(dir, home);
                 const lock = path.join(
                     project.lockRoot,
-                    ".craflet/operation.lock",
+                    ".crafleet/operation.lock",
                 );
                 locks.set(key(lock), lock);
             } catch {
@@ -280,8 +280,8 @@ export async function pruneArtifactCache(
                     return locked(index + 1);
                 });
             } catch (error) {
-                if (error instanceof CrafletError && error.code === "BUSY")
-                    throw new CrafletError(
+                if (error instanceof CrafleetError && error.code === "BUSY")
+                    throw new CrafleetError(
                         "CACHE_BUSY",
                         "A registered workspace is busy; no cache objects were removed.",
                         4,

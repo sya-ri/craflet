@@ -1,8 +1,8 @@
 import {
     type ArtifactContext,
-    CrafletError,
+    CrafleetError,
     type SourceSpec,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { type } from "arktype";
 import {
     type DownloadSpec,
@@ -47,7 +47,7 @@ export async function resolveGithub(
     );
     const asset = assets[0];
     if (!asset || assets.length !== 1 || !/\.jar$/iu.test(source.asset))
-        throw new CrafletError(
+        throw new CrafleetError(
             "AMBIGUOUS_ARTIFACT",
             "The GitHub release must contain exactly one uploaded JAR with the requested asset name.",
             3,
@@ -55,7 +55,7 @@ export async function resolveGithub(
     const hashes: DownloadSpec["hashes"] = {};
     if (asset.digest) {
         if (!/^sha256:[a-f\d]{64}$/iu.test(asset.digest))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "PROVIDER_METADATA_INVALID",
                 "The GitHub asset checksum format is unsupported.",
                 3,

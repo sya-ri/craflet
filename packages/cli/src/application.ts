@@ -1,4 +1,4 @@
-import { CRAFLET_VERSION, CrafletError } from "@craflet/core";
+import { CRAFLEET_VERSION, CrafleetError } from "@crafleet/core";
 import { Command, CommanderError } from "commander";
 import { CommandContext } from "./commands/context.js";
 import { registerCommands } from "./commands/register.js";
@@ -34,11 +34,11 @@ export function createCli(
 ): { program: Command; context: CommandContext } {
     const program = new Command();
     program
-        .name("craflet")
+        .name("crafleet")
         .description(
             "Manage reproducible Minecraft servers, safe updates and cold backups.",
         )
-        .version(CRAFLET_VERSION);
+        .version(CRAFLEET_VERSION);
     program.exitOverride().configureOutput({
         writeOut: (text) =>
             process.stdout.write(
@@ -72,11 +72,11 @@ export async function runCli(args: string[], entryUrl: string): Promise<void> {
         if (!(error instanceof CommanderError && error.exitCode === 0))
             printError(
                 error instanceof CommanderError
-                    ? new CrafletError(
+                    ? new CrafleetError(
                           "CLI_USAGE",
                           "Invalid or missing command arguments.",
                           2,
-                          "Use craflet <command> --help to see accepted arguments. Input values are omitted.",
+                          "Use crafleet <command> --help to see accepted arguments. Input values are omitted.",
                       )
                     : error,
                 json,

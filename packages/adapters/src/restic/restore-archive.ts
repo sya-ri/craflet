@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, open, readdir } from "node:fs/promises";
 import path from "node:path";
-import { CrafletError } from "@craflet/core";
+import { CrafleetError } from "@crafleet/core";
 import { openPromise } from "yauzl";
 import { assertNoSymlinks, containedPath } from "../filesystem/io.js";
 import {
@@ -29,7 +29,7 @@ export async function extractBackupArchive(
         strictFileNames: true,
         validateEntrySizes: true,
     }).catch(() => {
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_RESTORE_ARCHIVE",
             "The snapshot archive is not a readable ZIP file.",
             3,
@@ -37,7 +37,7 @@ export async function extractBackupArchive(
     });
     try {
         if (zip.entryCount > files.size + directories.size)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_RESTORE_ARCHIVE",
                 "The archive has more entries than its declared payload.",
                 3,
@@ -58,7 +58,7 @@ export async function extractBackupArchive(
                     unixType !== (directory ? 0x4000 : 0x8000)) ||
                 (!directory && (entry.externalFileAttributes & 0x10) !== 0)
             ) {
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_RESTORE_ARCHIVE",
                     "The archive contains duplicate, encrypted, linked or unsupported entries.",
                     3,
@@ -67,7 +67,7 @@ export async function extractBackupArchive(
             seen.add(key);
             if (directory) {
                 if (!directories.has(relative) || entry.uncompressedSize !== 0)
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "BACKUP_RESTORE_ARCHIVE",
                         "The archive contains an undeclared directory.",
                         3,
@@ -76,7 +76,7 @@ export async function extractBackupArchive(
             }
             const expected = files.get(relative);
             if (!expected || entry.uncompressedSize !== expected.size)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_RESTORE_ARCHIVE",
                     "The archive contains an undeclared file or an unexpected file size.",
                     3,
@@ -92,7 +92,7 @@ export async function extractBackupArchive(
                 const stream = await zip.openReadStreamPromise(entry);
                 const onAbort = () =>
                     stream.destroy(
-                        new CrafletError(
+                        new CrafleetError(
                             "BACKUP_ABORTED",
                             "Restore was interrupted.",
                             130,
@@ -106,7 +106,7 @@ export async function extractBackupArchive(
                         signal?.throwIfAborted();
                         bytes += chunk.length;
                         if (bytes > expected.size)
-                            throw new CrafletError(
+                            throw new CrafleetError(
                                 "BACKUP_RESTORE_ARCHIVE",
                                 "An archive file exceeds its declared size.",
                                 3,
@@ -121,7 +121,7 @@ export async function extractBackupArchive(
                                 null,
                             );
                             if (written.bytesWritten === 0)
-                                throw new CrafletError(
+                                throw new CrafleetError(
                                     "BACKUP_RESTORE_ARCHIVE",
                                     "Could not write restored data.",
                                     3,
@@ -137,7 +137,7 @@ export async function extractBackupArchive(
                     bytes !== expected.size ||
                     hash.digest("hex") !== expected.sha256
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "BACKUP_RESTORE_VERIFY",
                         "Restored data does not match its declared size and SHA256.",
                         3,
@@ -149,20 +149,20 @@ export async function extractBackupArchive(
             }
         }
         if (extracted.size !== files.size)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_RESTORE_ARCHIVE",
                 "The archive is missing files declared by its snapshot metadata.",
                 3,
             );
     } catch (error) {
-        if (error instanceof CrafletError) throw error;
+        if (error instanceof CrafleetError) throw error;
         if (signal?.aborted)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_ABORTED",
                 "Restore was interrupted.",
                 130,
             );
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_RESTORE_ARCHIVE",
             "Could not safely extract the snapshot archive; partial data was retained for inspection.",
             3,
@@ -192,7 +192,7 @@ export async function verifyBackupRestoreLayout(
             else if (entry.isFile() && allowedFiles.has(relative))
                 seen.add(relative);
             else
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_RESTORE_VERIFY",
                     "The restore destination contains an undeclared directory, link, special file or payload.",
                     3,
@@ -201,7 +201,7 @@ export async function verifyBackupRestoreLayout(
     }
     await visit(target, "");
     if (seen.size !== allowedFiles.size)
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_RESTORE_VERIFY",
             "The restored layout is missing declared files.",
             3,

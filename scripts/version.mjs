@@ -11,7 +11,7 @@ if (typeof manifest.version !== "string" || manifest.version.length === 0) {
     throw new TypeError("packages/cli/package.json must declare a version.");
 }
 
-export const crafletVersion = manifest.version;
-export const crafletVersionDefine = {
-    __CRAFLET_VERSION__: JSON.stringify(crafletVersion),
+export const crafleetVersion = manifest.version;
+export const crafleetVersionDefine = {
+    __CRAFLEET_VERSION__: JSON.stringify(crafleetVersion),
 };

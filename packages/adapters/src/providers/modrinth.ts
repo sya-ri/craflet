@@ -1,8 +1,8 @@
 import {
     type ArtifactContext,
-    CrafletError,
+    CrafleetError,
     type SourceSpec,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { type } from "arktype";
 import {
     type DownloadSpec,
@@ -87,13 +87,13 @@ export async function resolveModrinth(
               ? jars[0]
               : undefined;
     if (!selected)
-        throw new CrafletError(
+        throw new CrafleetError(
             "AMBIGUOUS_ARTIFACT",
             "The Modrinth release does not identify a unique primary JAR.",
             3,
         );
     if (!selected.hashes.sha512 && !selected.hashes.sha1)
-        throw new CrafletError(
+        throw new CrafleetError(
             "PROVIDER_METADATA_INVALID",
             "The Modrinth file has no published checksum.",
             3,

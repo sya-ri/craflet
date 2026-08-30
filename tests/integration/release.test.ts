@@ -25,7 +25,7 @@ import {
 } from "../../scripts/release.mjs";
 
 const execute = promisify(execFile);
-const temporaryPrefix = "craflet-release-";
+const temporaryPrefix = "crafleet-release-";
 const roots: string[] = [];
 const portablePreflight: ReleasePreflight = async () => {};
 
@@ -59,7 +59,7 @@ async function releaseFixture(version = "1.2.3"): Promise<ReleaseFixture> {
     );
     roots.push(root);
     await git(root, ["init", "--quiet"]);
-    await git(root, ["config", "user.name", "Craflet Release Test"]);
+    await git(root, ["config", "user.name", "Crafleet Release Test"]);
     await git(root, ["config", "user.email", "release-test@example.invalid"]);
     await git(root, ["config", "commit.gpgSign", "false"]);
     await git(root, ["config", "core.autocrlf", "false"]);
@@ -68,12 +68,12 @@ async function releaseFixture(version = "1.2.3"): Promise<ReleaseFixture> {
     await mkdir(path.dirname(manifest), { recursive: true });
     await writeFile(
         manifest,
-        `${JSON.stringify({ name: "craflet", version }, null, 4)}\n`,
+        `${JSON.stringify({ name: "crafleet", version }, null, 4)}\n`,
     );
     await writeFile(path.join(root, ".gitignore"), "artifacts/\n");
     await commit(root, "Create release fixture");
 
-    const tarball = path.join(root, `artifacts/craflet-${version}.tgz`);
+    const tarball = path.join(root, `artifacts/crafleet-${version}.tgz`);
     await mkdir(path.dirname(tarball), { recursive: true });
     await writeFile(tarball, "verified package bytes\n");
     return { root, manifest, tarball };
@@ -89,7 +89,7 @@ async function artifactNames(root: string): Promise<string[]> {
 
 function stubValidCi(receipt: ReleaseReceipt): void {
     vi.stubEnv("GITHUB_ACTIONS", "true");
-    vi.stubEnv("GITHUB_REPOSITORY", "sya-ri/craflet");
+    vi.stubEnv("GITHUB_REPOSITORY", "sya-ri/crafleet");
     vi.stubEnv("GITHUB_EVENT_NAME", "push");
     vi.stubEnv("GITHUB_REF", `refs/tags/v${receipt.version}`);
     vi.stubEnv("GITHUB_REF_TYPE", "tag");
@@ -160,7 +160,7 @@ describe("release verification", () => {
             "valid Git commit signature",
         );
         expect(await artifactNames(fixture.root)).toEqual([
-            "craflet-1.2.3.tgz",
+            "crafleet-1.2.3.tgz",
         ]);
     });
 
@@ -246,7 +246,7 @@ describe("release verification", () => {
         });
         expect(request?.tarball).not.toBe(fixture.tarball);
         expect(await artifactNames(fixture.root)).toEqual([
-            "craflet-1.2.3.tgz",
+            "crafleet-1.2.3.tgz",
             "release-receipt.json",
         ]);
         expect(prepared.receipt.sha256).toBe(
@@ -264,7 +264,7 @@ describe("release verification", () => {
         expect(publish.mock.calls[0]?.[0]?.provenance).toBe(true);
 
         const invalidContexts = [
-            ["GITHUB_REPOSITORY", "someone/craflet"],
+            ["GITHUB_REPOSITORY", "someone/crafleet"],
             ["GITHUB_EVENT_NAME", "workflow_dispatch"],
             ["GITHUB_REF", "refs/tags/v9.9.9"],
             ["GITHUB_REF_TYPE", "branch"],
@@ -284,7 +284,7 @@ describe("release verification", () => {
             expect(rejectedPublisher).not.toHaveBeenCalled();
         }
         expect(await artifactNames(fixture.root)).toEqual([
-            "craflet-1.2.3.tgz",
+            "crafleet-1.2.3.tgz",
             "release-receipt.json",
         ]);
     });
@@ -317,7 +317,7 @@ describe("release verification", () => {
             await first;
         }
         expect(await artifactNames(fixture.root)).toEqual([
-            "craflet-1.2.3.tgz",
+            "crafleet-1.2.3.tgz",
             "release-receipt.json",
         ]);
     });
@@ -335,12 +335,12 @@ describe("release verification", () => {
             }),
         ).rejects.toMatchObject({
             message: expect.stringContaining(
-                "npm may have accepted craflet@1.2.3",
+                "npm may have accepted crafleet@1.2.3",
             ),
             errors: [expect.objectContaining({ message: "publisher failed" })],
         });
         expect(await artifactNames(fixture.root)).toEqual([
-            "craflet-1.2.3.tgz",
+            "crafleet-1.2.3.tgz",
             "release-receipt.json",
         ]);
     });
@@ -362,10 +362,10 @@ describe("release verification", () => {
                 },
             }),
         ).rejects.toThrow(
-            "npm may have accepted craflet@1.2.3; query the registry before retrying",
+            "npm may have accepted crafleet@1.2.3; query the registry before retrying",
         );
         expect(await artifactNames(fixture.root)).toEqual([
-            "craflet-1.2.3.tgz",
+            "crafleet-1.2.3.tgz",
             "release-receipt.json",
         ]);
     });

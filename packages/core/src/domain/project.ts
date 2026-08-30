@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import { CrafletError } from "./errors.js";
+import { CrafleetError } from "./errors.js";
 
 const Nonempty = type("string > 0");
 const ProjectName = type(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/);
@@ -143,9 +143,9 @@ function validateProjectLockMappings(project: ProjectLock): ProjectLock {
         Array.isArray(project.plugins) ||
         Array.isArray(project.requests.plugins)
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "INVALID_INPUT",
-            "craflet-lock.yaml: plugin resolutions and requests must be objects, not arrays.",
+            "crafleet-lock.yaml: plugin resolutions and requests must be objects, not arrays.",
             2,
         );
     return project;
@@ -163,12 +163,12 @@ export function validateProject(input: unknown): ProjectManifest {
             name.length > 0 &&
             ProjectName(name) instanceof type.errors
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "PROJECT_NAME",
                 "Project name must contain only letters, digits, dot, underscore or dash.",
                 2,
             );
-        throw validationError("craflet.yaml", result);
+        throw validationError("crafleet.yaml", result);
     }
     // ArkType index signatures include arrays, whereas JSON Schema's object
     // type excludes them. Keep persisted/user-facing maps object-shaped.
@@ -180,9 +180,9 @@ export function validateProject(input: unknown): ProjectManifest {
             result.backup?.retention,
         ].some(Array.isArray)
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "INVALID_INPUT",
-            "craflet.yaml: plugin, secret, Java and retention mappings must be objects, not arrays.",
+            "crafleet.yaml: plugin, secret, Java and retention mappings must be objects, not arrays.",
             2,
         );
     return result;
@@ -191,18 +191,18 @@ export function validateProject(input: unknown): ProjectManifest {
 export function validateProjectLock(input: unknown): ProjectLock {
     const result = ProjectLockSchema(input);
     if (result instanceof type.errors)
-        throw validationError("craflet-lock.yaml", result);
+        throw validationError("crafleet-lock.yaml", result);
     return validateProjectLockMappings(result);
 }
 
 export function validateLock(input: unknown): LockFile {
     const result = LockSchema(input);
     if (result instanceof type.errors)
-        throw validationError("craflet-lock.yaml", result);
+        throw validationError("crafleet-lock.yaml", result);
     if (Array.isArray(result.projects))
-        throw new CrafletError(
+        throw new CrafleetError(
             "INVALID_INPUT",
-            "craflet-lock.yaml: projects must be an object, not an array.",
+            "crafleet-lock.yaml: projects must be an object, not an array.",
             2,
         );
     const projects: Record<string, ProjectLock> = Object.create(null);
@@ -214,14 +214,14 @@ export function validateLock(input: unknown): LockFile {
 export function validationError(
     file: string,
     errors: InstanceType<typeof type.errors>,
-): CrafletError {
+): CrafleetError {
     // Do not serialize ArkErrors: they contain the original input, including secrets.
     const fields = [
         ...new Set(
             errors.map((error) => error.path.map(String).join(".") || "(root)"),
         ),
     ];
-    return new CrafletError(
+    return new CrafleetError(
         "INVALID_INPUT",
         `${file}: invalid or missing fields: ${fields.join(", ")}`,
         2,

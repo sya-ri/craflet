@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import {
     type ConfigBundle,
-    CrafletError,
+    CrafleetError,
     type LockedArtifact,
     type ProjectLock,
     type ProjectManifest,
@@ -13,7 +13,7 @@ import {
     validatePluginSet,
     validateProject,
     validateProjectLock,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { type } from "arktype";
 import { assertNoSymlinks, exists, writeJson } from "./io.js";
 
@@ -47,7 +47,7 @@ export function installationJars(
         const jarName = portablePluginJarName(name);
         parsePluginSource(artifact.source);
         if (artifact.identity?.id !== name)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "JAR_PATH",
                 "Installation contains an inconsistent plugin filename and identity.",
                 4,
@@ -76,7 +76,7 @@ const StateSchema = type({
 export function validateInstallation(input: unknown): Installation {
     const result = InstallationSchema(input);
     if (result instanceof type.errors)
-        throw new CrafletError(
+        throw new CrafleetError(
             "STATE_INVALID",
             "Invalid installation state; recover before starting.",
             4,
@@ -87,7 +87,7 @@ export function validateInstallation(input: unknown): Installation {
         manifest = validateProject(result.manifest);
         lock = validateProjectLock(result.lock);
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "STATE_INVALID",
             "Invalid installation declarations or resolutions; recover before starting.",
             4,
@@ -104,11 +104,11 @@ export function validateInstallation(input: unknown): Installation {
 }
 
 export async function readState(projectDir: string): Promise<ProjectState> {
-    const file = path.join(projectDir, ".craflet/state.json");
-    await assertNoSymlinks(projectDir, ".craflet/state.json");
+    const file = path.join(projectDir, ".crafleet/state.json");
+    await assertNoSymlinks(projectDir, ".crafleet/state.json");
     if (!(await exists(file))) return { schemaVersion: 1 };
     if ((await stat(file)).size > 32 * 1024 * 1024)
-        throw new CrafletError(
+        throw new CrafleetError(
             "STATE_SIZE",
             "State exceeds its size limit.",
             4,
@@ -122,11 +122,15 @@ export function parseStateText(text: string | null): ProjectState {
     try {
         data = JSON.parse(text);
     } catch {
-        throw new CrafletError("STATE_INVALID", "Unreadable project state.", 4);
+        throw new CrafleetError(
+            "STATE_INVALID",
+            "Unreadable project state.",
+            4,
+        );
     }
     const value = StateSchema(data);
     if (value instanceof type.errors)
-        throw new CrafletError("STATE_INVALID", "Invalid project state.", 4);
+        throw new CrafleetError("STATE_INVALID", "Invalid project state.", 4);
     return {
         schemaVersion: 1,
         ...(value.active ? { active: validateInstallation(value.active) } : {}),
@@ -140,6 +144,6 @@ export async function saveState(
     projectDir: string,
     state: ProjectState,
 ): Promise<void> {
-    await assertNoSymlinks(projectDir, ".craflet/state.json");
-    await writeJson(path.join(projectDir, ".craflet/state.json"), state);
+    await assertNoSymlinks(projectDir, ".crafleet/state.json");
+    await writeJson(path.join(projectDir, ".crafleet/state.json"), state);
 }

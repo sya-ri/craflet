@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
-import { CrafletError, type Diagnostic, newProject } from "@craflet/core";
+import { CrafleetError, type Diagnostic, newProject } from "@crafleet/core";
 import { NodeServerController } from "../runtime/controller.js";
 import { inspectJava } from "../runtime/java.js";
 import { NodeConfigManager } from "./config.js";
@@ -34,7 +34,7 @@ export async function diagnoseProject(
             id: "project.manifest",
             status: "fail",
             message:
-                error instanceof CrafletError
+                error instanceof CrafleetError
                     ? error.message
                     : "Project declaration could not be read.",
         });
@@ -55,7 +55,7 @@ export async function diagnoseProject(
             status: lock.projects[project.lockKey] ? "pass" : "warn",
             message: lock.projects[project.lockKey]
                 ? "A structurally valid lock entry exists."
-                : "No lock entry yet; run craflet install.",
+                : "No lock entry yet; run crafleet install.",
         });
     } catch {
         diagnostics.push({
@@ -96,7 +96,7 @@ export async function diagnoseProject(
             id: "config.validation",
             status: "fail",
             message:
-                error instanceof CrafletError
+                error instanceof CrafleetError
                     ? error.message
                     : "Configuration could not be inspected safely.",
         });
@@ -152,7 +152,7 @@ export async function diagnoseProject(
         diagnostics.push({
             id: "deployment.recovery",
             status: "fail",
-            message: "An interrupted transaction requires craflet recover.",
+            message: "An interrupted transaction requires crafleet recover.",
         });
     const alias = project.manifest.backup?.repository;
     if (!alias)

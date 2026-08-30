@@ -1,6 +1,6 @@
 import { chmod, mkdir, symlink } from "node:fs/promises";
 import path from "node:path";
-import type { BackupSecretReference } from "@craflet/core";
+import type { BackupSecretReference } from "@crafleet/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
     backupTestDirectory,
@@ -16,20 +16,20 @@ afterEach(async () => {
 
 describe("backup secret references", () => {
     it("resolves exactly one env reference without literal-secret config", async () => {
-        vi.stubEnv("CRAFLET_SECRET_FIXTURE", "test password");
+        vi.stubEnv("CRAFLEET_SECRET_FIXTURE", "test password");
         const resolve = backupSecretResolver(".");
-        expect(await resolve({ env: "CRAFLET_SECRET_FIXTURE" })).toBe(
+        expect(await resolve({ env: "CRAFLEET_SECRET_FIXTURE" })).toBe(
             "test password",
         );
         await expect(resolve({ env: "invalid-name" })).rejects.toMatchObject({
             code: "BACKUP_SECRET",
         });
         await expect(
-            resolve({ env: "CRAFLET_NONEXISTENT_SECRET_TEST_99" }),
+            resolve({ env: "CRAFLEET_NONEXISTENT_SECRET_TEST_99" }),
         ).rejects.toMatchObject({ code: "BACKUP_SECRET" });
         await expect(
             resolve({
-                env: "CRAFLET_SECRET_FIXTURE",
+                env: "CRAFLEET_SECRET_FIXTURE",
                 file: "file",
             } as BackupSecretReference),
         ).rejects.toMatchObject({ code: "BACKUP_SECRET" });

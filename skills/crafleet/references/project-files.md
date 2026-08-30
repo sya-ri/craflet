@@ -1,27 +1,27 @@
 # Project files and declarations
 
-Read this reference before creating or editing a Craflet project, workspace, artifact source, configuration template, secret reference, or backup selection.
+Read this reference before creating or editing a Crafleet project, workspace, artifact source, configuration template, secret reference, or backup selection.
 
 ## Layout and ownership
 
-A standalone server has one `craflet.yaml`. A workspace has `craflet-workspace.yaml` at its root and one `craflet.yaml` per server.
+A standalone server has one `crafleet.yaml`. A workspace has `crafleet-workspace.yaml` at its root and one `crafleet.yaml` per server.
 
-`craflet init` creates or extends `.gitignore` only when the destination is already inside a Git worktree. The generated rules cover `runtime/`, `shared-data/`, `.craflet/`, `imports/`, `.env`, and `.env.*`. It does not initialize Git, commit files, or touch `.gitignore` outside Git.
+`crafleet init` creates or extends `.gitignore` only when the destination is already inside a Git worktree. The generated rules cover `runtime/`, `shared-data/`, `.crafleet/`, `imports/`, `.env`, and `.env.*`. It does not initialize Git, commit files, or touch `.gitignore` outside Git.
 
 | Path | Ownership |
 | --- | --- |
-| `craflet.yaml` | User-reviewed desired server, plugin, Java, secret-reference, and backup settings. |
-| `craflet-lock.yaml` | Craflet-resolved artifact versions, locations, sizes, and SHA-256 hashes. Commit it; do not edit it by hand. |
+| `crafleet.yaml` | User-reviewed desired server, plugin, Java, secret-reference, and backup settings. |
+| `crafleet-lock.yaml` | Crafleet-resolved artifact versions, locations, sizes, and SHA-256 hashes. Commit it; do not edit it by hand. |
 | `config/` | Git-managed base configuration whose relative paths mirror `runtime/`. |
 | `runtime/` | Live server files, worlds, plugin data, databases, and deployed JAR copies. |
-| `.craflet/` | Local active, pending, observations, locks, and recovery journals. Do not commit or edit it manually. |
-| `~/.craflet/` | Default shared home for the content-addressed artifact cache, tools, repository registry, runner, and EULA receipt. Override only with `CRAFLET_HOME`. |
+| `.crafleet/` | Local active, pending, observations, locks, and recovery journals. Do not commit or edit it manually. |
+| `~/.crafleet/` | Default shared home for the content-addressed artifact cache, tools, repository registry, runner, and EULA receipt. Override only with `CRAFLEET_HOME`. |
 
-Relative source, secret-file, database, and backup patterns are resolved from the directory containing the relevant `craflet.yaml`, unless a command requires an absolute path.
+Relative source, secret-file, database, and backup patterns are resolved from the directory containing the relevant `crafleet.yaml`, unless a command requires an absolute path.
 
 ## Minimal declaration
 
-Let `craflet init` create the initial file when possible. A representative declaration is:
+Let `crafleet init` create the initial file when possible. A representative declaration is:
 
 ```yaml
 schemaVersion: 1
@@ -50,7 +50,7 @@ backup:
 
 Project names contain only letters, digits, dot, underscore, and dash. Server type is `paper` or `velocity`. Use the Minecraft version for Paper and the proxy version for Velocity. Routine `server update` does not silently change this declared version.
 
-`java.command` may be an executable on `PATH` or an absolute path. Craflet diagnoses Java but does not install it.
+`java.command` may be an executable on `PATH` or an absolute path. Crafleet diagnoses Java but does not install it.
 
 ## Artifact sources
 
@@ -107,7 +107,7 @@ Plugin map keys are identities read from the JAR, not arbitrary labels:
 - Paper: `name` from `paper-plugin.yml`
 - Velocity: `id` from `velocity-plugin.json`
 
-Use `craflet plugins inspect <jar>` or `craflet plugins add <source>` to discover the identity. Craflet rejects duplicate or incompatible identities, missing required dependencies, and silent identity changes. It inspects descriptors without executing JAR code.
+Use `crafleet plugins inspect <jar>` or `crafleet plugins add <source>` to discover the identity. Crafleet rejects duplicate or incompatible identities, missing required dependencies, and silent identity changes. It inspects descriptors without executing JAR code.
 
 ## Configuration and secrets
 
@@ -119,7 +119,7 @@ config/config/paper-global.yml       -> runtime/config/paper-global.yml
 config/plugins/MyPlugin/config.yml   -> runtime/plugins/MyPlugin/config.yml
 ```
 
-Do not add arbitrary plugin YAML automatically. Use `config list --candidates`, then explicitly capture or track intended files. Craflet preserves source text where possible and does not run Biome or another source formatter over server configuration.
+Do not add arbitrary plugin YAML automatically. Use `config list --candidates`, then explicitly capture or track intended files. Crafleet preserves source text where possible and does not run Biome or another source formatter over server configuration.
 
 Declare a secret reference before capturing plaintext that must not enter Git:
 
@@ -131,7 +131,7 @@ secrets:
         file: /private/paper-management-secret
 ```
 
-Use `${secret:NAME}` only in tracked base files. Craflet resolves it at deployment, restores the reference during capture, and omits values from diffs and errors. It does not load `.env` files. Runtime files and restored data may still contain real secrets.
+Use `${secret:NAME}` only in tracked base files. Crafleet resolves it at deployment, restores the reference during capture, and omits values from diffs and errors. It does not load `.env` files. Runtime files and restored data may still contain real secrets.
 
 ## Backup selection
 
@@ -153,7 +153,7 @@ backup:
           path: runtime/plugins/Permissions/data.db
 ```
 
-MySQL and MariaDB require `host`, optional `port`, `database`, `user`, a secret `password` reference, and optionally dump/restore command paths and `sslCa`. Only InnoDB tables are supported. Craflet cannot stop writers outside its managed server group.
+MySQL and MariaDB require `host`, optional `port`, `database`, `user`, a secret `password` reference, and optionally dump/restore command paths and `sslCa`. Only InnoDB tables are supported. Crafleet cannot stop writers outside its managed server group.
 
 Retention supports `keepLast`, `keepDaily`, `keepWeekly`, and `keepMonthly`, each at least one. `backup prune` previews by default.
 

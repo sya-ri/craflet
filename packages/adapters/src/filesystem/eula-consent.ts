@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { lstat, readdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
-import { CrafletError } from "@craflet/core";
+import { CrafleetError } from "@crafleet/core";
 import { type } from "arktype";
 import { processDefinitelyExited } from "../runtime/process.js";
 import {
@@ -47,29 +47,29 @@ interface EulaLock {
 }
 
 function invalidConsent(): never {
-    throw new CrafletError(
+    throw new CrafleetError(
         "EULA_CONSENT_INVALID",
         "The saved host EULA consent record is invalid or unsafe; its contents are omitted.",
         3,
-        "Inspect or remove CRAFLET_HOME/eula.json, then confirm the EULA again.",
+        "Inspect or remove CRAFLEET_HOME/eula.json, then confirm the EULA again.",
     );
 }
 
 function invalidLock(): never {
-    throw new CrafletError(
+    throw new CrafleetError(
         "EULA_LOCK_INVALID",
         "The EULA consent lock is invalid or cannot be recovered safely.",
         4,
-        "Inspect CRAFLET_HOME/eula.lock locally. Remove it only after confirming that its Craflet process has exited.",
+        "Inspect CRAFLEET_HOME/eula.lock locally. Remove it only after confirming that its Crafleet process has exited.",
     );
 }
 
 function busyLock(): never {
-    throw new CrafletError(
+    throw new CrafleetError(
         "BUSY",
         "Another EULA confirmation is active, or its recorded process is still running.",
         4,
-        "Wait for that confirmation to finish. Inspect CRAFLET_HOME/eula.lock before any manual removal.",
+        "Wait for that confirmation to finish. Inspect CRAFLEET_HOME/eula.lock before any manual removal.",
     );
 }
 
@@ -104,7 +104,7 @@ async function hasSavedConsent(
         )
             invalidConsent();
     } catch (error) {
-        if (error instanceof CrafletError) throw error;
+        if (error instanceof CrafleetError) throw error;
         invalidConsent();
     }
     return true;
@@ -144,7 +144,7 @@ async function recoverStaleLock(
         pid = record.pid;
     } catch (error) {
         signal?.throwIfAborted();
-        if (error instanceof CrafletError) throw error;
+        if (error instanceof CrafleetError) throw error;
         invalidLock();
     }
     if (!processDefinitelyExited(pid)) busyLock();
@@ -243,7 +243,7 @@ async function withEulaLock<T>(
     }
 }
 
-/** Records explicit consent once for the current Craflet home and OS user. */
+/** Records explicit consent once for the current Crafleet home and OS user. */
 export async function ensureUserEulaConsent(
     home: string,
     requestConsent: RequestEulaConsent,

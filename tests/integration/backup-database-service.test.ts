@@ -23,21 +23,21 @@ import {
 
 afterEach(cleanupBackupTestDirectories);
 
-describe.runIf(Boolean(process.env.CRAFLET_TEST_DATABASE_KIND))(
+describe.runIf(Boolean(process.env.CRAFLEET_TEST_DATABASE_KIND))(
     "disposable SQL database service integration",
     () => {
         it("round-trips actual SQL data with matching MySQL or MariaDB clients", async () => {
-            const kind = process.env.CRAFLET_TEST_DATABASE_KIND;
-            const database = process.env.CRAFLET_TEST_DATABASE_NAME;
-            const password = process.env.CRAFLET_TEST_DATABASE_PASSWORD;
+            const kind = process.env.CRAFLEET_TEST_DATABASE_KIND;
+            const database = process.env.CRAFLEET_TEST_DATABASE_NAME;
+            const password = process.env.CRAFLEET_TEST_DATABASE_PASSWORD;
             if (
                 (kind !== "mysql" && kind !== "mariadb") ||
                 !database ||
-                !/^craflet_test_[a-z0-9_]+$/u.test(database) ||
+                !/^crafleet_test_[a-z0-9_]+$/u.test(database) ||
                 !password
             ) {
                 throw new Error(
-                    "SQL integration requires an explicit mysql/mariadb kind, a disposable craflet_test_* database name, and a test password.",
+                    "SQL integration requires an explicit mysql/mariadb kind, a disposable crafleet_test_* database name, and a test password.",
                 );
             }
             const root = await backupTestDirectory();
@@ -45,20 +45,20 @@ describe.runIf(Boolean(process.env.CRAFLET_TEST_DATABASE_KIND))(
                 id: "sql-fixture",
                 kind,
                 host: "127.0.0.1",
-                port: Number(process.env.CRAFLET_TEST_DATABASE_PORT ?? "3306"),
+                port: Number(process.env.CRAFLEET_TEST_DATABASE_PORT ?? "3306"),
                 database,
-                user: process.env.CRAFLET_TEST_DATABASE_USER ?? "root",
-                password: { env: "CRAFLET_TEST_DATABASE_PASSWORD" },
-                ...(process.env.CRAFLET_TEST_DATABASE_DUMP_COMMAND
+                user: process.env.CRAFLEET_TEST_DATABASE_USER ?? "root",
+                password: { env: "CRAFLEET_TEST_DATABASE_PASSWORD" },
+                ...(process.env.CRAFLEET_TEST_DATABASE_DUMP_COMMAND
                     ? {
                           command:
-                              process.env.CRAFLET_TEST_DATABASE_DUMP_COMMAND,
+                              process.env.CRAFLEET_TEST_DATABASE_DUMP_COMMAND,
                       }
                     : {}),
-                ...(process.env.CRAFLET_TEST_DATABASE_CLIENT_COMMAND
+                ...(process.env.CRAFLEET_TEST_DATABASE_CLIENT_COMMAND
                     ? {
                           restoreCommand:
-                              process.env.CRAFLET_TEST_DATABASE_CLIENT_COMMAND,
+                              process.env.CRAFLEET_TEST_DATABASE_CLIENT_COMMAND,
                       }
                     : {}),
             };
@@ -94,7 +94,7 @@ describe.runIf(Boolean(process.env.CRAFLET_TEST_DATABASE_KIND))(
                         databaseClientOptions(config, password as string),
                     );
                     const env = sanitizedBackupEnvironment();
-                    delete env.CRAFLET_TEST_DATABASE_PASSWORD;
+                    delete env.CRAFLEET_TEST_DATABASE_PASSWORD;
                     const result = await runClient({
                         executable:
                             config.restoreCommand ??
@@ -121,12 +121,12 @@ describe.runIf(Boolean(process.env.CRAFLET_TEST_DATABASE_KIND))(
                 }
             }
             await query(
-                "CREATE TABLE IF NOT EXISTS craflet_backup_probe (id INTEGER PRIMARY KEY, payload VARBINARY(255), note TEXT) ENGINE=InnoDB; REPLACE INTO craflet_backup_probe VALUES (1, UNHEX('006265666f72650a6c696e65ff'), '日本語 fixture');",
+                "CREATE TABLE IF NOT EXISTS crafleet_backup_probe (id INTEGER PRIMARY KEY, payload VARBINARY(255), note TEXT) ENGINE=InnoDB; REPLACE INTO crafleet_backup_probe VALUES (1, UNHEX('006265666f72650a6c696e65ff'), '日本語 fixture');",
             );
             try {
                 await adapter.preflight([config]);
                 const before = await query(
-                    "SELECT HEX(payload), note FROM craflet_backup_probe WHERE id=1",
+                    "SELECT HEX(payload), note FROM crafleet_backup_probe WHERE id=1",
                 );
                 expect(before).toContain("006265666F72650A6C696E65FF");
                 const artifact = await adapter.dump(
@@ -136,22 +136,22 @@ describe.runIf(Boolean(process.env.CRAFLET_TEST_DATABASE_KIND))(
                 const dump = path.join(root, "dumps", "sql-fixture.sql");
                 expect((await readFile(dump)).length).toBe(artifact.bytes);
                 await query(
-                    "UPDATE craflet_backup_probe SET payload=UNHEX('6166746572'), note='after' WHERE id=1",
+                    "UPDATE crafleet_backup_probe SET payload=UNHEX('6166746572'), note='after' WHERE id=1",
                 );
                 expect(
                     await query(
-                        "SELECT HEX(payload), note FROM craflet_backup_probe WHERE id=1",
+                        "SELECT HEX(payload), note FROM crafleet_backup_probe WHERE id=1",
                     ),
                 ).not.toBe(before);
                 await adapter.preflightRestore([config]);
                 await adapter.restore(config, dump, { confirm: true });
                 expect(
                     await query(
-                        "SELECT HEX(payload), note FROM craflet_backup_probe WHERE id=1",
+                        "SELECT HEX(payload), note FROM crafleet_backup_probe WHERE id=1",
                     ),
                 ).toBe(before);
             } finally {
-                await query("DROP TABLE IF EXISTS craflet_backup_probe");
+                await query("DROP TABLE IF EXISTS crafleet_backup_probe");
             }
         }, 120000);
     },

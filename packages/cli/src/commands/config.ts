@@ -1,5 +1,8 @@
 import path from "node:path";
-import { discoverConfigCandidates, NodeConfigManager } from "@craflet/adapters";
+import {
+    discoverConfigCandidates,
+    NodeConfigManager,
+} from "@crafleet/adapters";
 import { type Command, Option } from "commander";
 import type { CommandContext } from "./context.js";
 

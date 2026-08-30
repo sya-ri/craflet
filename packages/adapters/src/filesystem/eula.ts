@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { constants, type Stats } from "node:fs";
 import { type FileHandle, lstat, open } from "node:fs/promises";
 import path from "node:path";
-import { assertStopped, CrafletError } from "@craflet/core";
+import { assertStopped, CrafleetError } from "@crafleet/core";
 import { NodeServerController } from "../runtime/controller.js";
 import { NodeConfigManager } from "./config.js";
 import {
@@ -116,7 +116,7 @@ async function matchesOwnedJournal(
 
 function assertPaper(project: ProjectContext): void {
     if (project.manifest.server.type !== "paper")
-        throw new CrafletError(
+        throw new CrafleetError(
             "EULA_NOT_APPLICABLE",
             "Minecraft EULA acceptance is only applicable to Paper projects, not Velocity.",
             2,
@@ -148,7 +148,7 @@ async function guard(
         declared.lockRoot !== project.lockRoot ||
         declared.manifestText !== project.manifestText
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "EULA_CONTEXT_CHANGED",
             "Workspace membership changed. Reload the project and retry EULA acceptance.",
             3,
@@ -156,7 +156,7 @@ async function guard(
     const current = { ...declared, manifest: project.manifest };
     const groupOperationJournal = path.resolve(
         project.lockRoot,
-        ".craflet/group-operation.json",
+        ".crafleet/group-operation.json",
     );
     for (const file of recoveryJournalPaths(project)) {
         signal?.throwIfAborted();
@@ -169,16 +169,19 @@ async function guard(
             (await matchesOwnedJournal(safe, ownedJournal, signal))
         )
             continue;
-        throw new CrafletError(
+        throw new CrafleetError(
             "RECOVERY_REQUIRED",
             "Recover the interrupted operation before changing EULA acceptance.",
             4,
-            "Run craflet recover after confirming the server is stopped.",
+            "Run crafleet recover after confirming the server is stopped.",
         );
     }
-    for (const relative of [".craflet/config-mutex", ".craflet/recovery.lock"])
+    for (const relative of [
+        ".crafleet/config-mutex",
+        ".crafleet/recovery.lock",
+    ])
         if (await exists(await assertNoSymlinks(project.dir, relative)))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BUSY",
                 "A configuration or recovery operation is active; retry after it finishes.",
                 4,
@@ -203,11 +206,11 @@ async function guard(
                 (file) => file.relative.toLowerCase() === "eula.txt",
             ))
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "EULA_MANAGED",
             "EULA consent is managed by a configuration template or pending installation. No declarations or pending files were changed.",
             3,
-            "Review config/eula.txt and explicitly manage consent there, then run craflet install; or untrack/remove that template and rebuild pending before retrying the launch.",
+            "Review config/eula.txt and explicitly manage consent there, then run crafleet install; or untrack/remove that template and rebuild pending before retrying the launch.",
         );
     signal?.throwIfAborted();
     return current;
@@ -241,7 +244,7 @@ export async function ensureRuntimeEulaConsent(
         current.home,
         requestConsent ??
             (async () => {
-                throw new CrafletError(
+                throw new CrafleetError(
                     "EULA_REQUIRED",
                     "Explicit Minecraft EULA consent is required before launching Paper.",
                     3,
@@ -253,7 +256,7 @@ export async function ensureRuntimeEulaConsent(
     await guard(project, signal, !materialize, false, ownedJournal);
     if (!materialize) return false;
     if ((await readEulaText(file, signal)) !== original)
-        throw new CrafletError(
+        throw new CrafleetError(
             "EULA_CHANGED",
             "The EULA file changed while consent was being recorded. Review it and retry the launch.",
             3,

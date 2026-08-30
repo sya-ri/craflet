@@ -1,10 +1,10 @@
 import { isIP } from "node:net";
 import {
     type ArtifactContext,
-    CRAFLET_VERSION,
-    CrafletError,
+    CRAFLEET_VERSION,
+    CrafleetError,
     type SourceSpec,
-} from "@craflet/core";
+} from "@crafleet/core";
 
 export interface DownloadSpec {
     source: SourceSpec;
@@ -27,7 +27,7 @@ export function safeDownloadUrl(value: string): URL {
     try {
         url = new URL(value);
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "UNSAFE_DOWNLOAD_URL",
             "The provider returned an invalid download URL.",
             3,
@@ -60,7 +60,7 @@ export function safeDownloadUrl(value: string): URL {
         privateIpv4 ||
         privateIpv6
     ) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "UNSAFE_DOWNLOAD_URL",
             "Downloads require a public HTTPS URL without credentials or fragments.",
             3,
@@ -76,7 +76,7 @@ export function validated<T>(
     try {
         return schema.assert(value);
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "PROVIDER_METADATA_INVALID",
             "The provider returned an unexpected metadata format.",
             3,
@@ -85,16 +85,16 @@ export function validated<T>(
 }
 
 export function noVersion(): never {
-    throw new CrafletError(
+    throw new CrafleetError(
         "VERSION_NOT_FOUND",
         "No matching release is available for the requested version and platform.",
         3,
-        "Choose an explicit compatible version; Craflet does not silently change Minecraft versions.",
+        "Choose an explicit compatible version; Crafleet does not silently change Minecraft versions.",
     );
 }
 
 export function manualDownload(reason: string): never {
-    throw new CrafletError(
+    throw new CrafleetError(
         "MANUAL_DOWNLOAD_REQUIRED",
         reason,
         3,
@@ -112,7 +112,7 @@ export class ProviderHttp {
         this.fetcher = options.fetch ?? globalThis.fetch;
         this.userAgent =
             options.userAgent ??
-            `craflet/${CRAFLET_VERSION} (https://github.com/sya-ri/craflet)`;
+            `crafleet/${CRAFLEET_VERSION} (https://github.com/sya-ri/crafleet)`;
         this.timeoutMs = options.timeoutMs ?? 120_000;
         this.maxMetadataBytes = options.maxMetadataBytes ?? 8 * 1024 * 1024;
     }
@@ -123,7 +123,7 @@ export class ProviderHttp {
         accept = "application/octet-stream",
     ): Promise<Response> {
         if (context.offline)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "OFFLINE_MISS",
                 "This artifact is not available locally. Offline mode forbids network requests.",
                 3,
@@ -150,7 +150,7 @@ export class ProviderHttp {
                 await response.body?.cancel();
                 const location = response.headers.get("location");
                 if (!location)
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "DOWNLOAD_REDIRECT",
                         "Download redirect has no destination.",
                         3,
@@ -165,13 +165,13 @@ export class ProviderHttp {
                     (response.status === 403 &&
                         response.headers.get("x-ratelimit-remaining") === "0")
                 ) {
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "PROVIDER_RATE_LIMIT",
                         `The provider ${url.hostname} rate-limited this request. Retry later.`,
                         3,
                     );
                 }
-                throw new CrafletError(
+                throw new CrafleetError(
                     "DOWNLOAD_HTTP",
                     `The provider ${url.hostname} returned HTTP ${response.status}.`,
                     3,
@@ -180,7 +180,7 @@ export class ProviderHttp {
             }
             return response;
         }
-        throw new CrafletError(
+        throw new CrafleetError(
             "DOWNLOAD_REDIRECT",
             "The download exceeded the redirect limit.",
             3,
@@ -190,7 +190,7 @@ export class ProviderHttp {
     async json(url: string, context: ArtifactContext): Promise<unknown> {
         const response = await this.open(url, context, "application/json");
         if (!response.body)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "PROVIDER_METADATA_INVALID",
                 "The provider returned no metadata.",
                 3,
@@ -205,7 +205,7 @@ export class ProviderHttp {
                 if (chunk.done) break;
                 size += chunk.value.byteLength;
                 if (size > this.maxMetadataBytes)
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "PROVIDER_METADATA_TOO_LARGE",
                         "The metadata response exceeds the size limit.",
                         3,
@@ -215,7 +215,7 @@ export class ProviderHttp {
             try {
                 return JSON.parse(Buffer.concat(chunks).toString("utf8"));
             } catch {
-                throw new CrafletError(
+                throw new CrafleetError(
                     "PROVIDER_METADATA_INVALID",
                     "The provider did not return valid JSON.",
                     3,

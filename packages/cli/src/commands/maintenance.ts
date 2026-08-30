@@ -2,8 +2,8 @@ import {
     inspectArtifactCache,
     pruneArtifactCache,
     ResticBootstrap,
-} from "@craflet/adapters";
-import { CrafletError } from "@craflet/core";
+} from "@crafleet/adapters";
+import { CrafleetError } from "@crafleet/core";
 import type { Command } from "commander";
 import type { CommandContext } from "./context.js";
 
@@ -63,11 +63,11 @@ export function registerMaintenanceCommands(
         tools
             .command("prepare <tool>")
             .description(
-                "Install the pinned official restic executable into CRAFLET_HOME.",
+                "Install the pinned official restic executable into CRAFLEET_HOME.",
             ),
         async ([tool], command) => {
             if (tool !== "restic")
-                throw new CrafletError(
+                throw new CrafleetError(
                     "TOOL_UNKNOWN",
                     "Only restic is a managed external tool.",
                     2,

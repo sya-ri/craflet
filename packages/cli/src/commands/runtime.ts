@@ -6,8 +6,8 @@ import {
     recoverGroupBackupRestore,
     recoverManifests,
     recoverProcessLocks,
-} from "@craflet/adapters";
-import { CrafletError } from "@craflet/core";
+} from "@crafleet/adapters";
+import { CrafleetError } from "@crafleet/core";
 import type { Command } from "commander";
 import { openInteractiveConsole } from "../presentation/console.js";
 import { formatRuntimeLogChunk } from "../presentation/terminal.js";
@@ -43,7 +43,7 @@ export function registerRuntimeCommands(
                     else {
                         const project = batch.projects[0];
                         if (!project)
-                            throw new CrafletError(
+                            throw new CrafleetError(
                                 "EMPTY_SELECTION",
                                 "No project selected.",
                                 2,
@@ -309,13 +309,13 @@ export function registerRuntimeCommands(
                 !process.stdin.isTTY ||
                 !process.stdout.isTTY
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "CONSOLE_TTY",
                     "console requires a terminal. Use command <text> for scripts.",
                     2,
                 );
             if ((await controller.status()).status !== "running")
-                throw new CrafletError(
+                throw new CrafleetError(
                     "SERVER_NOT_RUNNING",
                     "Start the server before attaching its console.",
                     3,
@@ -389,7 +389,7 @@ export function registerRuntimeCommands(
                                           batch.projects[0]?.manifest.name ??
                                           "Selected project",
                                   },
-                            "Deployment application failed; inspect this recovery unit with craflet doctor and craflet deploy plan.",
+                            "Deployment application failed; inspect this recovery unit with crafleet doctor and crafleet deploy plan.",
                         ),
                     );
                 }
@@ -439,7 +439,7 @@ export function registerRuntimeCommands(
                             recoveryGroup
                                 ? { group: recoveryGroup }
                                 : { project: project.manifest.name },
-                            "Pending installation discard failed; inspect this recovery unit with craflet doctor and craflet deploy plan.",
+                            "Pending installation discard failed; inspect this recovery unit with crafleet doctor and crafleet deploy plan.",
                         ),
                     );
                 }
@@ -528,7 +528,7 @@ export function registerRuntimeCommands(
                                       batch.projects[0]?.manifest.name ??
                                       "Selected project",
                               },
-                        "Recovery failed; inspect this recovery unit with craflet doctor before retrying.",
+                        "Recovery failed; inspect this recovery unit with crafleet doctor before retrying.",
                     );
                     if (batch.group) groupResults.push(failure);
                     else projectResults.push(failure);

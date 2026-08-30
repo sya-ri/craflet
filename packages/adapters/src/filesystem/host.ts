@@ -2,10 +2,10 @@ import { homedir } from "node:os";
 import path from "node:path";
 import {
     type BackupRepository,
-    CrafletError,
+    CrafleetError,
     SecretSchema,
     validateBackupIdentifier,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { type } from "arktype";
 import { NodeBackupService } from "../restic/backup-service.js";
 import {
@@ -37,9 +37,9 @@ function sameRepository(
     );
 }
 
-export function crafletHome(): string {
+export function crafleetHome(): string {
     return path.resolve(
-        process.env.CRAFLET_HOME || path.join(homedir(), ".craflet"),
+        process.env.CRAFLEET_HOME || path.join(homedir(), ".crafleet"),
     );
 }
 export async function readRepositories(
@@ -58,7 +58,7 @@ export async function readRepositories(
             validateBackupIdentifier(alias, "repository");
         return result;
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "REPOSITORIES_INVALID",
             "Invalid host repository registry; values are omitted.",
             2,
@@ -92,7 +92,7 @@ export async function setupBackup(
 ): Promise<unknown> {
     validateBackupIdentifier(alias, "repository");
     if (!path.isAbsolute(repository.path))
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_ABSOLUTE",
             "Backup destinations must be absolute paths.",
             2,
@@ -101,7 +101,7 @@ export async function setupBackup(
         const repositories = await readRepositories(project.home);
         const old = repositories[alias];
         if (old && !sameRepository(old, repository))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "REPOSITORY_EXISTS",
                 "Repository alias already identifies another destination or password reference.",
                 3,
@@ -115,12 +115,12 @@ export async function setupBackup(
     await ensurePrivateDirectory(project.home);
     return withMutex(path.join(project.home, "repositories.lock"), () =>
         withMutex(
-            path.join(project.lockRoot, ".craflet/operation.lock"),
+            path.join(project.lockRoot, ".crafleet/operation.lock"),
             async () => {
                 const repositories = await readRepositories(project.home);
                 const old = repositories[alias];
                 if (old && !sameRepository(old, repository))
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "REPOSITORY_EXISTS",
                         "Repository alias already points to a different destination or password reference. Choose another alias.",
                         3,
@@ -152,7 +152,7 @@ export async function setupBackup(
                     [alias]: { ...candidate, path: result.path, id: result.id },
                 });
                 const latest = await loadProject(project.dir, project.home);
-                await writeYaml(path.join(project.dir, "craflet.yaml"), {
+                await writeYaml(path.join(project.dir, "crafleet.yaml"), {
                     ...latest.manifest,
                     backup: {
                         ...latest.manifest.backup,

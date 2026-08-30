@@ -6,10 +6,10 @@ import {
     type BackupMetadata,
     type BackupPlan,
     type BackupRoot,
-    CrafletError,
+    CrafleetError,
     DEFAULT_BACKUP_FILES,
     stableStringify,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { type } from "arktype";
 import { NodeBackupService } from "../restic/backup-service.js";
 import {
@@ -101,7 +101,7 @@ export function groupRestoreContext(batch: BackupBatch): {
     first: ProjectContext;
 } {
     if (!batch.group)
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_GROUP",
             "Select a complete declared recovery group.",
             3,
@@ -115,7 +115,7 @@ export function groupRestoreContext(batch: BackupBatch): {
 export function requireGroupBackup(batch: BackupBatch): NodeBackupService {
     groupRestoreContext(batch);
     if (!batch.backup)
-        throw new CrafletError(
+        throw new CrafleetError(
             "BACKUP_REQUIRED",
             "A group restore requires a configured repository for its pre-restore snapshot.",
             3,
@@ -148,13 +148,13 @@ function protectedPaths(batch: BackupBatch, source: string): string[] {
         source,
         first.home,
         ...[
-            ".craflet",
+            ".crafleet",
             ".git",
-            "craflet-lock.yaml",
-            "craflet-workspace.yaml",
+            "crafleet-lock.yaml",
+            "crafleet-workspace.yaml",
         ].map((name) => path.join(first.lockRoot, name)),
         ...batch.projects.flatMap((project) => [
-            ...[".craflet", ".git", "config", "imports", "craflet.yaml"].map(
+            ...[".crafleet", ".git", "config", "imports", "crafleet.yaml"].map(
                 (name) => path.join(project.dir, name),
             ),
             ...Object.values(project.manifest.secrets ?? {}).flatMap(
@@ -194,7 +194,7 @@ async function readBoundedJson(
     await assertNoSymlinks(file);
     const stat = await lstat(file);
     if (!stat.isFile() || stat.size > limit)
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_METADATA",
             "Restore metadata is not a regular file within the supported size limit.",
             3,
@@ -202,7 +202,7 @@ async function readBoundedJson(
     try {
         return await readJson<unknown>(file);
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_METADATA",
             "Restore metadata cannot be read; its contents are omitted.",
             3,
@@ -224,7 +224,7 @@ export async function inspectGroupBackupRestore(
             Array.isArray(options.mappings) ||
             typeof options.mappings !== "object")
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_MAPPING",
             "Restore mappings must be an object keyed by shared root ID.",
             2,
@@ -241,13 +241,13 @@ export async function inspectGroupBackupRestore(
             pathsOverlap(source, repository.path),
         )
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_OVERLAP",
-            "The extraction must be separate from every group project, Craflet home, and backup repository.",
+            "The extraction must be separate from every group project, Crafleet home, and backup repository.",
             3,
         );
-    if (await exists(path.join(source, ".craflet-restore-incomplete.json")))
-        throw new CrafletError(
+    if (await exists(path.join(source, ".crafleet-restore-incomplete.json")))
+        throw new CrafleetError(
             "RESTORE_INCOMPLETE",
             "The extraction did not finish verification. Restore into a separate empty directory first.",
             3,
@@ -261,7 +261,7 @@ export async function inspectGroupBackupRestore(
             await readBoundedJson(path.join(source, "metadata/active.json")),
         ) !== stableStringify(metadata.active)
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_METADATA",
             "The group active metadata differs from its manifest.",
             3,
@@ -278,7 +278,7 @@ export async function inspectGroupBackupRestore(
         new Set(active.group.members.map((member) => member.key)).size !==
             batch.projects.length
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_GROUP_MEMBERSHIP",
             "The snapshot does not contain exactly the selected recovery group members.",
             3,
@@ -300,13 +300,13 @@ export async function inspectGroupBackupRestore(
             !root.external ||
             root.kind !== "directory"
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_GROUP_MEMBERSHIP",
                 "A group runtime root does not match its project's persistent identity.",
                 3,
             );
         if (!member.installation)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_NO_INSTALLATION",
                 "Every member requires a known active installation for group production restore.",
                 3,
@@ -318,7 +318,7 @@ export async function inspectGroupBackupRestore(
             installation.manifest.id &&
             installation.manifest.id !== project.manifest.id
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_PROJECT",
                 "A member's active installation belongs to another project.",
                 3,
@@ -326,7 +326,7 @@ export async function inspectGroupBackupRestore(
         members.push({ project, installation, runtimeRoot: root });
     }
     if (metadata.roots.some((root) => !root.external))
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_GROUP_MEMBERSHIP",
             "A group snapshot must identify each runtime explicitly.",
             3,
@@ -349,7 +349,7 @@ export async function inspectGroupBackupRestore(
         )
             continue;
         if (!target || !path.isAbsolute(target))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_MAPPING",
                 `Shared root ${root.id} needs an explicit absolute mapping; snapshot source paths are not write targets.`,
                 3,
@@ -360,13 +360,13 @@ export async function inspectGroupBackupRestore(
                 pathsOverlap(absolute, protectedPath),
             )
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_MAPPING",
                 "A shared restore root overlaps protected group files.",
                 3,
             );
         if (mapped.some((other) => pathsOverlap(absolute, other)))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_COLLISION",
                 "Shared restore mappings overlap another shared root or a member runtime.",
                 3,
@@ -377,7 +377,7 @@ export async function inspectGroupBackupRestore(
     }
     for (const id of Object.keys(options.mappings ?? {}))
         if (!sharedRoots.some((root) => root.id === id))
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_MAPPING",
                 "A mapping is not a shared data root of this group snapshot.",
                 2,
@@ -390,7 +390,7 @@ export async function inspectGroupBackupRestore(
             (id) => !metadata.databases.some((database) => database.id === id),
         )
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "RESTORE_DATABASE",
             "Explicitly select exactly the database dumps in this group snapshot.",
             3,
@@ -401,7 +401,7 @@ export async function inspectGroupBackupRestore(
                 database.id === dump.id && database.kind === dump.kind,
         );
         if (!config)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_DATABASE",
                 "A group database dump has no matching current target configuration.",
                 3,
@@ -413,7 +413,7 @@ export async function inspectGroupBackupRestore(
                     pathsOverlap(target, protectedPath),
                 )
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "RESTORE_MAPPING",
                     "A database restore target overlaps protected group files.",
                     3,
@@ -439,7 +439,7 @@ export async function inspectGroupBackupRestore(
             await assertNoSymlinks(source, file.path),
         );
         if (integrity.sha256 !== file.sha256 || integrity.bytes !== file.size)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_HASH",
                 "The group extraction failed its file size or SHA-256 verification.",
                 3,
@@ -642,7 +642,7 @@ export async function createGroupRestoreWorkspace(
 ): Promise<GroupRestoreWorkspace> {
     const directory = await privateBackupDirectory(
         path.dirname(inspection.source),
-        ".craflet-group-restore-",
+        ".crafleet-group-restore-",
     );
     const id = randomUUID();
     try {
@@ -718,11 +718,11 @@ async function validateWorkspaceOwner(
 ): Promise<void> {
     if (
         path.dirname(directory) !== path.dirname(inspection.source) ||
-        !/^\.craflet-group-restore-[A-Za-z0-9]{6}$/u.test(
+        !/^\.crafleet-group-restore-[A-Za-z0-9]{6}$/u.test(
             path.basename(directory),
         )
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "GROUP_RESTORE_JOURNAL",
             "The restore workspace leaves its recorded temporary location.",
             4,
@@ -740,7 +740,7 @@ async function validateWorkspaceOwner(
             fingerprint: inspection.fingerprint,
         })
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "GROUP_RESTORE_JOURNAL",
             "The group restore workspace ownership marker does not match its journal.",
             4,
@@ -766,7 +766,7 @@ export async function loadGroupRestoreWorkspace(
         actual.length !== expected.size ||
         actual.some((entry) => !expected.has(entry))
     )
-        throw new CrafletError(
+        throw new CrafleetError(
             "GROUP_RESTORE_JOURNAL",
             "Unexpected files appeared in the private group restore workspace.",
             4,
@@ -786,7 +786,7 @@ export async function loadGroupRestoreWorkspace(
             stableStringify(expectedMetadata) !==
             stableStringify(actualMetadata)
         )
-            throw new CrafletError(
+            throw new CrafleetError(
                 "RESTORE_CHANGED",
                 "A member's restore projection changed after the group was planned.",
                 4,

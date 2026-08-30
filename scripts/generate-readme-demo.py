@@ -39,13 +39,13 @@ try:
     from PIL import Image, ImageDraw, ImageFont
 except ImportError as error:
     raise SystemExit(
-        "Pillow is required to regenerate docs/assets/craflet-demo.gif. "
+        "Pillow is required to regenerate docs/assets/crafleet-demo.gif. "
         "Install it in an isolated tooling environment before running this script."
     ) from error
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUTPUT = ROOT / "docs" / "assets" / "craflet-demo.gif"
+DEFAULT_OUTPUT = ROOT / "docs" / "assets" / "crafleet-demo.gif"
 WIDTH = 960
 HEIGHT = 540
 MARGIN_X = 34
@@ -68,30 +68,30 @@ INSTALLATION_ID = "177af4a4-f3d8-4be7-903e-e4b143dbb97d"
 NEXT_INSTALLATION_ID = "83cd83c0-ea08-49de-a1e1-86c7eb52d1d8"
 
 INIT_COMMAND = (
-    "craflet init survival --name survival --type paper "
+    "crafleet init survival --name survival --type paper "
     "--version 26.2 --build 120 --yes"
 )
 INIT_RESULT = [
     'Created Paper server "survival" at /srv/minecraft/survival.',
     "Server version: 26.2 (build 120)",
-    "Next: Review craflet.yaml, then run craflet install and craflet doctor.",
+    "Next: Review crafleet.yaml, then run crafleet install and crafleet doctor.",
 ]
-INSTALL_COMMAND = "craflet -C survival install"
+INSTALL_COMMAND = "crafleet -C survival install"
 INSTALL_RESULT = [
     "Prepared 1 pending installation.",
     "survival: pending ready; no declared plugins",
     "Running JARs were not replaced.",
-    "Apply the pending installation with craflet start or craflet restart.",
+    "Apply the pending installation with crafleet start or crafleet restart.",
 ]
 ADD_COMMAND = (
-    "craflet -C survival plugins add "
+    "crafleet -C survival plugins add "
     "modrinth:luckperms@v5.5.53-bukkit"
 )
 ADD_RESULT = [
     "Added plugins and prepared 1 pending installation.",
     "survival: pending ready; declared plugins: LuckPerms",
     "Running JARs were not replaced.",
-    "Apply the pending installation with craflet start or craflet restart.",
+    "Apply the pending installation with crafleet start or crafleet restart.",
 ]
 START_RESULT = [
     "Started 1 server.",
@@ -131,7 +131,7 @@ STATUS_RESULT = [
     "  Process: runner 5360, Java 2968",
 ]
 BACKUP_COMMAND = (
-    "craflet -C survival backup setup --path /backup "
+    "crafleet -C survival backup setup --path /backup "
     "--password-env BACKUP_PASSWORD "
     "--init --yes"
 )
@@ -145,7 +145,7 @@ UPDATE_RESULT = [
     "Resolved updates and prepared 1 pending installation.",
     "survival: pending ready; declared plugins: LuckPerms",
     "Running JARs were not replaced.",
-    "Apply the pending installation with craflet start or craflet restart.",
+    "Apply the pending installation with crafleet start or crafleet restart.",
 ]
 LIST_PENDING_RESULT = [
     "Project: survival",
@@ -371,7 +371,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         frames,
         durations,
         font,
-        "craflet - Create a Paper server",
+        "crafleet - Create a Paper server",
         INIT_COMMAND,
         step=7,
     )
@@ -380,7 +380,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         render(
             font,
-            "craflet - Create a Paper server",
+            "crafleet - Create a Paper server",
             [f"$ {INIT_COMMAND}", *INIT_RESULT],
         ),
         1600,
@@ -389,7 +389,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         frames,
         durations,
         font,
-        "craflet - Resolve the server JAR",
+        "crafleet - Resolve the server JAR",
         INSTALL_COMMAND,
         step=4,
     )
@@ -398,7 +398,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         render(
             font,
-            "craflet - Resolve the server JAR",
+            "crafleet - Resolve the server JAR",
             [f"$ {INSTALL_COMMAND}", *INSTALL_RESULT],
         ),
         1500,
@@ -407,7 +407,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         frames,
         durations,
         font,
-        "craflet - Add LuckPerms from Modrinth",
+        "crafleet - Add LuckPerms from Modrinth",
         ADD_COMMAND,
         step=6,
     )
@@ -416,7 +416,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         render(
             font,
-            "craflet - Add LuckPerms from Modrinth",
+            "crafleet - Add LuckPerms from Modrinth",
             [f"$ {ADD_COMMAND}", *ADD_RESULT],
         ),
         1650,
@@ -425,8 +425,8 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         frames,
         durations,
         font,
-        "craflet - Start the prepared installation",
-        "craflet -C survival start",
+        "crafleet - Start the prepared installation",
+        "crafleet -C survival start",
         step=3,
     )
     add_frame(
@@ -434,8 +434,8 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         render(
             font,
-            "craflet - Start the prepared installation",
-            ["$ craflet -C survival start", *START_RESULT],
+            "crafleet - Start the prepared installation",
+            ["$ crafleet -C survival start", *START_RESULT],
         ),
         1650,
     )
@@ -443,8 +443,8 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         frames,
         durations,
         font,
-        "craflet - Attach the interactive console",
-        "craflet -C survival console",
+        "crafleet - Attach the interactive console",
+        "crafleet -C survival console",
         step=3,
     )
     add_frame(
@@ -452,7 +452,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         render(
             font,
-            "craflet console - Recent logs on attach",
+            "crafleet console - Recent logs on attach",
             CONSOLE_RECENT_RESULT,
             cursor=True,
         ),
@@ -463,7 +463,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         render(
             font,
-            "craflet console - PageUp loads older history",
+            "crafleet console - PageUp loads older history",
             CONSOLE_HISTORY_RESULT,
             cursor=True,
         ),
@@ -473,7 +473,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         frames,
         durations,
         font,
-        "craflet console - End returns live; send a command",
+        "crafleet console - End returns live; send a command",
         "list",
         prefix=CONSOLE_RECENT_RESULT[:-1],
         prompt="",
@@ -484,7 +484,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         render(
             font,
-            "craflet console - Command output stays live",
+            "crafleet console - Command output stays live",
             [*CONSOLE_RECENT_RESULT[:-2], *CONSOLE_COMMAND_RESULT],
             cursor=True,
         ),
@@ -495,11 +495,11 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         render(
             font,
-            "craflet - Ctrl-C detaches without stopping Java",
+            "crafleet - Ctrl-C detaches without stopping Java",
             [
-                "$ craflet -C survival console",
+                "$ crafleet -C survival console",
                 *CONSOLE_DETACH_RESULT,
-                "$ craflet -C survival status",
+                "$ crafleet -C survival status",
                 *STATUS_RESULT,
             ],
         ),
@@ -509,7 +509,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         frames,
         durations,
         font,
-        "craflet - Register backups before updates",
+        "crafleet - Register backups before updates",
         BACKUP_COMMAND,
         step=6,
     )
@@ -518,7 +518,7 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         render(
             font,
-            "craflet - Register backups before updates",
+            "crafleet - Register backups before updates",
             [f"$ {BACKUP_COMMAND}", *BACKUP_RESULT],
         ),
         1500,
@@ -527,8 +527,8 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         frames,
         durations,
         font,
-        "craflet - Check plugin updates",
-        "craflet -C survival plugins check LuckPerms",
+        "crafleet - Check plugin updates",
+        "crafleet -C survival plugins check LuckPerms",
         step=4,
     )
     add_frame(
@@ -536,8 +536,8 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         render(
             font,
-            "craflet - Check plugin updates",
-            ["$ craflet -C survival plugins check LuckPerms", *CHECK_RESULT],
+            "crafleet - Check plugin updates",
+            ["$ crafleet -C survival plugins check LuckPerms", *CHECK_RESULT],
         ),
         1500,
     )
@@ -545,8 +545,8 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         frames,
         durations,
         font,
-        "craflet - Prepare the update",
-        "craflet -C survival plugins update LuckPerms",
+        "crafleet - Prepare the update",
+        "crafleet -C survival plugins update LuckPerms",
         step=4,
     )
     add_frame(
@@ -554,8 +554,8 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         render(
             font,
-            "craflet - Prepare the update",
-            ["$ craflet -C survival plugins update LuckPerms", *UPDATE_RESULT],
+            "crafleet - Prepare the update",
+            ["$ crafleet -C survival plugins update LuckPerms", *UPDATE_RESULT],
         ),
         1650,
     )
@@ -564,8 +564,8 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         render(
             font,
-            "craflet - Active stays unchanged",
-            ["$ craflet -C survival plugins", *LIST_PENDING_RESULT],
+            "crafleet - Active stays unchanged",
+            ["$ crafleet -C survival plugins", *LIST_PENDING_RESULT],
         ),
         1650,
     )
@@ -573,8 +573,8 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         frames,
         durations,
         font,
-        "craflet - Apply pending on restart",
-        "craflet -C survival restart",
+        "crafleet - Apply pending on restart",
+        "crafleet -C survival restart",
         step=3,
     )
     add_frame(
@@ -582,11 +582,11 @@ def generate(font: ImageFont.FreeTypeFont) -> tuple[list[Image.Image], list[int]
         durations,
         render(
             font,
-            "craflet - Apply pending on restart",
+            "crafleet - Apply pending on restart",
             [
-                "$ craflet -C survival restart",
+                "$ crafleet -C survival restart",
                 *RESTART_RESULT,
-                "$ craflet -C survival plugins",
+                "$ crafleet -C survival plugins",
                 *LIST_FINAL_RESULT,
             ],
         ),
@@ -644,7 +644,7 @@ def verify(output: Path, expected_frames: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate the Craflet README terminal demo GIF."
+        description="Generate the Crafleet README terminal demo GIF."
     )
     parser.add_argument(
         "--output",

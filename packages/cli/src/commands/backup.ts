@@ -5,12 +5,12 @@ import {
     type BackupBatch,
     NodeBackupService,
     setupBackup,
-} from "@craflet/adapters";
+} from "@crafleet/adapters";
 import {
-    CrafletError,
+    CrafleetError,
     DEFAULT_BACKUP_FILES,
     validateBackupIdentifier,
-} from "@craflet/core";
+} from "@crafleet/core";
 import type { Command } from "commander";
 import type { CommandContext } from "./context.js";
 import { isCancellation, partialFailure } from "./failures.js";
@@ -36,14 +36,14 @@ export function registerBackupCommands(
         const batch = batches[0];
         const project = batch?.projects[0];
         if (batches.length !== 1 || !batch || !project)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "SINGLE_BACKUP_UNIT",
                 "Select one project or one complete recovery group for this snapshot operation.",
                 2,
             );
         const configured = batch.backup;
         if (!configured && !options.allowUnconfigured)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BACKUP_REQUIRED",
                 "Configure a repository using backup setup.",
                 3,
@@ -98,7 +98,7 @@ export function registerBackupCommands(
                 init?: boolean;
             }>();
             if (options.passwordEnv && options.passwordFile)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "PASSWORD_REFERENCE",
                     "Choose either --password-env or --password-file.",
                     2,
@@ -109,7 +109,7 @@ export function registerBackupCommands(
                 "Backup destination (--path) is required.",
             );
             if (!path.isAbsolute(target))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "BACKUP_ABSOLUTE",
                     "Use an absolute backup destination so a missing NAS cannot redirect snapshots.",
                     2,
@@ -195,7 +195,7 @@ export function registerBackupCommands(
                     else
                         for (const project of batch.projects) {
                             if (!batch.backup)
-                                throw new CrafletError(
+                                throw new CrafleetError(
                                     "BACKUP_REQUIRED",
                                     `Configure a backup repository for ${project.manifest.name}.`,
                                     3,
@@ -229,7 +229,7 @@ export function registerBackupCommands(
                                           batch.projects[0]?.manifest.name ??
                                           "Selected project",
                                   },
-                            "Backup creation failed; inspect this recovery unit with craflet doctor before retrying.",
+                            "Backup creation failed; inspect this recovery unit with crafleet doctor before retrying.",
                         ),
                     );
                 }
@@ -340,7 +340,7 @@ export function registerBackupCommands(
             for (const value of command.opts<{ map: string[] }>().map) {
                 const split = value.indexOf("=");
                 if (split < 1)
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "RESTORE_MAPPING",
                         "Use --map root-id=absolute-path.",
                         2,
@@ -353,7 +353,7 @@ export function registerBackupCommands(
                     Object.hasOwn(mappings, id) ||
                     !path.isAbsolute(value.slice(split + 1))
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "RESTORE_MAPPING",
                         "Each root needs one absolute destination mapping.",
                         2,

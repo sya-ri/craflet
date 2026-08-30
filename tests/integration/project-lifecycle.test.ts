@@ -24,13 +24,13 @@ import {
     type ArtifactContext,
     type ArtifactStore,
     type BackupService,
-    CrafletError,
+    CrafleetError,
     type LockedArtifact,
     newProject,
     parseSource,
     type SourceInput,
     stableStringify,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NodeArtifactStore } from "../../packages/adapters/src/filesystem/artifact-store.js";
 import * as backupFiles from "../../packages/adapters/src/filesystem/backup-files.js";
@@ -91,7 +91,7 @@ const temporaryRoots: string[] = [];
 const temporaryParent = await realpath(os.tmpdir());
 
 async function directory(): Promise<string> {
-    const root = await mkdtemp(path.join(temporaryParent, "craflet-project-"));
+    const root = await mkdtemp(path.join(temporaryParent, "crafleet-project-"));
     temporaryRoots.push(root);
     return root;
 }
@@ -101,7 +101,7 @@ afterEach(async () => {
     for (const root of temporaryRoots.splice(0)) {
         if (
             path.dirname(root) !== temporaryParent ||
-            !path.basename(root).startsWith("craflet-project-")
+            !path.basename(root).startsWith("crafleet-project-")
         )
             throw new Error("Unexpected fixture cleanup target");
         await rm(root, { recursive: true, force: true });
@@ -129,12 +129,12 @@ async function contents(
 
 async function metadata(root: string): Promise<Record<string, string | null>> {
     const files = [
-        "craflet.yaml",
-        "craflet-lock.yaml",
-        ".craflet/state.json",
-        ".craflet/config-state.json",
-        ".craflet/deploy.json",
-        ".craflet/manifest-transaction.json",
+        "crafleet.yaml",
+        "crafleet-lock.yaml",
+        ".crafleet/state.json",
+        ".crafleet/config-state.json",
+        ".crafleet/deploy.json",
+        ".crafleet/manifest-transaction.json",
     ];
     return Object.fromEntries(
         await Promise.all(
@@ -210,7 +210,7 @@ function artifactStore(root: string) {
         ): Promise<string> => {
             const file = files.get(artifact.sha256);
             if (!file || !(await io.exists(file)))
-                throw new CrafletError(
+                throw new CrafleetError(
                     "FIXTURE_CACHE_MISS",
                     "Fixture artifact is unavailable.",
                     3,
@@ -299,7 +299,7 @@ async function project(
     });
     if (options.plugin !== false) {
         manifest.plugins.Example = "modrinth:example@1.0.0";
-        await writeYaml(path.join(dir, "craflet.yaml"), manifest);
+        await writeYaml(path.join(dir, "crafleet.yaml"), manifest);
     }
     const context = await loadProject(dir, home);
     const provider = artifactStore(root);
@@ -602,7 +602,7 @@ describe("safe import of an existing server", () => {
         );
         expect(
             await io.exists(
-                path.join(fixture.target, ".craflet/import-incomplete.json"),
+                path.join(fixture.target, ".crafleet/import-incomplete.json"),
             ),
         ).toBe(false);
         expect(await readState(fixture.target)).toMatchObject({
@@ -635,7 +635,7 @@ describe("safe import of an existing server", () => {
         if (kind === "escape") serverJar = "../outside.jar";
         if (kind === "not-jar") serverJar = "server.properties";
         if (kind === "managed")
-            await mkdir(path.join(fixture.source, ".craflet"));
+            await mkdir(path.join(fixture.source, ".crafleet"));
         if (kind === "nonempty") await put(target, "owned.txt", "owned");
         if (kind === "inside") target = path.join(fixture.source, "child");
         if (kind === "ancestor") target = fixture.root;
@@ -665,7 +665,7 @@ describe("safe import of an existing server", () => {
                 { ...fixture.options, serverJar },
                 fixture.store,
             ),
-        ).rejects.toBeInstanceOf(CrafletError);
+        ).rejects.toBeInstanceOf(CrafleetError);
         if (kind === "nonempty")
             expect(await contents(target, "owned.txt")).toBe("owned");
         else if (kind !== "ancestor")
@@ -702,7 +702,7 @@ describe("safe import of an existing server", () => {
                     fixture.options,
                     fixture.store,
                 ),
-            ).rejects.toBeInstanceOf(CrafletError);
+            ).rejects.toBeInstanceOf(CrafleetError);
             expect(await io.exists(fixture.target)).toBe(false);
         },
     );
@@ -724,7 +724,7 @@ describe("safe import of an existing server", () => {
         ).rejects.toMatchObject({ code: "IMPORT_INCOMPLETE" });
         expect(
             await io.exists(
-                path.join(fixture.target, ".craflet/import-incomplete.json"),
+                path.join(fixture.target, ".crafleet/import-incomplete.json"),
             ),
         ).toBe(true);
         await expect(
@@ -775,12 +775,14 @@ describe("safe import of an existing server", () => {
                 await io.exists(
                     path.join(
                         fixture.target,
-                        ".craflet/import-incomplete.json",
+                        ".crafleet/import-incomplete.json",
                     ),
                 ),
             ).toBe(true);
             expect(
-                await io.exists(path.join(fixture.target, "craflet-lock.yaml")),
+                await io.exists(
+                    path.join(fixture.target, "crafleet-lock.yaml"),
+                ),
             ).toBe(false);
         },
     );
@@ -906,7 +908,7 @@ describe("registered cache pruning safety", () => {
         await fixture.manager.applyPrepared();
         fixture.context.manifest.plugins.Example = "modrinth:example@2.0.0";
         await writeYaml(
-            path.join(fixture.dir, "craflet.yaml"),
+            path.join(fixture.dir, "crafleet.yaml"),
             fixture.context.manifest,
         );
         await installProjects(
@@ -942,18 +944,18 @@ describe("registered cache pruning safety", () => {
             ),
         ).toBe(false);
         expect(
-            await io.exists(path.join(fixture.dir, ".craflet/operation.lock")),
+            await io.exists(path.join(fixture.dir, ".crafleet/operation.lock")),
         ).toBe(false);
     });
 
     it.each([
-        ".craflet/operation.lock",
-        ".craflet/deploy.json",
-        ".craflet/restore.json",
-        ".craflet/import-incomplete.json",
-        ".craflet/manifest-transaction.json",
-        ".craflet/group-operation.json",
-        ".craflet/group-restore.json",
+        ".crafleet/operation.lock",
+        ".crafleet/deploy.json",
+        ".crafleet/restore.json",
+        ".crafleet/import-incomplete.json",
+        ".crafleet/manifest-transaction.json",
+        ".crafleet/group-operation.json",
+        ".crafleet/group-restore.json",
     ])("retains every cache object while %s is unresolved", async (marker) => {
         const fixture = await project({ installed: false });
         await registerCacheProject(fixture.home, fixture.dir);
@@ -1021,7 +1023,7 @@ describe("read-only project validation", () => {
                 Reflect.set(installation.lock.requests, "plugins", []);
             if (kind === "config")
                 Reflect.set(installation.config.state, "files", []);
-            await io.writeJson(path.join(fixture.dir, ".craflet/state.json"), {
+            await io.writeJson(path.join(fixture.dir, ".crafleet/state.json"), {
                 schemaVersion: 1,
                 pending: installation,
             });
@@ -1065,7 +1067,7 @@ describe("read-only project validation", () => {
         const artifact = lock.projects["."]?.plugins.Example;
         if (!artifact?.identity) throw new Error("Missing fixture identity");
         artifact.identity.id = "Renamed";
-        await writeYaml(path.join(fixture.dir, "craflet-lock.yaml"), lock);
+        await writeYaml(path.join(fixture.dir, "crafleet-lock.yaml"), lock);
         await expect(
             validateManagedProject(fixture.context),
         ).rejects.toMatchObject({ code: "LOCK_IDENTITY" });
@@ -1104,13 +1106,13 @@ async function staleOwnerFixture() {
         clean: false,
         startedAt: "fixture-time",
     };
-    await io.writeJson(path.join(fixture.dir, ".craflet/runner.json"), record);
+    await io.writeJson(path.join(fixture.dir, ".crafleet/runner.json"), record);
     await io.writeJson(
-        path.join(fixture.dir, ".craflet/process.lock/owner.json"),
+        path.join(fixture.dir, ".crafleet/process.lock/owner.json"),
         { pid: record.pid, token: record.token },
     );
     await io.writeJson(
-        path.join(fixture.dir, ".craflet/operation.lock/owner.json"),
+        path.join(fixture.dir, ".crafleet/operation.lock/owner.json"),
         { pid: 43212, token: randomUUID(), started: "fixture-time" },
     );
     vi.spyOn(NodeServerController.prototype, "status").mockResolvedValue({
@@ -1152,19 +1154,19 @@ describe("explicit stale process ownership recovery", () => {
         expect(await treeBytes(fixture.dir)).toEqual(before);
         await recoverProcessLocks(fixture.context);
         expect(
-            await io.exists(path.join(fixture.dir, ".craflet/process.lock")),
+            await io.exists(path.join(fixture.dir, ".crafleet/process.lock")),
         ).toBe(false);
         expect(
-            await io.exists(path.join(fixture.dir, ".craflet/operation.lock")),
+            await io.exists(path.join(fixture.dir, ".crafleet/operation.lock")),
         ).toBe(false);
         expect(
-            await io.readJson(path.join(fixture.dir, ".craflet/runner.json")),
+            await io.readJson(path.join(fixture.dir, ".crafleet/runner.json")),
         ).toEqual({ ...fixture.record, phase: "stopped", clean: false });
         expect(fixture.kill.mock.calls.every((call) => call[1] === 0)).toBe(
             true,
         );
         expect(
-            await io.exists(path.join(fixture.dir, ".craflet/recovery.lock")),
+            await io.exists(path.join(fixture.dir, ".crafleet/recovery.lock")),
         ).toBe(false);
     });
 
@@ -1196,11 +1198,11 @@ describe("explicit stale process ownership recovery", () => {
     ])("retains every owner for ambiguous runner state: %s", async (kind) => {
         const fixture = await staleOwnerFixture();
         if (kind === "json")
-            await put(fixture.dir, ".craflet/runner.json", "private-invalid{");
+            await put(fixture.dir, ".crafleet/runner.json", "private-invalid{");
         if (kind === "oversized")
-            await put(fixture.dir, ".craflet/runner.json", " ".repeat(65537));
+            await put(fixture.dir, ".crafleet/runner.json", " ".repeat(65537));
         if (kind === "missing-record")
-            await rm(path.join(fixture.dir, ".craflet/runner.json"));
+            await rm(path.join(fixture.dir, ".crafleet/runner.json"));
         if (kind === "mismatched-token") fixture.record.token = randomUUID();
         if (kind === "mismatched-pid") fixture.record.pid = 43213;
         if (kind === "missing-java") delete fixture.record.javaPid;
@@ -1210,7 +1212,7 @@ describe("explicit stale process ownership recovery", () => {
             )
         )
             await io.writeJson(
-                path.join(fixture.dir, ".craflet/runner.json"),
+                path.join(fixture.dir, ".crafleet/runner.json"),
                 fixture.record,
             );
         if (kind === "alive-java")
@@ -1219,7 +1221,7 @@ describe("explicit stale process ownership recovery", () => {
                 throw Object.assign(new Error("absent"), { code: "ESRCH" });
             });
         if (kind === "no-guard")
-            await rm(path.join(fixture.dir, ".craflet/process.lock"), {
+            await rm(path.join(fixture.dir, ".crafleet/process.lock"), {
                 recursive: true,
             });
         const before = await treeBytes(fixture.dir);
@@ -1242,7 +1244,7 @@ describe("explicit stale process ownership recovery", () => {
         "validates the later operation owner before removing a valid process guard: %s",
         async (kind) => {
             const fixture = await staleOwnerFixture();
-            const owner = ".craflet/operation.lock/owner.json";
+            const owner = ".crafleet/operation.lock/owner.json";
             if (kind === "missing") await rm(path.join(fixture.dir, owner));
             if (kind === "json")
                 await put(fixture.dir, owner, "private-invalid{");
@@ -1254,14 +1256,14 @@ describe("explicit stale process ownership recovery", () => {
             if (kind === "extra-file")
                 await put(
                     fixture.dir,
-                    ".craflet/operation.lock/owned.txt",
+                    ".crafleet/operation.lock/owned.txt",
                     "retain",
                 );
             if (kind === "file-not-directory") {
-                await rm(path.join(fixture.dir, ".craflet/operation.lock"), {
+                await rm(path.join(fixture.dir, ".crafleet/operation.lock"), {
                     recursive: true,
                 });
-                await put(fixture.dir, ".craflet/operation.lock", "retain");
+                await put(fixture.dir, ".crafleet/operation.lock", "retain");
             }
             if (kind === "oversized")
                 await put(fixture.dir, owner, " ".repeat(65537));
@@ -1282,12 +1284,12 @@ describe("explicit stale process ownership recovery", () => {
 
     it("does not confuse a reused old Java PID in a stopped record with an unrelated operation owner", async () => {
         const fixture = await staleOwnerFixture();
-        await rm(path.join(fixture.dir, ".craflet/process.lock"), {
+        await rm(path.join(fixture.dir, ".crafleet/process.lock"), {
             recursive: true,
         });
         fixture.record.phase = "stopped";
         await io.writeJson(
-            path.join(fixture.dir, ".craflet/runner.json"),
+            path.join(fixture.dir, ".crafleet/runner.json"),
             fixture.record,
         );
         fixture.kill.mockImplementation((pid) => {
@@ -1296,7 +1298,7 @@ describe("explicit stale process ownership recovery", () => {
         });
         await recoverProcessLocks(fixture.context);
         expect(
-            await io.exists(path.join(fixture.dir, ".craflet/operation.lock")),
+            await io.exists(path.join(fixture.dir, ".crafleet/operation.lock")),
         ).toBe(false);
         expect(
             fixture.kill.mock.calls.some(
@@ -1313,7 +1315,7 @@ describe("explicit stale process ownership recovery", () => {
             async (root, relative) => {
                 const result = await original(root, relative);
                 if (
-                    root === path.join(fixture.dir, ".craflet/process.lock") &&
+                    root === path.join(fixture.dir, ".crafleet/process.lock") &&
                     relative === "owner.json" &&
                     ++calls === 2
                 )
@@ -1328,10 +1330,10 @@ describe("explicit stale process ownership recovery", () => {
             recoverProcessLocks(fixture.context),
         ).rejects.toMatchObject({ code: "LOCK_CHANGED" });
         expect(
-            await io.exists(path.join(fixture.dir, ".craflet/process.lock")),
+            await io.exists(path.join(fixture.dir, ".crafleet/process.lock")),
         ).toBe(true);
         expect(
-            await io.exists(path.join(fixture.dir, ".craflet/operation.lock")),
+            await io.exists(path.join(fixture.dir, ".crafleet/operation.lock")),
         ).toBe(true);
     });
 });
@@ -1446,7 +1448,7 @@ describe("project initialization and workspaces", () => {
 
         expect(await io.exists(path.join(target, ".git"))).toBe(false);
         expect(await contents(target, ".gitignore")).toBe(
-            "runtime/\nshared-data/\n.craflet/\nimports/\n.env\n.env.*\n",
+            "runtime/\nshared-data/\n.crafleet/\nimports/\n.env\n.env.*\n",
         );
     });
 
@@ -1462,7 +1464,7 @@ describe("project initialization and workspaces", () => {
         });
 
         expect(await contents(target, ".gitignore")).toBe(
-            "runtime/\nshared-data/\n.craflet/\nimports/\n.env\n.env.*\n",
+            "runtime/\nshared-data/\n.crafleet/\nimports/\n.env\n.env.*\n",
         );
     });
 
@@ -1498,7 +1500,7 @@ describe("project initialization and workspaces", () => {
 
         const ignore = await contents(target, ".gitignore");
         expect(ignore).toBe(
-            "# custom\n*.local\nruntime/\nshared-data/\n.craflet/\nimports/\n.env\n.env.*\n",
+            "# custom\n*.local\nruntime/\nshared-data/\n.crafleet/\nimports/\n.env\n.env.*\n",
         );
         expect(ignore?.match(/^runtime\/$/gm)).toHaveLength(1);
         const after = await lstat(file, { bigint: true });
@@ -1527,7 +1529,7 @@ describe("project initialization and workspaces", () => {
 
         const ignore = await contents(target, ".gitignore");
         expect(ignore).toBe(
-            "# custom\r\n*.local\r\nruntime/\r\nshared-data/\r\n.craflet/\r\nimports/\r\n.env\r\n.env.*\r\n",
+            "# custom\r\n*.local\r\nruntime/\r\nshared-data/\r\n.crafleet/\r\nimports/\r\n.env\r\n.env.*\r\n",
         );
         expect(ignore?.match(/^runtime\/$/gm)).toHaveLength(1);
     });
@@ -1546,7 +1548,7 @@ describe("project initialization and workspaces", () => {
 
         const ignore = await contents(target, ".gitignore");
         expect(ignore).toBe(
-            "\uFEFFruntime/\n# custom\nshared-data/\n.craflet/\nimports/\n.env\n.env.*\n",
+            "\uFEFFruntime/\n# custom\nshared-data/\n.crafleet/\nimports/\n.env\n.env.*\n",
         );
         expect(ignore?.match(/runtime\//g)).toHaveLength(1);
     });
@@ -1598,7 +1600,7 @@ describe("project initialization and workspaces", () => {
                     version: "26.1",
                 }),
             ).rejects.toMatchObject({ code });
-            expect(await io.exists(path.join(target, "craflet.yaml"))).toBe(
+            expect(await io.exists(path.join(target, "crafleet.yaml"))).toBe(
                 false,
             );
         },
@@ -1658,7 +1660,7 @@ describe("project initialization and workspaces", () => {
                     dryRun,
                 }),
             ).rejects.toMatchObject({ code: "SYMLINK_UNSAFE" });
-            expect(await io.exists(path.join(target, "craflet.yaml"))).toBe(
+            expect(await io.exists(path.join(target, "crafleet.yaml"))).toBe(
                 false,
             );
         },
@@ -1700,7 +1702,7 @@ describe("project initialization and workspaces", () => {
             }),
         ).rejects.toMatchObject({ code: "PROJECT_NAME" });
         const occupied = path.join(root, "occupied");
-        await put(occupied, "craflet.yaml", "owned\n");
+        await put(occupied, "crafleet.yaml", "owned\n");
         for (const dryRun of [false, true])
             await expect(
                 initProject(occupied, {
@@ -1711,7 +1713,7 @@ describe("project initialization and workspaces", () => {
                     dryRun,
                 }),
             ).rejects.toMatchObject({ code: "INVALID_SOURCE" });
-        expect(await contents(occupied, "craflet.yaml")).toBe("owned\n");
+        expect(await contents(occupied, "crafleet.yaml")).toBe("owned\n");
         const preview = await initProject(target, {
             name: "alpha",
             kind: "velocity",
@@ -1785,7 +1787,7 @@ describe("project initialization and workspaces", () => {
             reason: { code: "WORKSPACE_EXISTS" },
         });
         expect(
-            await readYaml(path.join(root, "craflet-workspace.yaml")),
+            await readYaml(path.join(root, "crafleet-workspace.yaml")),
         ).toEqual({
             schemaVersion: 1,
             projects: winningProjects,
@@ -1809,7 +1811,7 @@ describe("project initialization and workspaces", () => {
                 initWorkspace(workspace, ["servers/*"], dryRun),
             ).rejects.toMatchObject({ code: "SYMLINK_UNSAFE" });
             expect(
-                await io.exists(path.join(external, "craflet-workspace.yaml")),
+                await io.exists(path.join(external, "crafleet-workspace.yaml")),
             ).toBe(false);
         },
     );
@@ -1933,7 +1935,7 @@ describe("project initialization and workspaces", () => {
         const root = await directory();
         const file = await put(
             root,
-            "craflet.yaml",
+            "crafleet.yaml",
             "secret: private-value\nsecret: another-value\n",
         );
         await expect(readYaml(file)).rejects.toMatchObject({
@@ -1944,7 +1946,7 @@ describe("project initialization and workspaces", () => {
         await expect(readYaml(file)).rejects.toMatchObject({
             code: "YAML_SIZE",
         });
-        await put(root, "craflet-lock.yaml", "lockVersion: 2\nprojects: {}\n");
+        await put(root, "crafleet-lock.yaml", "lockVersion: 2\nprojects: {}\n");
         await expect(readLock(root)).rejects.toMatchObject({
             code: "INVALID_INPUT",
         });
@@ -1968,11 +1970,11 @@ describe("project initialization and workspaces", () => {
                 version: "26.1",
             }),
         ).rejects.toMatchObject({ code: "SYMLINK_UNSAFE" });
-        expect(await io.exists(path.join(target, "craflet.yaml"))).toBe(false);
+        expect(await io.exists(path.join(target, "crafleet.yaml"))).toBe(false);
         expect(await io.exists(path.join(target, "config"))).toBe(false);
         const file = await put(
             outside,
-            "craflet-lock.yaml",
+            "crafleet-lock.yaml",
             "lockVersion: 1\nprojects: {}\n",
         );
         await expect(
@@ -2040,7 +2042,7 @@ describe("installation and shared manifest transactions", () => {
         const stateText = `${JSON.stringify(state)}\n`;
         expect(Buffer.byteLength(stateText)).toBe(targetBytes);
         await writeFile(
-            path.join(fixture.dir, ".craflet/state.json"),
+            path.join(fixture.dir, ".crafleet/state.json"),
             stateText,
         );
         clearArtifactCalls(fixture.store);
@@ -2057,10 +2059,10 @@ describe("installation and shared manifest transactions", () => {
         const fixture = await workspaceProjectPair();
         await installProjects(fixture.projects, fixture.store);
         const inputFiles = [
-            path.join(fixture.root, "craflet-lock.yaml"),
+            path.join(fixture.root, "crafleet-lock.yaml"),
             ...fixture.projects.flatMap((project) => [
-                path.join(project.dir, "craflet.yaml"),
-                path.join(project.dir, ".craflet/state.json"),
+                path.join(project.dir, "crafleet.yaml"),
+                path.join(project.dir, ".crafleet/state.json"),
             ]),
         ];
         const readInputs = () =>
@@ -2082,14 +2084,14 @@ describe("installation and shared manifest transactions", () => {
         expect(await readInputs()).toEqual(before);
         expect(
             await io.exists(
-                path.join(fixture.root, ".craflet/manifest-transaction.json"),
+                path.join(fixture.root, ".crafleet/manifest-transaction.json"),
             ),
         ).toBe(false);
     });
 
     it("rejects a stale loaded declaration before any artifact lookup", async () => {
         const fixture = await project();
-        const file = path.join(fixture.dir, "craflet.yaml");
+        const file = path.join(fixture.dir, "crafleet.yaml");
         await writeFile(
             file,
             `${await readFile(file, "utf8")}# manual edit before install\n`,
@@ -2125,7 +2127,7 @@ describe("installation and shared manifest transactions", () => {
             fixture.store.latest.mockImplementationOnce(
                 async (input, context) => {
                     if (field === "manifest") {
-                        const file = path.join(fixture.dir, "craflet.yaml");
+                        const file = path.join(fixture.dir, "crafleet.yaml");
                         await writeFile(
                             file,
                             `${await readFile(file, "utf8")}# concurrent operator note\n`,
@@ -2142,14 +2144,14 @@ describe("installation and shared manifest transactions", () => {
                         await writeYaml(
                             path.join(
                                 fixture.context.lockRoot,
-                                "craflet-lock.yaml",
+                                "crafleet-lock.yaml",
                             ),
                             lock,
                         );
                     } else {
                         const file = path.join(
                             fixture.dir,
-                            ".craflet/state.json",
+                            ".crafleet/state.json",
                         );
                         await writeFile(
                             file,
@@ -2172,7 +2174,7 @@ describe("installation and shared manifest transactions", () => {
                 await io.exists(
                     path.join(
                         fixture.dir,
-                        ".craflet/manifest-transaction.json",
+                        ".crafleet/manifest-transaction.json",
                     ),
                 ),
             ).toBe(false);
@@ -2192,7 +2194,7 @@ describe("installation and shared manifest transactions", () => {
         let edited: Record<string, string | null> | undefined;
         fixture.store.resolve.mockImplementationOnce(
             async (source, context) => {
-                const file = path.join(fixture.dir, "craflet.yaml");
+                const file = path.join(fixture.dir, "crafleet.yaml");
                 await writeFile(
                     file,
                     `${await readFile(file, "utf8")}# concurrent edit during identity discovery\n`,
@@ -2211,7 +2213,7 @@ describe("installation and shared manifest transactions", () => {
         expect(await metadata(fixture.dir)).toEqual(edited);
         expect(
             await io.exists(
-                path.join(fixture.dir, ".craflet/manifest-transaction.json"),
+                path.join(fixture.dir, ".crafleet/manifest-transaction.json"),
             ),
         ).toBe(false);
     });
@@ -2376,7 +2378,7 @@ describe("installation and shared manifest transactions", () => {
                 );
             else entry.name = "renamed";
             await writeYaml(
-                path.join(fixture.context.lockRoot, "craflet-lock.yaml"),
+                path.join(fixture.context.lockRoot, "crafleet-lock.yaml"),
                 lock,
             );
             clearArtifactCalls(fixture.store);
@@ -2430,7 +2432,7 @@ describe("installation and shared manifest transactions", () => {
             );
             mutate(entry.plugins);
             await writeYaml(
-                path.join(fixture.context.lockRoot, "craflet-lock.yaml"),
+                path.join(fixture.context.lockRoot, "crafleet-lock.yaml"),
                 lock,
             );
             fixture.context.manifest.plugins.Future = source;
@@ -2453,7 +2455,7 @@ describe("installation and shared manifest transactions", () => {
         if (!entry || !identity) throw new Error("Expected Example lock data.");
         identity.provides = ["B"];
         await writeYaml(
-            path.join(fixture.context.lockRoot, "craflet-lock.yaml"),
+            path.join(fixture.context.lockRoot, "crafleet-lock.yaml"),
             lock,
         );
         fixture.context.manifest.plugins.B = "modrinth:b@1.0.0";
@@ -2508,7 +2510,7 @@ describe("installation and shared manifest transactions", () => {
             throw new Error("Expected the reusable plugin identity.");
         renamed.identity.provides = ["shared-alias"];
         await writeYaml(
-            path.join(fixture.context.lockRoot, "craflet-lock.yaml"),
+            path.join(fixture.context.lockRoot, "crafleet-lock.yaml"),
             lock,
         );
         const resolve = fixture.store.resolve.getMockImplementation();
@@ -2864,7 +2866,7 @@ describe("installation and shared manifest transactions", () => {
             version: "26.1",
         });
         alpha.plugins.Example = "modrinth:example@1.0.0";
-        await writeYaml(path.join(alphaDir, "craflet.yaml"), alpha);
+        await writeYaml(path.join(alphaDir, "crafleet.yaml"), alpha);
         await initProject(path.join(root, "servers", "beta"), {
             name: "beta",
             kind: "paper",
@@ -2925,7 +2927,7 @@ describe("installation and shared manifest transactions", () => {
         expect(store.latest).not.toHaveBeenCalled();
 
         delete invalid.manifest.plugins.Example;
-        await put(invalid.dir, ".craflet/state.json", "not-json");
+        await put(invalid.dir, ".crafleet/state.json", "not-json");
         await expect(
             addPlugins(projects, store, ["modrinth:new-plugin@1"]),
         ).rejects.toMatchObject({ code: "STATE_INVALID" });
@@ -2956,7 +2958,7 @@ describe("installation and shared manifest transactions", () => {
         if (!plugin) throw new Error("Expected the plugin lock entry");
         plugin.size = Number.MAX_SAFE_INTEGER + 1;
         await writeYaml(
-            path.join(fixture.context.lockRoot, "craflet-lock.yaml"),
+            path.join(fixture.context.lockRoot, "crafleet-lock.yaml"),
             lock,
         );
         clearArtifactCalls(fixture.store);
@@ -2977,7 +2979,7 @@ describe("installation and shared manifest transactions", () => {
         async ({ operation, dryRun }) => {
             const fixture = await workspaceProjectPair();
             await installProjects(fixture.projects, fixture.store);
-            await put(fixture.beta.dir, ".craflet/deploy.json", "{}");
+            await put(fixture.beta.dir, ".crafleet/deploy.json", "{}");
             clearArtifactCalls(fixture.store);
 
             const result =
@@ -3003,7 +3005,11 @@ describe("installation and shared manifest transactions", () => {
         "rejects shared manifest recovery before add-plugin identity resolution during dryRun=%s",
         async (dryRun) => {
             const fixture = await workspaceProjectPair();
-            await put(fixture.root, ".craflet/manifest-transaction.json", "{}");
+            await put(
+                fixture.root,
+                ".crafleet/manifest-transaction.json",
+                "{}",
+            );
             clearArtifactCalls(fixture.store);
 
             await expect(
@@ -3149,7 +3155,7 @@ describe("installation and shared manifest transactions", () => {
         const before = await Promise.all([
             metadata(first.dir),
             metadata(second.dir),
-            readFile(path.join(root, "craflet-lock.yaml"), "utf8"),
+            readFile(path.join(root, "crafleet-lock.yaml"), "utf8"),
         ]);
         second.manifest.plugins.Example = "modrinth:renamed@1.0.0";
         await expect(installProjects(projects, store)).rejects.toMatchObject({
@@ -3159,14 +3165,14 @@ describe("installation and shared manifest transactions", () => {
             await Promise.all([
                 metadata(first.dir),
                 metadata(second.dir),
-                readFile(path.join(root, "craflet-lock.yaml"), "utf8"),
+                readFile(path.join(root, "crafleet-lock.yaml"), "utf8"),
             ]),
         ).toEqual(before);
     });
 
     it("does not modify project metadata while another mutation owns the workspace lock", async () => {
         const fixture = await project();
-        await mkdir(path.join(fixture.dir, ".craflet/operation.lock"));
+        await mkdir(path.join(fixture.dir, ".crafleet/operation.lock"));
         const before = await metadata(fixture.dir);
         await expect(
             installProjects([fixture.context], fixture.store),
@@ -3181,7 +3187,7 @@ describe("installation and shared manifest transactions", () => {
         const fault = vi
             .spyOn(io, "atomicWrite")
             .mockImplementation(async (file, content, mode) => {
-                if (file === path.join(fixture.dir, "craflet-lock.yaml"))
+                if (file === path.join(fixture.dir, "crafleet-lock.yaml"))
                     throw new Error("injected lock write failure");
                 return write(file, content, mode);
             });
@@ -3190,11 +3196,11 @@ describe("installation and shared manifest transactions", () => {
         ).rejects.toMatchObject({ code: "MANIFEST_INTERRUPTED" });
         fault.mockRestore();
         expect(
-            await io.exists(path.join(fixture.dir, ".craflet/state.json")),
+            await io.exists(path.join(fixture.dir, ".crafleet/state.json")),
         ).toBe(true);
         expect(
             await io.exists(
-                path.join(fixture.dir, ".craflet/manifest-transaction.json"),
+                path.join(fixture.dir, ".crafleet/manifest-transaction.json"),
             ),
         ).toBe(true);
         const interrupted = await metadata(fixture.dir);
@@ -3212,7 +3218,7 @@ describe("installation and shared manifest transactions", () => {
         const fault = vi
             .spyOn(io, "atomicWrite")
             .mockImplementation(async (file, content, mode) => {
-                if (file === path.join(fixture.dir, "craflet-lock.yaml"))
+                if (file === path.join(fixture.dir, "crafleet-lock.yaml"))
                     throw new Error("injected lock write failure");
                 return write(file, content, mode);
             });
@@ -3222,8 +3228,8 @@ describe("installation and shared manifest transactions", () => {
             }),
         ).rejects.toMatchObject({ code: "MANIFEST_INTERRUPTED" });
         fault.mockRestore();
-        expect(await contents(fixture.dir, "craflet.yaml")).not.toBe(
-            before["craflet.yaml"],
+        expect(await contents(fixture.dir, "crafleet.yaml")).not.toBe(
+            before["crafleet.yaml"],
         );
         await recoverManifests(fixture.dir);
         expect(await metadata(fixture.dir)).toEqual(before);
@@ -3231,22 +3237,22 @@ describe("installation and shared manifest transactions", () => {
 
     it("refuses recovery if an operator edited any target after interruption", async () => {
         const root = await directory();
-        await put(root, "craflet.yaml", "operator edit");
-        await put(root, "craflet-lock.yaml", "lock after");
+        await put(root, "crafleet.yaml", "operator edit");
+        await put(root, "crafleet-lock.yaml", "lock after");
         await put(
             root,
-            ".craflet/manifest-transaction.json",
+            ".crafleet/manifest-transaction.json",
             JSON.stringify({
                 schemaVersion: 1,
                 phase: "writing",
                 changes: [
                     {
-                        relative: "craflet.yaml",
+                        relative: "crafleet.yaml",
                         before: "before",
                         after: "after",
                     },
                     {
-                        relative: "craflet-lock.yaml",
+                        relative: "crafleet-lock.yaml",
                         before: "lock before",
                         after: "lock after",
                     },
@@ -3263,22 +3269,22 @@ describe("installation and shared manifest transactions", () => {
     it("refuses metadata path traversal before touching any recovery target", async () => {
         const root = await directory();
         const target = path.join(root, "project");
-        await put(root, "craflet.yaml", "outside");
-        await put(target, "craflet-lock.yaml", "after");
+        await put(root, "crafleet.yaml", "outside");
+        await put(target, "crafleet-lock.yaml", "after");
         await put(
             target,
-            ".craflet/manifest-transaction.json",
+            ".crafleet/manifest-transaction.json",
             JSON.stringify({
                 schemaVersion: 1,
                 phase: "writing",
                 changes: [
                     {
-                        relative: "../craflet.yaml",
+                        relative: "../crafleet.yaml",
                         before: "outside",
                         after: "outside",
                     },
                     {
-                        relative: "craflet-lock.yaml",
+                        relative: "crafleet-lock.yaml",
                         before: "before",
                         after: "after",
                     },
@@ -3288,22 +3294,22 @@ describe("installation and shared manifest transactions", () => {
         await expect(recoverManifests(target)).rejects.toMatchObject({
             code: "PATH_ESCAPE",
         });
-        expect(await contents(root, "craflet.yaml")).toBe("outside");
-        expect(await contents(target, "craflet-lock.yaml")).toBe("after");
+        expect(await contents(root, "crafleet.yaml")).toBe("outside");
+        expect(await contents(target, "crafleet-lock.yaml")).toBe("after");
     });
 
     it.each([
         null,
         { relative: 42, before: null, after: "after" },
-        { relative: "craflet.yaml", before: {}, after: "after" },
+        { relative: "crafleet.yaml", before: {}, after: "after" },
     ])(
         "rejects malformed recovery entries without TypeError or mutation: %j",
         async (change) => {
             const root = await directory();
-            await put(root, "craflet.yaml", "after");
+            await put(root, "crafleet.yaml", "after");
             await put(
                 root,
-                ".craflet/manifest-transaction.json",
+                ".crafleet/manifest-transaction.json",
                 JSON.stringify({
                     schemaVersion: 1,
                     phase: "writing",
@@ -3322,8 +3328,8 @@ describe("installation and shared manifest transactions", () => {
         const root = await directory();
         const target = path.join(root, "project");
         const outside = path.join(root, "outside");
-        await put(outside, "craflet.yaml", "linked before");
-        await put(target, "craflet-lock.yaml", "safe after");
+        await put(outside, "crafleet.yaml", "linked before");
+        await put(target, "crafleet-lock.yaml", "safe after");
         await symlink(
             outside,
             path.join(target, "linked"),
@@ -3331,18 +3337,18 @@ describe("installation and shared manifest transactions", () => {
         );
         await put(
             target,
-            ".craflet/manifest-transaction.json",
+            ".crafleet/manifest-transaction.json",
             JSON.stringify({
                 schemaVersion: 1,
                 phase: "writing",
                 changes: [
                     {
-                        relative: "linked/craflet.yaml",
+                        relative: "linked/crafleet.yaml",
                         before: "linked before",
                         after: "linked after",
                     },
                     {
-                        relative: "craflet-lock.yaml",
+                        relative: "crafleet-lock.yaml",
                         before: "safe before",
                         after: "safe after",
                     },
@@ -3352,42 +3358,42 @@ describe("installation and shared manifest transactions", () => {
         await expect(recoverManifests(target)).rejects.toMatchObject({
             code: "SYMLINK_UNSAFE",
         });
-        expect(await contents(target, "craflet-lock.yaml")).toBe("safe after");
-        expect(await contents(outside, "craflet.yaml")).toBe("linked before");
+        expect(await contents(target, "crafleet-lock.yaml")).toBe("safe after");
+        expect(await contents(outside, "crafleet.yaml")).toBe("linked before");
     });
 
     it("does not recover manifests while another operation holds the workspace mutex", async () => {
         const root = await directory();
-        await put(root, "craflet.yaml", "after");
+        await put(root, "crafleet.yaml", "after");
         await put(
             root,
-            ".craflet/manifest-transaction.json",
+            ".crafleet/manifest-transaction.json",
             JSON.stringify({
                 schemaVersion: 1,
                 phase: "writing",
                 changes: [
                     {
-                        relative: "craflet.yaml",
+                        relative: "crafleet.yaml",
                         before: "before",
                         after: "after",
                     },
                 ],
             }),
         );
-        await mkdir(path.join(root, ".craflet/operation.lock"));
+        await mkdir(path.join(root, ".crafleet/operation.lock"));
         await expect(recoverManifests(root)).rejects.toMatchObject({
             code: "BUSY",
         });
-        expect(await contents(root, "craflet.yaml")).toBe("after");
+        expect(await contents(root, "crafleet.yaml")).toBe("after");
     });
 });
 
 describe("deployment ownership and rollback", () => {
     it.each([
-        ".craflet/restore.json",
-        ".craflet/group-operation.json",
-        ".craflet/manifest-transaction.json",
-        ".craflet/deploy.json",
+        ".crafleet/restore.json",
+        ".crafleet/group-operation.json",
+        ".crafleet/manifest-transaction.json",
+        ".crafleet/deploy.json",
     ])("blocks preflight while %s requires recovery", async (file) => {
         const fixture = await project();
         await put(fixture.dir, file, "{}");
@@ -3454,7 +3460,7 @@ describe("deployment ownership and rollback", () => {
             await io.exists(path.join(fixture.dir, "runtime/server.jar")),
         ).toBe(false);
         expect(
-            await io.exists(path.join(fixture.dir, ".craflet/deploy.json")),
+            await io.exists(path.join(fixture.dir, ".crafleet/deploy.json")),
         ).toBe(false);
         expect(await contents(fixture.dir, "runtime/plugins/Manual.jar")).toBe(
             "manual",
@@ -3522,7 +3528,7 @@ describe("deployment ownership and rollback", () => {
             code: "DEPLOY_INTERRUPTED",
         });
         expect(
-            await io.readJson(path.join(fixture.dir, ".craflet/deploy.json")),
+            await io.readJson(path.join(fixture.dir, ".crafleet/deploy.json")),
         ).toMatchObject({ createdJars: ["plugins/Example.jar"] });
         expect(
             await io.exists(
@@ -3584,7 +3590,7 @@ describe("deployment ownership and rollback", () => {
         );
         const originalState = await contents(
             fixture.dir,
-            ".craflet/config-state.json",
+            ".crafleet/config-state.json",
         );
         await put(fixture.dir, "config/settings.json", '{"max":20}\n');
         await installProjects([fixture.context], fixture.store, {
@@ -3620,7 +3626,7 @@ describe("deployment ownership and rollback", () => {
         expect(await contents(fixture.dir, "runtime/settings.json")).toBe(
             originalConfig,
         );
-        expect(await contents(fixture.dir, ".craflet/config-state.json")).toBe(
+        expect(await contents(fixture.dir, ".crafleet/config-state.json")).toBe(
             originalState,
         );
         expect(await contents(fixture.dir, "config/settings.json")).toBe(
@@ -3670,7 +3676,7 @@ describe("deployment ownership and rollback", () => {
         );
         await put(
             fixture.dir,
-            ".craflet/deploy.json",
+            ".crafleet/deploy.json",
             JSON.stringify({
                 schemaVersion: 1,
                 phase: "applied",
@@ -3688,7 +3694,7 @@ describe("deployment ownership and rollback", () => {
         expect((await readState(fixture.dir)).active?.id).toBe(next.id);
         expect((await readState(fixture.dir)).pending).toBeUndefined();
         expect(
-            await io.exists(path.join(fixture.dir, ".craflet/deploy.json")),
+            await io.exists(path.join(fixture.dir, ".crafleet/deploy.json")),
         ).toBe(false);
     });
 
@@ -3806,7 +3812,7 @@ describe("deployment ownership and rollback", () => {
             const next = await pending(fixture.dir);
             await put(
                 fixture.dir,
-                ".craflet/deploy.json",
+                ".crafleet/deploy.json",
                 JSON.stringify({
                     schemaVersion: 1,
                     phase: "applying",
@@ -3847,12 +3853,12 @@ describe("deployment ownership and rollback", () => {
         const before = await metadata(fixture.dir);
         await fixture.manager.discard(true);
         expect(await metadata(fixture.dir)).toEqual(before);
-        await put(fixture.dir, ".craflet/deploy.json", "{}");
+        await put(fixture.dir, ".crafleet/deploy.json", "{}");
         await expect(fixture.manager.discard()).rejects.toMatchObject({
             code: "RECOVERY_REQUIRED",
         });
         expect((await readState(fixture.dir)).pending).toBeDefined();
-        await rm(path.join(fixture.dir, ".craflet/deploy.json"));
+        await rm(path.join(fixture.dir, ".crafleet/deploy.json"));
         await fixture.manager.discard();
         expect((await readState(fixture.dir)).pending).toBeUndefined();
     });
@@ -3982,7 +3988,7 @@ describe("deployment ownership and rollback", () => {
         await expect(manager.preflight(true)).rejects.toThrow("cancelled");
         expect(fixture.store.ensure).not.toHaveBeenCalled();
         expect(
-            await io.exists(path.join(fixture.dir, ".craflet/deploy.json")),
+            await io.exists(path.join(fixture.dir, ".crafleet/deploy.json")),
         ).toBe(false);
     });
 
@@ -4061,7 +4067,7 @@ describe("explicit Paper EULA consent", () => {
         const home = path.join(root, "home");
         const target = path.join(root, "paper");
         const decline = vi.fn(async () => {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "CONFIRMATION_REQUIRED",
                 "Explicit consent was not provided.",
                 3,
@@ -4077,7 +4083,7 @@ describe("explicit Paper EULA consent", () => {
         ).rejects.toMatchObject({ code: "CONFIRMATION_REQUIRED" });
         expect(decline).toHaveBeenCalledOnce();
         expect(await io.listFiles(root)).toEqual([]);
-        expect(await io.exists(path.join(target, "craflet.yaml"))).toBe(false);
+        expect(await io.exists(path.join(target, "crafleet.yaml"))).toBe(false);
         expect(await io.exists(path.join(home, "eula.json"))).toBe(false);
     });
 
@@ -4170,7 +4176,7 @@ describe("explicit Paper EULA consent", () => {
                 if (kind === "manifest") {
                     await mkdir(target, { recursive: true });
                     await writeFile(
-                        path.join(target, "craflet.yaml"),
+                        path.join(target, "crafleet.yaml"),
                         "existing project\n",
                     );
                 } else
@@ -4196,7 +4202,7 @@ describe("explicit Paper EULA consent", () => {
             expect(await io.exists(path.join(home, "eula.json"))).toBe(true);
             if (kind === "manifest")
                 expect(
-                    await readFile(path.join(target, "craflet.yaml"), "utf8"),
+                    await readFile(path.join(target, "crafleet.yaml"), "utf8"),
                 ).toBe("existing project\n");
             else expect(await readdir(external)).toEqual([]);
             expect(await io.exists(path.join(target, "config"))).toBe(false);
@@ -4469,7 +4475,7 @@ describe("explicit Paper EULA consent", () => {
                 provider.store,
             ).applyPrepared();
             const declaration = await loadProject(dir, home);
-            await writeYaml(path.join(dir, "craflet.yaml"), {
+            await writeYaml(path.join(dir, "crafleet.yaml"), {
                 ...declaration.manifest,
                 server: {
                     type: desired,
@@ -4513,7 +4519,7 @@ describe("explicit Paper EULA consent", () => {
             provider.store,
         ).applyPrepared();
         const declaration = await loadProject(dir, home);
-        await writeYaml(path.join(dir, "craflet.yaml"), {
+        await writeYaml(path.join(dir, "crafleet.yaml"), {
             ...declaration.manifest,
             server: { type: "paper", version: "26.1", build: "1" },
         });
@@ -4784,12 +4790,12 @@ describe("filesystem and persisted state guards", () => {
         JSON.stringify({ schemaVersion: 1, active: { id: "invalid" } }),
     ])("fails closed on malformed persisted state", async (text) => {
         const root = await directory();
-        await put(root, ".craflet/state.json", text);
+        await put(root, ".crafleet/state.json", text);
         await expect(readState(root)).rejects.toMatchObject({
             code: "STATE_INVALID",
         });
         await expect(readState(root)).rejects.not.toThrow("private-value");
-        expect(await contents(root, ".craflet/state.json")).toBe(text);
+        expect(await contents(root, ".crafleet/state.json")).toBe(text);
     });
 
     it("checks managed path containment without resolving outside targets", async () => {
@@ -4799,7 +4805,7 @@ describe("filesystem and persisted state guards", () => {
         );
         expect(io.containedPath(root, ".")).toBe(root);
         expect(() => io.containedPath(root, "../outside")).toThrow(
-            CrafletError,
+            CrafleetError,
         );
         await expect(
             io.assertNoSymlinks(root, "../outside"),

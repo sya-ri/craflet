@@ -10,8 +10,8 @@ function execute(args, stdio = ["ignore", "ignore", "inherit"]) {
     });
 }
 export async function containerClient(mode) {
-    const id = process.env.CRAFLET_TEST_DATABASE_CONTAINER;
-    const kind = process.env.CRAFLET_TEST_DATABASE_KIND;
+    const id = process.env.CRAFLEET_TEST_DATABASE_CONTAINER;
+    const kind = process.env.CRAFLEET_TEST_DATABASE_KIND;
     assert(
         process.env.CI === "true",
         "Container client wrappers are only for isolated CI services.",
@@ -22,8 +22,8 @@ export async function containerClient(mode) {
     );
     assert(["mysql", "mariadb"].includes(kind));
     assert(
-        /^craflet_test_[a-z0-9_]+$/.test(
-            process.env.CRAFLET_TEST_DATABASE_NAME ?? "",
+        /^crafleet_test_[a-z0-9_]+$/.test(
+            process.env.CRAFLEET_TEST_DATABASE_NAME ?? "",
         ),
     );
     const command =
@@ -35,8 +35,8 @@ export async function containerClient(mode) {
               ? "mysql"
               : "mariadb";
     const token = randomUUID();
-    const credentials = `/tmp/craflet-ci-${token}.cnf`;
-    const result = `/tmp/craflet-ci-${token}.sql`;
+    const credentials = `/tmp/crafleet-ci-${token}.cnf`;
+    const result = `/tmp/crafleet-ci-${token}.sql`;
     let localResult;
     let copiedCredentials = false;
     const args = [];

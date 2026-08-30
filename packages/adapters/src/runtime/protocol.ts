@@ -1,5 +1,5 @@
 import net from "node:net";
-import { CrafletError } from "@craflet/core";
+import { CrafleetError } from "@crafleet/core";
 import { type } from "arktype";
 
 export const RunnerRecordSchema = type({
@@ -49,7 +49,7 @@ export async function runnerRequest(
                 done = true;
                 socket.destroy();
                 reject(
-                    new CrafletError(
+                    new CrafleetError(
                         "RUNNER_UNREACHABLE",
                         "The authenticated runner is unreachable; process identity is unknown.",
                         3,
@@ -89,14 +89,14 @@ export async function runnerRequest(
                     "code" in envelope &&
                     envelope.code === "STOP_TIMEOUT"
                 )
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "STOP_TIMEOUT",
                         "The server did not stop before its deadline; no force kill was attempted.",
                         3,
                         "Inspect status and logs, or explicitly request stop --force if data loss is acceptable.",
                     );
                 if (!envelope.ok)
-                    throw new CrafletError(
+                    throw new CrafleetError(
                         "RUNNER_COMMAND",
                         "Runner rejected the operation or the server did not stop before the timeout.",
                         3,
@@ -115,9 +115,9 @@ export async function runnerRequest(
                 resolve(result);
             } catch (error) {
                 reject(
-                    error instanceof CrafletError
+                    error instanceof CrafleetError
                         ? error
-                        : new CrafletError(
+                        : new CrafleetError(
                               "RUNNER_PROTOCOL",
                               "Runner returned an invalid or unauthenticated response.",
                               3,

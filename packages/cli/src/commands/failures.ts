@@ -1,4 +1,4 @@
-import { CrafletError } from "@craflet/core";
+import { CrafleetError } from "@crafleet/core";
 import { sanitizeInlineTerminalOutput } from "../presentation/terminal.js";
 
 type PartialFailureUnit = { project: string } | { group: string };
@@ -6,7 +6,7 @@ type PartialFailureUnit = { project: string } | { group: string };
 export function isCancellation(error: unknown, signal: AbortSignal): boolean {
     return (
         signal.aborted ||
-        (error instanceof CrafletError && error.code === "CANCELLED") ||
+        (error instanceof CrafleetError && error.code === "CANCELLED") ||
         (error instanceof Error && error.name === "AbortError")
     );
 }
@@ -16,7 +16,7 @@ export function partialFailure(
     unit: PartialFailureUnit,
     fallback: string,
 ) {
-    const known = error instanceof CrafletError;
+    const known = error instanceof CrafleetError;
     return {
         ...("project" in unit
             ? { project: sanitizeInlineTerminalOutput(unit.project) }

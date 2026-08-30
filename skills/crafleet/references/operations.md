@@ -1,16 +1,16 @@
 # Operational workflows
 
-Use this reference to choose Craflet commands and preserve the desired, pending, and active model. Check the installed command's `--help` before relying on optional flags.
+Use this reference to choose Crafleet commands and preserve the desired, pending, and active model. Check the installed command's `--help` before relying on optional flags.
 
 ## Inspect before changing
 
 From the project or workspace root:
 
 ```sh
-craflet validate
-craflet doctor
-craflet status
-craflet deploy plan
+crafleet validate
+crafleet doctor
+crafleet status
+crafleet deploy plan
 ```
 
 Use `--json` when the result will be parsed. Use `-C <directory>` instead of relying on an uncertain current directory. In a workspace, select explicitly with `-r` or `--filter`.
@@ -20,10 +20,10 @@ Use `--json` when the result will be parsed. Use `-C <directory>` instead of rel
 Create a new project:
 
 ```sh
-craflet init survival --name survival --type paper --version 26.2
-craflet -C survival install
-craflet -C survival doctor
-craflet -C survival start
+crafleet init survival --name survival --type paper --version 26.2
+crafleet -C survival install
+crafleet -C survival doctor
+crafleet -C survival start
 ```
 
 For Paper, `init` may request Minecraft EULA consent. Read the authorization rules in [safety-and-recovery.md](safety-and-recovery.md) before interacting with that prompt or adding `--yes`.
@@ -31,27 +31,27 @@ For Paper, `init` may request Minecraft EULA consent. Read the authorization rul
 Import copies a stopped server into a new project and leaves the source unchanged:
 
 ```sh
-craflet import /srv/old-server /srv/craflet-server \
+crafleet import /srv/old-server /srv/crafleet-server \
     --name survival \
     --type paper \
     --version 26.2 \
     --stopped
 ```
 
-Inspect `craflet import --help`, confirm the source server is stopped, and keep the source until the imported project is verified.
+Inspect `crafleet import --help`, confirm the source server is stopped, and keep the source until the imported project is verified.
 
 ## Resolve and stage artifacts
 
 ```sh
-craflet plugins inspect ../build/MyPlugin.jar
-craflet plugins add file:../build/MyPlugin.jar
-craflet plugins
-craflet server
-craflet install
-craflet plugins check
-craflet server check
-craflet plugins update MyPlugin
-craflet deploy plan
+crafleet plugins inspect ../build/MyPlugin.jar
+crafleet plugins add file:../build/MyPlugin.jar
+crafleet plugins
+crafleet server
+crafleet install
+crafleet plugins check
+crafleet server check
+crafleet plugins update MyPlugin
+crafleet deploy plan
 ```
 
 - `plugins` and `server` show desired, locked, pending, and active artifact state without querying providers. Add `--latest` to either inventory when the latest provider version and update status are needed.
@@ -64,9 +64,9 @@ craflet deploy plan
 After reviewing pending, apply it with a managed start/restart or with stopped-only `deploy apply`:
 
 ```sh
-craflet restart
+crafleet restart
 # or, while stopped:
-craflet deploy apply
+crafleet deploy apply
 ```
 
 `deploy apply` takes the required backup and does not start Java. `deploy discard` drops only pending; YAML and lock remain desired.
@@ -92,20 +92,20 @@ A timeout does not authorize force termination. Do not kill every Java process o
 Initial capture after the first server-generated files exist:
 
 ```sh
-craflet config list --candidates
-craflet config capture --initial
-craflet config track plugins/MyPlugin/config.yml
-craflet config diff
-craflet config capture
-craflet install
+crafleet config list --candidates
+crafleet config capture --initial
+crafleet config track plugins/MyPlugin/config.yml
+crafleet config diff
+crafleet config capture
+crafleet install
 ```
 
 Register secret references before capture. Later capture compares base, prior observation, and runtime. If a conflict is reported, inspect it and resolve deliberately:
 
 ```sh
-craflet config resolve plugins/MyPlugin/config.yml --use base
+crafleet config resolve plugins/MyPlugin/config.yml --use base
 # or:
-craflet config resolve plugins/MyPlugin/config.yml --use runtime
+crafleet config resolve plugins/MyPlugin/config.yml --use runtime
 ```
 
 Pass exact runtime-relative paths to `config capture <paths...>` when the request concerns only particular plugin files. An existing selected runtime file is captured and becomes tracked; `config track <paths...>` is the explicit alternative when beginning tracking. Omitting paths captures all currently tracked files and may exceed a narrowly scoped request.
@@ -117,48 +117,48 @@ Run `install` after a base change or capture so the new configuration becomes pe
 Use an absolute local or mounted path outside runtime and staging. The destination's parent must already exist. `--init` explicitly creates a new encrypted restic repository; omit it when registering an existing one.
 
 ```sh
-craflet backup setup main \
+crafleet backup setup main \
   --path /mnt/backups/survival \
-  --password-env CRAFLET_BACKUP_PASSWORD \
+  --password-env CRAFLEET_BACKUP_PASSWORD \
   --init
-craflet backup plan
-craflet backup create
-craflet backup list
-craflet backup check --read-data
+crafleet backup plan
+crafleet backup create
+crafleet backup list
+crafleet backup check --read-data
 ```
 
-Craflet verifies the repository and restic before stopping. A cold backup resumes only servers that were running, using the same active installation rather than pending. `--leave-stopped` prevents resume.
+Crafleet verifies the repository and restic before stopping. A cold backup resumes only servers that were running, using the same active installation rather than pending. `--leave-stopped` prevents resume.
 
 Inspect a snapshot before applying it:
 
 ```sh
-craflet backup show <snapshot-id>
-craflet backup restore <snapshot-id> --to /restore/survival
-craflet backup apply /restore/survival --dry-run
-craflet backup apply /restore/survival
+crafleet backup show <snapshot-id>
+crafleet backup restore <snapshot-id> --to /restore/survival
+crafleet backup apply /restore/survival --dry-run
+crafleet backup apply /restore/survival
 ```
 
 `backup restore` requires one explicit snapshot ID of 8 to 64 lowercase hexadecimal characters. A phrase such as “yesterday” is not an ID and may match multiple snapshots or depend on timezone. Use `backup list --json` and `backup show <id> --json`, then have the operator or an explicit policy select one ID before extraction. `backup apply` takes the verified extraction directory produced by `backup restore`, not a snapshot ID.
 
-`restore` extracts only into an empty separate directory. `apply` verifies it, stops the selected server group, takes a pre-restore backup, restores the snapshot's operating data and active installation, clears pending, and leaves Java stopped. The current desired YAML and shared lock remain unchanged. External roots and databases require explicit mappings/selections. After inspecting the restored state, use `craflet start --active` to launch that restored active installation; a later `install` may prepare the still-declared desired state again.
+`restore` extracts only into an empty separate directory. `apply` verifies it, stops the selected server group, takes a pre-restore backup, restores the snapshot's operating data and active installation, clears pending, and leaves Java stopped. The current desired YAML and shared lock remain unchanged. External roots and databases require explicit mappings/selections. After inspecting the restored state, use `crafleet start --active` to launch that restored active installation; a later `install` may prepare the still-declared desired state again.
 
 After an update or restore, collect `status`, `plugins`, `server`, relevant logs, `config diff`, and the application's actual health signal. “Looks bad” remains an operator decision unless the user supplies a concrete, observable rollback condition; do not invent one.
 
 Pruning is preview-only unless explicitly applied:
 
 ```sh
-craflet backup prune
-craflet backup prune --apply
-craflet cache prune
-craflet cache prune --apply
+crafleet backup prune
+crafleet backup prune --apply
+crafleet cache prune
+crafleet cache prune --apply
 ```
 
 ## Workspace operations
 
 ```sh
-craflet workspace list
-craflet -r status
-craflet --filter survival plugins check
+crafleet workspace list
+crafleet -r status
+crafleet --filter survival plugins check
 ```
 
 Workspace operations have deterministic selection. Use all group members for shared backup/database production actions. Declaration preparation may target a subset, but a partial runtime result must be reported project by project.
@@ -166,12 +166,12 @@ Workspace operations have deterministic selection. Use all group members for sha
 ## Diagnose and recover
 
 ```sh
-craflet doctor
-craflet recover --dry-run
-craflet recover
+crafleet doctor
+crafleet recover --dry-run
+crafleet recover
 ```
 
-Use recovery only when Craflet reports an interrupted journal or lock. Inspect the dry run and confirm the server state first. `recover --unlock` removes only locks belonging to ended operations; it does not terminate Java. Never delete journals manually to make an error disappear.
+Use recovery only when Crafleet reports an interrupted journal or lock. Inspect the dry run and confirm the server state first. `recover --unlock` removes only locks belonging to ended operations; it does not terminate Java. Never delete journals manually to make an error disappear.
 
 ## Command groups
 

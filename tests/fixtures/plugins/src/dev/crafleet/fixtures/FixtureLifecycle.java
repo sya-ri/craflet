@@ -1,4 +1,4 @@
-package dev.craflet.fixtures;
+package dev.crafleet.fixtures;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -11,13 +11,13 @@ import java.nio.file.StandardOpenOption;
 final class FixtureLifecycle {
     private final Path directory;
     private final Path sharedMarker;
-    private final boolean allowFaults = Boolean.getBoolean("craflet.fixture.allowFaults");
+    private final boolean allowFaults = Boolean.getBoolean("crafleet.fixture.allowFaults");
     private volatile boolean enabled;
 
     FixtureLifecycle(Path directory) {
         this.directory = directory;
-        String shared = System.getProperty("craflet.fixture.sharedDirectory");
-        String instance = System.getProperty("craflet.fixture.instance");
+        String shared = System.getProperty("crafleet.fixture.sharedDirectory");
+        String instance = System.getProperty("crafleet.fixture.instance");
         if (shared != null && instance != null && instance.matches("[a-zA-Z0-9_-]+")) {
             sharedMarker = Path.of(shared).resolve(instance + ".running");
         } else {
@@ -110,7 +110,7 @@ final class FixtureLifecycle {
                     if (Files.exists(request)) {
                         Files.delete(request);
                         write("crashed-version.txt", FixtureVersion.VALUE + "\n");
-                        System.out.println("CRAFLET_FIXTURE explicit disposable-test halt:17");
+                        System.out.println("CRAFLEET_FIXTURE explicit disposable-test halt:17");
                         Runtime.getRuntime().halt(17);
                     }
                     Thread.sleep(50);
@@ -120,7 +120,7 @@ final class FixtureLifecycle {
             } catch (IOException exception) {
                 throw new UncheckedIOException("Cannot read fixture crash request", exception);
             }
-        }, "craflet-disposable-fixture-faults");
+        }, "crafleet-disposable-fixture-faults");
         watcher.setDaemon(true);
         watcher.start();
     }
@@ -129,7 +129,7 @@ final class FixtureLifecycle {
         String value = name + ":" + FixtureVersion.VALUE + "\n";
         Files.writeString(directory.resolve("events.log"), value, StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        System.out.println("CRAFLET_FIXTURE " + directory.getFileName() + " " + value.strip());
+        System.out.println("CRAFLEET_FIXTURE " + directory.getFileName() + " " + value.strip());
     }
 
     private void write(String name, String value) throws IOException {

@@ -1,13 +1,13 @@
 import path from "node:path";
 import {
-    CrafletError,
+    CrafleetError,
     type ProjectLock,
     parsePluginSource,
     parseServerSource,
     type ServerKind,
     validatePluginIdentities,
     validatePluginSet,
-} from "@craflet/core";
+} from "@crafleet/core";
 import { NodeConfigManager } from "./config.js";
 import { serverSource } from "./installations.js";
 import { exists } from "./io.js";
@@ -22,7 +22,7 @@ export function validateManagedProjectLock(
     const identities = Object.entries(lock.plugins).map(([name, artifact]) => {
         parsePluginSource(artifact.source);
         if (!artifact.identity || artifact.identity.id !== name)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "LOCK_IDENTITY",
                 `Lock plugin ${name} does not match its descriptor identity.`,
                 2,
@@ -33,8 +33,10 @@ export function validateManagedProjectLock(
 }
 
 export async function validateManagedProject(project: ProjectContext) {
-    if (await exists(path.join(project.dir, ".craflet/import-incomplete.json")))
-        throw new CrafletError(
+    if (
+        await exists(path.join(project.dir, ".crafleet/import-incomplete.json"))
+    )
+        throw new CrafleetError(
             "IMPORT_INCOMPLETE",
             "The imported destination is incomplete; it cannot be started safely.",
             4,
@@ -60,7 +62,7 @@ export async function validateManagedProject(project: ProjectContext) {
         project.manifest.secrets,
     ).diff();
     if (configuration.some((file) => file.conflicts.length))
-        throw new CrafletError(
+        throw new CrafleetError(
             "CONFIG_CONFLICT",
             "Managed configuration has conflicts. Run config diff and config resolve.",
             3,

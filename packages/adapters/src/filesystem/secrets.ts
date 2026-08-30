@@ -1,11 +1,11 @@
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
-    CrafletError,
+    CrafleetError,
     configPointer,
     isConfigRecord,
     type SecretReference,
-} from "@craflet/core";
+} from "@crafleet/core";
 import {
     type ConfigDocument,
     mapConfigStrings,
@@ -30,7 +30,7 @@ function secretError(code: string): never {
         SECRET_TOKEN:
             "A secret placeholder is invalid, unresolved, or outside a supported string value.",
     };
-    throw new CrafletError(
+    throw new CrafleetError(
         code,
         messages[code] ?? "A secret could not be handled safely.",
         3,

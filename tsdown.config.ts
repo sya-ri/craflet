@@ -1,6 +1,6 @@
 import { defineConfig } from "tsdown";
 import { architecturePlugin } from "./scripts/check-architecture.mjs";
-import { crafletVersionDefine } from "./scripts/version.mjs";
+import { crafleetVersionDefine } from "./scripts/version.mjs";
 
 export default defineConfig([
     {
@@ -11,7 +11,7 @@ export default defineConfig([
         target: "node24",
         clean: true,
         dts: false,
-        define: crafletVersionDefine,
+        define: crafleetVersionDefine,
         deps: { alwaysBundle: [/.*/], onlyBundle: false, onlyImport: [] },
         plugins: [architecturePlugin({ standalone: true })],
         outputOptions: { codeSplitting: false, entryFileNames: "[name].mjs" },
@@ -24,7 +24,7 @@ export default defineConfig([
         target: "node24",
         clean: false,
         dts: false,
-        define: crafletVersionDefine,
+        define: crafleetVersionDefine,
         deps: { alwaysBundle: [/.*/], onlyBundle: false, onlyImport: [] },
         plugins: [architecturePlugin({ standalone: true })],
         outputOptions: { codeSplitting: false, entryFileNames: "[name].mjs" },
@@ -37,7 +37,7 @@ export default defineConfig([
         target: "node24",
         clean: true,
         dts: false,
-        define: crafletVersionDefine,
+        define: crafleetVersionDefine,
         deps: { alwaysBundle: [/.*/], onlyBundle: false, onlyImport: [] },
         plugins: [architecturePlugin({ standalone: true })],
         outputOptions: { codeSplitting: false, entryFileNames: "[name].mjs" },

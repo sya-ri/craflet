@@ -31,7 +31,7 @@ function titleText(value: string): string {
         .join("");
 }
 
-/** A portable terminal for Craflet's single-line server console. */
+/** A portable terminal for Crafleet's single-line server console. */
 export class ConsoleTerminal implements Terminal {
     private readonly timeout: number;
     private wasRaw = false;

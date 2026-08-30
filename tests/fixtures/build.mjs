@@ -16,19 +16,19 @@ import {
 import { delimiter, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { crafletVersion } from "../../scripts/version.mjs";
+import { crafleetVersion } from "../../scripts/version.mjs";
 
 const execute = promisify(execFile);
 const repository = fileURLToPath(new URL("../../", import.meta.url));
 const fixtureDirectory = fileURLToPath(new URL("./", import.meta.url));
 const outputDirectory = join(repository, "artifacts", "fixtures");
-const packageDirectory = "dev/craflet/fixtures";
-const userAgent = `craflet/${crafletVersion} (https://github.com/sya-ri/craflet)`;
+const packageDirectory = "dev/crafleet/fixtures";
+const userAgent = `crafleet/${crafleetVersion} (https://github.com/sya-ri/crafleet)`;
 const versions = { v1: "1.0.0", v2: "2.0.0" };
 const platforms = {
-    bukkit: { id: "CrafletBukkitFixture", main: "BukkitFixture" },
-    paper: { id: "CrafletPaperFixture", main: "PaperFixture" },
-    velocity: { id: "crafletvelocityfixture", main: "VelocityFixture" },
+    bukkit: { id: "CrafleetBukkitFixture", main: "BukkitFixture" },
+    paper: { id: "CrafleetPaperFixture", main: "PaperFixture" },
+    velocity: { id: "crafleetvelocityfixture", main: "VelocityFixture" },
 };
 
 async function checksum(file) {
@@ -111,7 +111,7 @@ async function ensureArtifact(locked, offline) {
 }
 
 async function javaTools(expected) {
-    let javaHome = process.env.CRAFLET_TEST_JAVA_HOME ?? process.env.JAVA_HOME;
+    let javaHome = process.env.CRAFLEET_TEST_JAVA_HOME ?? process.env.JAVA_HOME;
     if (!javaHome) {
         try {
             const result = await execute("mise", ["where", "java"], {
@@ -122,7 +122,7 @@ async function javaTools(expected) {
             javaHome = result.stdout.trim();
         } catch {
             throw new Error(
-                "Set CRAFLET_TEST_JAVA_HOME to the pinned JDK, or install it with mise.",
+                "Set CRAFLEET_TEST_JAVA_HOME to the pinned JDK, or install it with mise.",
             );
         }
     }
@@ -146,7 +146,7 @@ async function javaTools(expected) {
                 : /javac ([^\s]+)/.exec(text)?.[1];
         if (version !== expected.version) {
             throw new Error(
-                `Fixture ${name} requires ${expected.version}; found ${version ?? "unknown"}. Set CRAFLET_TEST_JAVA_HOME.`,
+                `Fixture ${name} requires ${expected.version}; found ${version ?? "unknown"}. Set CRAFLEET_TEST_JAVA_HOME.`,
             );
         }
     }
@@ -172,11 +172,11 @@ async function listFiles(directory, prefix = "") {
 
 function descriptor(platform, version) {
     const { id, main } = platforms[platform];
-    const className = `dev.craflet.fixtures.${main}`;
+    const className = `dev.crafleet.fixtures.${main}`;
     if (platform === "velocity") {
         return {
             name: "velocity-plugin.json",
-            content: `${JSON.stringify({ id, name: "Craflet Velocity Fixture", version, main: className, dependencies: [] }, null, 4)}\n`,
+            content: `${JSON.stringify({ id, name: "Crafleet Velocity Fixture", version, main: className, dependencies: [] }, null, 4)}\n`,
         };
     }
     return {
@@ -199,7 +199,7 @@ async function compile(
     await mkdir(classes, { recursive: true });
     await writeFile(
         generated,
-        `package dev.craflet.fixtures;\nfinal class FixtureVersion { static final String VALUE = "${version}"; }\n`,
+        `package dev.crafleet.fixtures;\nfinal class FixtureVersion { static final String VALUE = "${version}"; }\n`,
         "utf8",
     );
     const sourceRoot = join(

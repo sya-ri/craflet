@@ -15,7 +15,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { CrafletError } from "@craflet/core";
+import { CrafleetError } from "@crafleet/core";
 
 const WINDOWS_SHARING_ERRORS = new Set(["EPERM", "EACCES", "EBUSY"]);
 
@@ -127,7 +127,7 @@ export async function readBoundedRegularFile(
         return { bytes: bytes.subarray(0, size), stats: before };
     } catch (error) {
         signal?.throwIfAborted();
-        if (error instanceof CrafletError) throw error;
+        if (error instanceof CrafleetError) throw error;
         if (error instanceof BoundedFileError)
             return options.failure(error.reason);
         if ((error as NodeJS.ErrnoException).code === "ENOENT")
@@ -188,7 +188,7 @@ export async function appendToBoundedRegularFile(
         )
             throw new BoundedFileError("changed");
     } catch (error) {
-        if (error instanceof CrafletError) throw error;
+        if (error instanceof CrafleetError) throw error;
         if (error instanceof BoundedFileError)
             return options.failure(error.reason);
         if ((error as NodeJS.ErrnoException).code === "ENOENT")
@@ -282,7 +282,7 @@ export async function atomicCreate(
                     "EXDEV",
                 ].includes((error as NodeJS.ErrnoException).code ?? "")
             )
-                throw new CrafletError(
+                throw new CrafleetError(
                     "ATOMIC_CREATE_UNSUPPORTED",
                     "The filesystem refused safe exclusive file creation.",
                     3,
@@ -348,7 +348,7 @@ export function pathsOverlap(first: string, second: string): boolean {
 export function containedPath(root: string, relative: string): string {
     const target = path.resolve(root, relative);
     if (!pathContains(root, target)) {
-        throw new CrafletError(
+        throw new CrafleetError(
             "PATH_ESCAPE",
             `Path leaves its managed directory: ${relative}`,
             3,
@@ -376,7 +376,7 @@ export async function assertNoSymlinks(
             if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
             throw error;
         }
-        throw new CrafletError(
+        throw new CrafleetError(
             "SYMLINK_UNSAFE",
             `Refusing managed path through a symbolic link: ${current}`,
             3,
@@ -393,7 +393,7 @@ export async function listFiles(root: string): Promise<string[]> {
         for (const entry of await readdir(directory, { withFileTypes: true })) {
             const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
             if (entry.isSymbolicLink())
-                throw new CrafletError(
+                throw new CrafleetError(
                     "SYMLINK_UNSAFE",
                     `Symbolic link in managed files: ${relative}`,
                     3,
@@ -430,11 +430,11 @@ export async function withMutex<T>(
         await mkdir(directory);
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-            throw new CrafletError(
+            throw new CrafleetError(
                 "BUSY",
                 "Another operation is active, or an interrupted operation needs recovery.",
                 4,
-                "Run craflet recover after verifying no operation is active.",
+                "Run crafleet recover after verifying no operation is active.",
             );
         }
         throw error;

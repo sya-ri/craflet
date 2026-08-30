@@ -5,7 +5,7 @@ import { mkdir, readFile, rm } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { CrafletError } from "@craflet/core";
+import { CrafleetError } from "@crafleet/core";
 import { type } from "arktype";
 import { assertNoSymlinks, exists, writeJson } from "../filesystem/io.js";
 import { ensurePrivateDirectory } from "../filesystem/private.js";
@@ -35,7 +35,7 @@ export async function runtimeEndpoint(
         const host = String(data["server-ip"] || "127.0.0.1");
         const port = Number(data["server-port"] ?? 25565);
         if (!Number.isInteger(port) || port < 1 || port > 65535)
-            throw new CrafletError("SERVER_PORT", "Invalid server-port.", 2);
+            throw new CrafleetError("SERVER_PORT", "Invalid server-port.", 2);
         return {
             host: ["0.0.0.0", "::"].includes(host) ? "127.0.0.1" : host,
             port,
@@ -44,7 +44,7 @@ export async function runtimeEndpoint(
     const bind = String(data.bind ?? "0.0.0.0:25565");
     const match = /^(?:\[([^\]]+)\]|([^:]+)):(\d+)$/.exec(bind);
     if (!match)
-        throw new CrafletError(
+        throw new CrafleetError(
             "SERVER_BIND",
             "Invalid Velocity bind address.",
             2,
@@ -52,7 +52,7 @@ export async function runtimeEndpoint(
     const host = match[1] ?? match[2] ?? "127.0.0.1";
     const port = Number(match[3]);
     if (port < 1 || port > 65535)
-        throw new CrafletError("SERVER_PORT", "Invalid Velocity port.", 2);
+        throw new CrafleetError("SERVER_PORT", "Invalid Velocity port.", 2);
     return {
         host: ["0.0.0.0", "::"].includes(host) ? "127.0.0.1" : host,
         port,
@@ -60,14 +60,14 @@ export async function runtimeEndpoint(
 }
 
 export async function runServerDaemon(projectDir: string): Promise<void> {
-    const privateDir = await assertNoSymlinks(projectDir, ".craflet");
+    const privateDir = await assertNoSymlinks(projectDir, ".crafleet");
     await ensurePrivateDirectory(privateDir);
     const launchFile = path.join(privateDir, "runner-launch.json");
     const launch = RunnerLaunchSchema(
         JSON.parse(await readFile(launchFile, "utf8")),
     );
     if (launch instanceof type.errors)
-        throw new CrafletError(
+        throw new CrafleetError(
             "RUNNER_LAUNCH",
             "Invalid runner launch request.",
             4,
@@ -75,7 +75,7 @@ export async function runServerDaemon(projectDir: string): Promise<void> {
     const launchToken = launch.token;
     const state = await readState(projectDir);
     if (!state.active || state.active.id !== launch.activeId)
-        throw new CrafletError(
+        throw new CrafleetError(
             "RUNNER_ACTIVE",
             "Runner active installation mismatch.",
             4,
@@ -87,12 +87,12 @@ export async function runServerDaemon(projectDir: string): Promise<void> {
     );
     const executable = await javaExecutable(active.manifest.java?.command);
     await assertNoSymlinks(projectDir, "runtime/server.jar");
-    await assertNoSymlinks(projectDir, ".craflet/server.log");
+    await assertNoSymlinks(projectDir, ".crafleet/server.log");
     const guard = path.join(privateDir, "process.lock");
     try {
         await mkdir(guard);
     } catch {
-        throw new CrafletError(
+        throw new CrafleetError(
             "RUNNER_GUARD",
             "A server lifetime guard already exists. Inspect status before recovery.",
             4,
@@ -163,9 +163,9 @@ export async function runServerDaemon(projectDir: string): Promise<void> {
     } catch {
         control.close();
         output.end();
-        await assertNoSymlinks(projectDir, ".craflet/process.lock");
+        await assertNoSymlinks(projectDir, ".crafleet/process.lock");
         await rm(guard, { recursive: true });
-        throw new CrafletError(
+        throw new CrafleetError(
             "RUNNER_STATE",
             "Runner state could not be persisted; Java was not started.",
             4,
@@ -200,7 +200,7 @@ export async function runServerDaemon(projectDir: string): Promise<void> {
         };
         try {
             await persistRecord();
-            await assertNoSymlinks(projectDir, ".craflet/process.lock");
+            await assertNoSymlinks(projectDir, ".crafleet/process.lock");
             const owner: unknown = JSON.parse(
                 await readFile(path.join(guard, "owner.json"), "utf8"),
             );
@@ -213,7 +213,7 @@ export async function runServerDaemon(projectDir: string): Promise<void> {
                 await rm(guard, { recursive: true });
         } catch {
             log(
-                "[craflet] Process ended, but durable state or lifetime-guard cleanup failed; run doctor and recover.",
+                "[crafleet] Process ended, but durable state or lifetime-guard cleanup failed; run doctor and recover.",
             );
         } finally {
             await new Promise<void>((resolve) => output.end(() => resolve()));
@@ -222,19 +222,19 @@ export async function runServerDaemon(projectDir: string): Promise<void> {
         }
     }
     child.once("error", () => {
-        log("[craflet] Java could not be spawned.");
+        log("[crafleet] Java could not be spawned.");
         void finalized(1);
     });
     child.once("close", (code) => {
         void finalized(code);
     });
     child.stdin.on("error", () => {
-        log("[craflet] Server input is no longer writable.");
+        log("[crafleet] Server input is no longer writable.");
     });
     if (!exited)
         await persistRecord().catch(() =>
             log(
-                "[craflet] Runner process metadata could not be persisted; inspect doctor before any further operation.",
+                "[crafleet] Runner process metadata could not be persisted; inspect doctor before any further operation.",
             ),
         );
     async function stop(force: boolean): Promise<void> {
@@ -257,7 +257,7 @@ export async function runServerDaemon(projectDir: string): Promise<void> {
                 delay(timeout, undefined, { signal: timeoutAbort.signal }).then(
                     () => {
                         if (!exited)
-                            throw new CrafletError(
+                            throw new CrafleetError(
                                 "STOP_TIMEOUT",
                                 "The server did not stop; it was not killed.",
                                 3,
@@ -322,7 +322,7 @@ export async function runServerDaemon(projectDir: string): Promise<void> {
                     );
                 } catch (error) {
                     const code =
-                        error instanceof CrafletError &&
+                        error instanceof CrafleetError &&
                         error.code === "STOP_TIMEOUT"
                             ? "STOP_TIMEOUT"
                             : undefined;
@@ -335,7 +335,7 @@ export async function runServerDaemon(projectDir: string): Promise<void> {
     });
     const interrupt = () => {
         void stop(false).catch(() => {
-            log("[craflet] Graceful stop timed out; no automatic force kill.");
+            log("[crafleet] Graceful stop timed out; no automatic force kill.");
         });
     };
     process.on("SIGINT", interrupt);

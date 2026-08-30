@@ -114,7 +114,7 @@ describe("real servers through the packaged CLI", () => {
                     "CONFIRMATION_REQUIRED",
                 );
                 await expect(
-                    stat(path.join(directory, "craflet.yaml")),
+                    stat(path.join(directory, "crafleet.yaml")),
                 ).rejects.toMatchObject({ code: "ENOENT" });
                 await expect(stat(homeEulaFile)).rejects.toMatchObject({
                     code: "ENOENT",
@@ -258,7 +258,7 @@ describe("real servers through the packaged CLI", () => {
                 "--lines",
                 "200",
             ]);
-            expect(logs).toContain("CRAFLET_FIXTURE");
+            expect(logs).toContain("CRAFLEET_FIXTURE");
             expect(logs).toMatch(/\bDone \([\d.,]+s\)!/);
             await cli(suite, directory, ["command", "help"]);
 
@@ -273,7 +273,7 @@ describe("real servers through the packaged CLI", () => {
                     path.join(directory, "config", "server.properties"),
                     "utf8",
                 );
-                const secret = suite.env.CRAFLET_TEST_MANAGEMENT_SECRET;
+                const secret = suite.env.CRAFLEET_TEST_MANAGEMENT_SECRET;
                 if (!secret)
                     throw new Error(
                         "The explicit management fixture secret is missing.",
@@ -372,7 +372,7 @@ describe("real servers through the packaged CLI", () => {
                 ...suite,
                 env: { ...suite.env },
             };
-            delete withoutPassword.env.CRAFLET_TEST_BACKUP_PASSWORD;
+            delete withoutPassword.env.CRAFLEET_TEST_BACKUP_PASSWORD;
             await cliError(
                 withoutPassword,
                 directory,
@@ -606,10 +606,10 @@ describe("real servers through the packaged CLI", () => {
             ]);
             expect((await readState(directory)).pending).toBeDefined();
             const desiredLock = await readFile(
-                path.join(directory, "craflet-lock.yaml"),
+                path.join(directory, "crafleet-lock.yaml"),
             );
             const desiredManifest = await readFile(
-                path.join(directory, "craflet.yaml"),
+                path.join(directory, "crafleet.yaml"),
             );
             const desiredConfig = await readFile(baseConfig);
             const applied = await cli(suite, directory, [
@@ -635,10 +635,10 @@ describe("real servers through the packaged CLI", () => {
             expect(reapplied.active?.id).not.toBe(upgraded.active?.id);
             expect(reapplied.active?.lock).toEqual(active.lock);
             expect(
-                await readFile(path.join(directory, "craflet-lock.yaml")),
+                await readFile(path.join(directory, "crafleet-lock.yaml")),
             ).toEqual(desiredLock);
             expect(
-                await readFile(path.join(directory, "craflet.yaml")),
+                await readFile(path.join(directory, "crafleet.yaml")),
             ).toEqual(desiredManifest);
             expect(await readFile(baseConfig)).toEqual(desiredConfig);
             if (kind === "paper")
@@ -760,7 +760,7 @@ describe("real servers through the packaged CLI", () => {
                 name === "alpha",
             );
             const loaded = await loadProject(directory, suite.home);
-            await writeYaml(path.join(directory, "craflet.yaml"), {
+            await writeYaml(path.join(directory, "crafleet.yaml"), {
                 ...loaded.manifest,
                 backup: {
                     ...loaded.manifest.backup,
@@ -804,7 +804,7 @@ describe("real servers through the packaged CLI", () => {
         ).toEqual(["alpha", "beta"]);
         for (const member of members) {
             await expect(
-                stat(path.join(member.dir, "craflet-lock.yaml")),
+                stat(path.join(member.dir, "crafleet-lock.yaml")),
             ).rejects.toMatchObject({ code: "ENOENT" });
         }
         await cliError(
@@ -847,7 +847,7 @@ describe("real servers through the packaged CLI", () => {
         );
         await cli(suite, first.dir, ["--offline", "plugins", "update"]);
         const pending = (await readState(first.dir)).pending;
-        expect(pending?.lock.plugins.crafletvelocityfixture?.sha256).toBe(
+        expect(pending?.lock.plugins.crafleetvelocityfixture?.sha256).toBe(
             suite.fixtures.plugins.velocity.v2.sha256,
         );
         const activeIds = await Promise.all(
@@ -979,7 +979,7 @@ describe("real servers through the packaged CLI", () => {
             await writeFile(
                 pluginData(
                     member.dir,
-                    "crafletvelocityfixture",
+                    "crafleetvelocityfixture",
                     "player-state.txt",
                 ),
                 changedPlayerState,
@@ -997,7 +997,7 @@ describe("real servers through the packaged CLI", () => {
                 await readFile(
                     pluginData(
                         member.dir,
-                        "crafletvelocityfixture",
+                        "crafleetvelocityfixture",
                         "enabled-version.txt",
                     ),
                     "utf8",
@@ -1007,7 +1007,7 @@ describe("real servers through the packaged CLI", () => {
                 await readFile(
                     pluginData(
                         member.dir,
-                        "crafletvelocityfixture",
+                        "crafleetvelocityfixture",
                         "observed-player-state.txt",
                     ),
                     "utf8",
@@ -1031,7 +1031,7 @@ describe("real servers through the packaged CLI", () => {
         for (const member of members)
             expect((await readState(member.dir)).pending).toBeDefined();
         const desiredLock = await readFile(
-            path.join(workspace, "craflet-lock.yaml"),
+            path.join(workspace, "crafleet-lock.yaml"),
         );
         const desiredActiveIds = await Promise.all(
             members.map(
@@ -1082,7 +1082,7 @@ describe("real servers through the packaged CLI", () => {
             preRestoreSnapshot: expect.any(String),
         });
         expect(
-            await readFile(path.join(workspace, "craflet-lock.yaml")),
+            await readFile(path.join(workspace, "crafleet-lock.yaml")),
         ).toEqual(desiredLock);
         expect(
             await readFile(path.join(shared, "shared-data.txt"), "utf8"),
@@ -1094,7 +1094,7 @@ describe("real servers through the packaged CLI", () => {
                 await readFile(
                     pluginData(
                         member.dir,
-                        "crafletvelocityfixture",
+                        "crafleetvelocityfixture",
                         "events.log",
                     ),
                     "utf8",
@@ -1104,7 +1104,7 @@ describe("real servers through the packaged CLI", () => {
             expect(state.pending).toBeUndefined();
             expect(state.active?.id).not.toBe(desiredActiveIds[index]);
             expect(
-                state.active?.lock.plugins.crafletvelocityfixture?.sha256,
+                state.active?.lock.plugins.crafleetvelocityfixture?.sha256,
             ).toBe(suite.fixtures.plugins.velocity.v1.sha256);
             expect(
                 await cli<ServerStatus>(suite, member.dir, ["status"]),
@@ -1114,13 +1114,15 @@ describe("real servers through the packaged CLI", () => {
             });
             await assertPortReleased(member.port);
             expect(
-                await fileHash(pluginJar(member.dir, "crafletvelocityfixture")),
+                await fileHash(
+                    pluginJar(member.dir, "crafleetvelocityfixture"),
+                ),
             ).toBe(suite.fixtures.plugins.velocity.v1.sha256);
             expect(
                 await readFile(
                     pluginData(
                         member.dir,
-                        "crafletvelocityfixture",
+                        "crafleetvelocityfixture",
                         "saved-version.txt",
                     ),
                     "utf8",
@@ -1130,7 +1132,7 @@ describe("real servers through the packaged CLI", () => {
                 await readFile(
                     pluginData(
                         member.dir,
-                        "crafletvelocityfixture",
+                        "crafleetvelocityfixture",
                         "player-state.txt",
                     ),
                     "utf8",
@@ -1142,13 +1144,13 @@ describe("real servers through the packaged CLI", () => {
                 code: "ENOENT",
             });
             await expect(
-                stat(path.join(member.dir, ".craflet", "restore.json")),
+                stat(path.join(member.dir, ".crafleet", "restore.json")),
             ).rejects.toMatchObject({
                 code: "ENOENT",
             });
         }
         await expect(
-            stat(path.join(workspace, ".craflet", "group-restore.json")),
+            stat(path.join(workspace, ".crafleet", "group-restore.json")),
         ).rejects.toMatchObject({
             code: "ENOENT",
         });
@@ -1158,7 +1160,7 @@ describe("real servers through the packaged CLI", () => {
                 await readFile(
                     pluginData(
                         member.dir,
-                        "crafletvelocityfixture",
+                        "crafleetvelocityfixture",
                         "events.log",
                     ),
                     "utf8",
@@ -1177,7 +1179,7 @@ describe("real servers through the packaged CLI", () => {
                 await readFile(
                     pluginData(
                         member.dir,
-                        "crafletvelocityfixture",
+                        "crafleetvelocityfixture",
                         "enabled-version.txt",
                     ),
                     "utf8",
@@ -1187,7 +1189,7 @@ describe("real servers through the packaged CLI", () => {
                 await readFile(
                     pluginData(
                         member.dir,
-                        "crafletvelocityfixture",
+                        "crafleetvelocityfixture",
                         "observed-message.txt",
                     ),
                     "utf8",
@@ -1197,7 +1199,7 @@ describe("real servers through the packaged CLI", () => {
                 await readFile(
                     pluginData(
                         member.dir,
-                        "crafletvelocityfixture",
+                        "crafleetvelocityfixture",
                         "observed-player-state.txt",
                     ),
                     "utf8",
@@ -1311,7 +1313,7 @@ describe("real servers through the packaged CLI", () => {
                     ),
                 ).toBe(`${events}disable:1.0.0\n`);
                 await expect(
-                    stat(path.join(directory, ".craflet", "deploy.json")),
+                    stat(path.join(directory, ".crafleet", "deploy.json")),
                 ).rejects.toMatchObject({
                     code: "ENOENT",
                 });
@@ -1372,10 +1374,10 @@ describe("real servers through the packaged CLI", () => {
         const runtimeConfig = path.join(directory, "runtime", "velocity.toml");
         const oldConfig = await readFile(runtimeConfig);
         const declared = (await readFile(baseConfig, "utf8")).replace(
-            "Craflet disposable E2E",
-            "Craflet interrupted deployment",
+            "Crafleet disposable E2E",
+            "Crafleet interrupted deployment",
         );
-        expect(declared).toContain("Craflet interrupted deployment");
+        expect(declared).toContain("Crafleet interrupted deployment");
         await writeFile(baseConfig, declared, "utf8");
         await copyFile(next.path, source);
         await cli(suite, directory, ["--offline", "plugins", "update"]);
@@ -1385,9 +1387,9 @@ describe("real servers through the packaged CLI", () => {
         );
         expect(before.pending?.lock.plugins[next.id]?.sha256).toBe(next.sha256);
         const desiredLock = await readFile(
-            path.join(directory, "craflet-lock.yaml"),
+            path.join(directory, "crafleet-lock.yaml"),
         );
-        const journalFile = path.join(directory, ".craflet", "deploy.json");
+        const journalFile = path.join(directory, ".crafleet", "deploy.json");
 
         // Keep plugins/ writable so the real JAR is replaced, then deny the root
         // config's atomic write. The helper always restores the original ACL/mode.
@@ -1447,7 +1449,7 @@ describe("real servers through the packaged CLI", () => {
         expect(await readFile(runtimeConfig)).toEqual(oldConfig);
         expect(await readFile(baseConfig, "utf8")).toBe(declared);
         expect(
-            await readFile(path.join(directory, "craflet-lock.yaml")),
+            await readFile(path.join(directory, "crafleet-lock.yaml")),
         ).toEqual(desiredLock);
         await expect(stat(journalFile)).rejects.toMatchObject({
             code: "ENOENT",

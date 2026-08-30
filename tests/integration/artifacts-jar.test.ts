@@ -16,7 +16,7 @@ describe("bounded plugin JAR inspection", () => {
     let directory: string;
     beforeEach(async () => {
         directory = await mkdtemp(
-            path.join(os.tmpdir(), "craflet-artifacts-jar-"),
+            path.join(os.tmpdir(), "crafleet-artifacts-jar-"),
         );
     });
     afterEach(async () => {

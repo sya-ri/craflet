@@ -3,16 +3,16 @@ import { constants } from "node:fs";
 import { type FileHandle, lstat, open } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { CrafletError } from "@craflet/core";
+import { CrafleetError } from "@crafleet/core";
 import { assertNoSymlinks } from "../filesystem/io.js";
 
-const LOG_PATH = ".craflet/server.log";
+const LOG_PATH = ".crafleet/server.log";
 const FOLLOW_BYTES = 64 * 1024;
 const PAGE_BYTES = 1024 * 1024;
 const LINE_BYTES = 256 * 1024;
 const TAIL_BYTES = LINE_BYTES + 2;
 const ANCHOR_BYTES = 4096;
-const OMITTED = "[craflet] Oversized server log line omitted.";
+const OMITTED = "[crafleet] Oversized server log line omitted.";
 
 export interface ServerLogCursor {
     generation: string;
@@ -91,7 +91,7 @@ export function serverLogGeneration(stats: {
 
 function serverLogSize(size: bigint): number {
     if (size < 0n || size > BigInt(Number.MAX_SAFE_INTEGER))
-        throw new CrafletError(
+        throw new CrafleetError(
             "LOG_FILE",
             "Managed server log is too large to read safely.",
             3,
@@ -101,15 +101,15 @@ function serverLogSize(size: bigint): number {
 
 function validateLines(lines: number): void {
     if (!Number.isSafeInteger(lines) || lines < 1 || lines > 10000)
-        throw new CrafletError(
+        throw new CrafleetError(
             "LOG_LINES",
             "Log lines must be an integer from 1 to 10000.",
             2,
         );
 }
 
-function symlinkError(): CrafletError {
-    return new CrafletError(
+function symlinkError(): CrafleetError {
+    return new CrafleetError(
         "SYMLINK_UNSAFE",
         "Refusing managed server log through a symbolic link.",
         3,
@@ -136,7 +136,7 @@ async function openVerifiedLog(
         const named = await lstat(file, { bigint: true });
         if (named.isSymbolicLink()) throw symlinkError();
         if (!stats.isFile() || !named.isFile())
-            throw new CrafletError(
+            throw new CrafleetError(
                 "LOG_FILE",
                 "Managed server log is not a regular file.",
                 3,
@@ -434,14 +434,14 @@ export async function readRecentServerLogs(
         } catch (error) {
             if (!(error instanceof LogChangedError)) throw error;
             if (attempt === 1)
-                throw new CrafletError(
+                throw new CrafleetError(
                     "LOG_CHANGED",
                     "Server log changed while it was being read.",
                     3,
                 );
         }
     }
-    throw new CrafletError(
+    throw new CrafleetError(
         "LOG_CHANGED",
         "Server log changed while it was being read.",
         3,
@@ -542,7 +542,7 @@ async function poll(signal: AbortSignal): Promise<void> {
         await delay(150, undefined, { signal });
     } catch {
         if (!signal.aborted)
-            throw new CrafletError(
+            throw new CrafleetError(
                 "LOG_FOLLOW",
                 "Unable to follow the server log.",
                 3,

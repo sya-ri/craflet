@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import { CrafletError } from "./errors.js";
+import { CrafleetError } from "./errors.js";
 
 /** Configuration snapshots contain authored text and secret tokens, never resolved secrets. */
 const ConfigFormatSchema = type(
@@ -56,7 +56,7 @@ function normalizeConfigState(state: ConfigState): ConfigState {
 export function validateConfigState(input: unknown): ConfigState {
     const result = ConfigStateSchema(input);
     if (result instanceof type.errors || Array.isArray(result.files))
-        throw new CrafletError(
+        throw new CrafleetError(
             "CONFIG_STATE_INVALID",
             "Configuration observation state is invalid; no input values have been included in this error.",
             3,
@@ -67,7 +67,7 @@ export function validateConfigState(input: unknown): ConfigState {
 export function validateConfigBundle(input: unknown): ConfigBundle {
     const result = ConfigBundleSchema(input);
     if (result instanceof type.errors || Array.isArray(result.state.files))
-        throw new CrafletError(
+        throw new CrafleetError(
             "CONFIG_BUNDLE_INVALID",
             "Pending configuration is invalid; no input values have been included in this error.",
             3,

@@ -1,4 +1,4 @@
-import type { ArtifactContext, SourceSpec } from "@craflet/core";
+import type { ArtifactContext, SourceSpec } from "@crafleet/core";
 import { resolveGithub } from "./github.js";
 import { resolveHangar } from "./hangar.js";
 import type { DownloadSpec, ProviderHttp } from "./http.js";

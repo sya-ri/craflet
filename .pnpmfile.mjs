@@ -1,10 +1,10 @@
 // The published CLI is self-contained; development manifests remain unchanged.
 export const hooks = {
     beforePacking(pkg) {
-        if (pkg.name !== "craflet") return pkg;
+        if (pkg.name !== "crafleet") return pkg;
         const bundled = new Set([
-            "@craflet/core",
-            "@craflet/adapters",
+            "@crafleet/core",
+            "@crafleet/adapters",
             "@clack/prompts",
             "@earendil-works/pi-tui",
             "commander",

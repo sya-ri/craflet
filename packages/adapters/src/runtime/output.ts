@@ -23,7 +23,7 @@ export function consumeLogLines(
             if (end < 0) break;
             onLine(
                 discarded
-                    ? "[craflet] Oversized server log line omitted."
+                    ? "[crafleet] Oversized server log line omitted."
                     : pending.replace(/\r$/, ""),
             );
             pending = "";
@@ -32,7 +32,7 @@ export function consumeLogLines(
         } while (start < chunk.length);
     });
     stream.once("end", () => {
-        if (discarded) onLine("[craflet] Oversized server log line omitted.");
+        if (discarded) onLine("[crafleet] Oversized server log line omitted.");
         else if (pending) onLine(pending.replace(/\r$/, ""));
     });
 }

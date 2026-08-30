@@ -28,21 +28,21 @@ async function source(name: string, code: string): Promise<string> {
 
 beforeEach(async () => {
     root = await realpath(
-        await mkdtemp(path.join(tmpdir(), "craflet-architecture-")),
+        await mkdtemp(path.join(tmpdir(), "crafleet-architecture-")),
     );
     await source(
         "package.json",
         JSON.stringify({ private: true, type: "module" }),
     );
     for (const [kind, name, dependencies] of [
-        ["core", "@craflet/core", {}],
-        ["adapters", "@craflet/adapters", { "@craflet/core": "workspace:*" }],
+        ["core", "@crafleet/core", {}],
+        ["adapters", "@crafleet/adapters", { "@crafleet/core": "workspace:*" }],
         [
             "cli",
-            "craflet",
+            "crafleet",
             {
-                "@craflet/core": "workspace:*",
-                "@craflet/adapters": "workspace:*",
+                "@crafleet/core": "workspace:*",
+                "@crafleet/adapters": "workspace:*",
             },
         ],
     ] as const) {
@@ -62,11 +62,11 @@ beforeEach(async () => {
     await source("packages/core/src/index.ts", "export const value = 42;\n");
     await source(
         "packages/adapters/src/index.ts",
-        'import { value } from "@craflet/core"; export const answer = value + 1;\n',
+        'import { value } from "@crafleet/core"; export const answer = value + 1;\n',
     );
     await source(
         "packages/cli/src/index.ts",
-        'import { answer } from "@craflet/adapters"; console.log(answer);\n',
+        'import { answer } from "@crafleet/adapters"; console.log(answer);\n',
     );
 });
 
@@ -76,7 +76,7 @@ afterEach(async () => {
     const actual = await realpath(root);
     if (
         path.dirname(actual) !== base ||
-        !path.basename(actual).startsWith("craflet-architecture-")
+        !path.basename(actual).startsWith("crafleet-architecture-")
     )
         throw new Error("Unsafe architecture fixture cleanup.");
     await rm(actual, { recursive: true, force: true });
@@ -168,7 +168,7 @@ describe("resolved build architecture", () => {
         );
         await source(
             "packages/core/src/index.ts",
-            'export const value = "fetch() process.env import(whatever)"; // import "@craflet/adapters/private";\n',
+            'export const value = "fetch() process.env import(whatever)"; // import "@crafleet/adapters/private";\n',
         );
         await source(
             "packages/adapters/src/index.ts",
@@ -185,7 +185,7 @@ describe("resolved build architecture", () => {
             await source(
                 "packages/core/package.json",
                 JSON.stringify({
-                    name: "@craflet/core",
+                    name: "@crafleet/core",
                     dependencies: { example: version },
                 }),
             );
@@ -207,7 +207,7 @@ describe("resolved build architecture", () => {
             message: "Core accesses the host directly",
         },
         {
-            code: 'import type { answer } from "@craflet/adapters";',
+            code: 'import type { answer } from "@crafleet/adapters";',
             message: "allowed public entry",
         },
         {

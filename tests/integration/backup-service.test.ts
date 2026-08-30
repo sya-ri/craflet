@@ -45,7 +45,7 @@ async function fixture(overrides: Partial<BackupConfig> = {}) {
         repositories: {
             local: {
                 path: repository,
-                password: { env: "CRAFLET_TEST_PASSWORD" },
+                password: { env: "CRAFLEET_TEST_PASSWORD" },
                 id: TEST_REPOSITORY_ID,
             },
         },
@@ -121,7 +121,7 @@ describe("backup service safety with real staging files and a fault-injected res
             ),
         ).toBe("world before backup");
         expect(await readdir(target)).not.toContain(
-            ".craflet-restore-incomplete.json",
+            ".crafleet-restore-incomplete.json",
         );
         expect(
             engine.calls.find((call) => call.args.includes("backup"))?.args,
@@ -394,7 +394,7 @@ describe("backup service safety with real staging files and a fault-injected res
         const applied = engine.calls.find((call) =>
             call.args.includes("--prune"),
         );
-        expect(applied?.args).toContain("craflet-project:test-project");
+        expect(applied?.args).toContain("crafleet-project:test-project");
     });
 
     it("refuses live, nonempty, linked and undeclared restore targets/content", async () => {
@@ -452,7 +452,7 @@ describe("backup service safety with real staging files and a fault-injected res
         expect(
             JSON.parse(
                 await readFile(
-                    path.join(target, ".craflet-restore-incomplete.json"),
+                    path.join(target, ".crafleet-restore-incomplete.json"),
                     "utf8",
                 ),
             ).status,
@@ -496,11 +496,11 @@ describe("backup service safety with real staging files and a fault-injected res
             service.restore(result.snapshotId, { target }),
         ).rejects.toMatchObject({ code: "BACKUP_RESTORE_ARCHIVE" });
         expect(await readdir(target)).toContain(
-            ".craflet-restore-incomplete.json",
+            ".crafleet-restore-incomplete.json",
         );
         expect(
             (await readdir(target)).some((name) =>
-                name.startsWith(".craflet-restore-work-"),
+                name.startsWith(".crafleet-restore-work-"),
             ),
         ).toBe(false);
     });
@@ -542,7 +542,7 @@ describe("backup service safety with real staging files and a fault-injected res
             service.restore(result.snapshotId, { target }),
         ).rejects.toMatchObject({ code: "BACKUP_RESTORE_VERIFY" });
         expect(await readdir(target)).toContain(
-            ".craflet-restore-incomplete.json",
+            ".crafleet-restore-incomplete.json",
         );
     });
 

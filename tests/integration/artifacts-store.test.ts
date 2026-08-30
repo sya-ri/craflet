@@ -26,7 +26,7 @@ describe("artifact resolution and immutable cache", () => {
     let home: string;
     beforeEach(async () => {
         directory = await realpath(
-            await mkdtemp(path.join(os.tmpdir(), "craflet-artifacts-store-")),
+            await mkdtemp(path.join(os.tmpdir(), "crafleet-artifacts-store-")),
         );
         home = path.join(directory, "home");
         context = {

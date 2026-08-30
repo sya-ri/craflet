@@ -20,7 +20,7 @@ import {
     NodeArtifactStore,
     readState,
     saveState,
-} from "@craflet/adapters";
+} from "@crafleet/adapters";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NodeServerController } from "../../packages/adapters/src/runtime/controller.js";
 import { runServerDaemon } from "../../packages/adapters/src/runtime/daemon.js";
@@ -56,7 +56,7 @@ let commands: string;
 const connected = new Set<net.Socket>();
 
 beforeEach(async () => {
-    root = await mkdtemp(path.join(temporaryParent, "craflet-daemon-fault-"));
+    root = await mkdtemp(path.join(temporaryParent, "crafleet-daemon-fault-"));
     project = path.join(root, "project");
     home = path.join(root, "home");
     commands = "";
@@ -108,7 +108,7 @@ beforeEach(async () => {
     if (!installation) throw new Error("Fixture missing");
     await saveState(project, { schemaVersion: 1, active: installation });
     await writeFile(
-        path.join(project, ".craflet/runner-launch.json"),
+        path.join(project, ".crafleet/runner-launch.json"),
         JSON.stringify({ protocol: 1, token, activeId: installation.id, home }),
     );
 });
@@ -126,7 +126,7 @@ afterEach(async () => {
     vi.unstubAllEnvs();
     if (
         path.dirname(root) !== temporaryParent ||
-        !path.basename(root).startsWith("craflet-daemon-fault-")
+        !path.basename(root).startsWith("crafleet-daemon-fault-")
     )
         throw new Error("Unsafe fixture cleanup");
     await rm(root, { recursive: true, force: true });
@@ -301,7 +301,7 @@ describe("runner failure injection", () => {
         close(1);
         await task;
         expect(
-            await readFile(path.join(project, ".craflet/server.log"), "utf8"),
+            await readFile(path.join(project, ".crafleet/server.log"), "utf8"),
         ).toContain("input is no longer writable");
     });
     it("records spawn errors even when close arrives immediately afterwards", async () => {
@@ -313,20 +313,20 @@ describe("runner failure injection", () => {
             (await new NodeServerController(project, home).status()).status,
         ).toBe("stopped");
         expect(
-            await readFile(path.join(project, ".craflet/server.log"), "utf8"),
+            await readFile(path.join(project, ".crafleet/server.log"), "utf8"),
         ).toContain("Java could not be spawned");
     });
     it("never overwrites another lifetime guard during finalization", async () => {
         await begin();
         await writeFile(
-            path.join(project, ".craflet/process.lock/owner.json"),
+            path.join(project, ".crafleet/process.lock/owner.json"),
             JSON.stringify({ token: randomUUID(), pid: process.pid }),
         );
         close(0);
         await task;
         expect(
             (
-                await stat(path.join(project, ".craflet/process.lock"))
+                await stat(path.join(project, ".crafleet/process.lock"))
             ).isDirectory(),
         ).toBe(true);
         expect(
@@ -335,14 +335,14 @@ describe("runner failure injection", () => {
     });
     it("finishes after a durable cleanup failure while retaining unknown state for manual recovery", async () => {
         await begin();
-        await rm(path.join(project, ".craflet/process.lock/owner.json"));
+        await rm(path.join(project, ".crafleet/process.lock/owner.json"));
         close(0);
         await task;
         expect(
             (await new NodeServerController(project, home).status()).status,
         ).toBe("unknown");
         expect(
-            await readFile(path.join(project, ".craflet/server.log"), "utf8"),
+            await readFile(path.join(project, ".crafleet/server.log"), "utf8"),
         ).toContain("cleanup failed");
     });
     it("uses graceful stop for runner termination signals", async () => {
