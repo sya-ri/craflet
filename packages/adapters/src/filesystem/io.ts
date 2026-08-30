@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
+import { type BigIntStats, constants } from "node:fs";
 import {
     access,
+    type FileHandle,
+    link,
     lstat,
     mkdir,
     open,
@@ -15,6 +17,8 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { CrafletError } from "@craflet/core";
 
+const WINDOWS_SHARING_ERRORS = new Set(["EPERM", "EACCES", "EBUSY"]);
+
 export async function exists(file: string): Promise<boolean> {
     try {
         await lstat(file);
@@ -22,6 +26,199 @@ export async function exists(file: string): Promise<boolean> {
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
         throw error;
+    }
+}
+
+export type BoundedFileFailure =
+    | "changed"
+    | "too-large"
+    | "unreadable"
+    | "unsafe";
+
+export interface BoundedFileSnapshot {
+    bytes: Buffer;
+    stats: BigIntStats;
+}
+
+class BoundedFileError extends Error {
+    constructor(readonly reason: BoundedFileFailure) {
+        super(reason);
+    }
+}
+
+function assertBoundedRegularFile(info: BigIntStats, maxBytes: number): void {
+    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1n)
+        throw new BoundedFileError("unsafe");
+    if (info.size > BigInt(maxBytes)) throw new BoundedFileError("too-large");
+}
+
+function sameFile(before: BigIntStats, after: BigIntStats): boolean {
+    return (
+        sameFileIdentity(before, after) &&
+        before.size === after.size &&
+        before.mtimeNs === after.mtimeNs &&
+        before.ctimeNs === after.ctimeNs
+    );
+}
+
+function sameFileIdentity(before: BigIntStats, after: BigIntStats): boolean {
+    return (
+        before.dev === after.dev &&
+        before.ino === after.ino &&
+        before.birthtimeNs === after.birthtimeNs &&
+        before.nlink === after.nlink
+    );
+}
+
+/** Read one bounded regular file without following links or accepting a changed identity. */
+export async function readBoundedRegularFile(
+    file: string,
+    options: {
+        maxBytes: number;
+        signal?: AbortSignal;
+        failure: (reason: BoundedFileFailure) => never;
+    },
+): Promise<BoundedFileSnapshot | null> {
+    const { maxBytes, signal } = options;
+    signal?.throwIfAborted();
+    await assertNoSymlinks(file);
+    let before: BigIntStats;
+    try {
+        before = await lstat(file, { bigint: true });
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw error;
+    }
+    let handle: FileHandle | undefined;
+    try {
+        assertBoundedRegularFile(before, maxBytes);
+        const noFollow =
+            process.platform === "win32" ? 0 : constants.O_NOFOLLOW;
+        const nonblock =
+            process.platform === "win32" ? 0 : constants.O_NONBLOCK;
+        handle = await open(file, constants.O_RDONLY | noFollow | nonblock);
+        const opened = await handle.stat({ bigint: true });
+        assertBoundedRegularFile(opened, maxBytes);
+        if (!sameFile(before, opened)) throw new BoundedFileError("changed");
+        const bytes = Buffer.alloc(maxBytes + 1);
+        let size = 0;
+        while (size < bytes.length) {
+            signal?.throwIfAborted();
+            const result = await handle.read(
+                bytes,
+                size,
+                bytes.length - size,
+                size,
+            );
+            if (result.bytesRead === 0) break;
+            size += result.bytesRead;
+        }
+        if (size > maxBytes) throw new BoundedFileError("too-large");
+        await assertNoSymlinks(file);
+        const after = await lstat(file, { bigint: true });
+        assertBoundedRegularFile(after, maxBytes);
+        if (
+            BigInt(size) !== before.size ||
+            !sameFile(before, after) ||
+            !sameFile(before, await handle.stat({ bigint: true }))
+        )
+            throw new BoundedFileError("changed");
+        signal?.throwIfAborted();
+        return { bytes: bytes.subarray(0, size), stats: before };
+    } catch (error) {
+        signal?.throwIfAborted();
+        if (error instanceof CrafletError) throw error;
+        if (error instanceof BoundedFileError)
+            return options.failure(error.reason);
+        if ((error as NodeJS.ErrnoException).code === "ENOENT")
+            return options.failure("changed");
+        return options.failure("unreadable");
+    } finally {
+        await handle?.close();
+    }
+}
+
+/** Append without replacing the file, after checking the identity read by the caller. */
+export async function appendToBoundedRegularFile(
+    file: string,
+    expected: BigIntStats,
+    content: string | Uint8Array,
+    options: {
+        maxBytes: number;
+        failure: (reason: BoundedFileFailure) => never;
+    },
+): Promise<void> {
+    await assertNoSymlinks(file);
+    let handle: FileHandle | undefined;
+    try {
+        const noFollow =
+            process.platform === "win32" ? 0 : constants.O_NOFOLLOW;
+        const nonblock =
+            process.platform === "win32" ? 0 : constants.O_NONBLOCK;
+        handle = await open(
+            file,
+            constants.O_WRONLY | constants.O_APPEND | noFollow | nonblock,
+        );
+        const opened = await handle.stat({ bigint: true });
+        assertBoundedRegularFile(opened, options.maxBytes);
+        if (!sameFile(expected, opened)) throw new BoundedFileError("changed");
+        const bytes =
+            typeof content === "string" ? Buffer.from(content) : content;
+        if (opened.size + BigInt(bytes.byteLength) > BigInt(options.maxBytes))
+            throw new BoundedFileError("too-large");
+        let offset = 0;
+        while (offset < bytes.byteLength) {
+            const { bytesWritten } = await handle.write(
+                bytes,
+                offset,
+                bytes.byteLength - offset,
+            );
+            if (bytesWritten === 0) throw new BoundedFileError("unreadable");
+            offset += bytesWritten;
+        }
+        await handle.sync();
+        await assertNoSymlinks(file);
+        const after = await lstat(file, { bigint: true });
+        const written = await handle.stat({ bigint: true });
+        assertBoundedRegularFile(after, options.maxBytes);
+        assertBoundedRegularFile(written, options.maxBytes);
+        if (
+            !sameFileIdentity(opened, after) ||
+            !sameFileIdentity(opened, written)
+        )
+            throw new BoundedFileError("changed");
+    } catch (error) {
+        if (error instanceof CrafletError) throw error;
+        if (error instanceof BoundedFileError)
+            return options.failure(error.reason);
+        if ((error as NodeJS.ErrnoException).code === "ENOENT")
+            return options.failure("changed");
+        return options.failure("unreadable");
+    } finally {
+        await handle?.close();
+    }
+}
+
+function isWindowsSharingError(
+    platform: NodeJS.Platform,
+    error: unknown,
+): boolean {
+    return (
+        platform === "win32" &&
+        WINDOWS_SHARING_ERRORS.has((error as NodeJS.ErrnoException).code ?? "")
+    );
+}
+
+async function removeTemporary(file: string): Promise<void> {
+    for (let attempt = 0; ; attempt++) {
+        try {
+            await rm(file, { force: true });
+            return;
+        } catch (error) {
+            if (attempt >= 5 || !isWindowsSharingError(process.platform, error))
+                throw error;
+            await delay(Math.min(10 * 2 ** attempt, 80));
+        }
     }
 }
 
@@ -46,8 +243,59 @@ export async function atomicWrite(
         }
         await renameWithSharingRetry(temporary, file);
     } finally {
-        await rm(temporary, { force: true });
+        await removeTemporary(temporary);
     }
+}
+
+/** Atomically create a file while refusing to replace an existing path. */
+export async function atomicCreate(
+    file: string,
+    content: string | Uint8Array,
+    mode = 0o600,
+): Promise<void> {
+    await assertNoSymlinks(path.dirname(file), path.basename(file));
+    await mkdir(path.dirname(file), { recursive: true });
+    const temporary = path.join(
+        path.dirname(file),
+        `.${path.basename(file)}.${randomUUID()}.tmp`,
+    );
+    const handle = await open(temporary, "wx", mode);
+    try {
+        try {
+            await handle.writeFile(content);
+            await handle.sync();
+        } finally {
+            await handle.close();
+        }
+        await assertNoSymlinks(file);
+        try {
+            await link(temporary, file);
+        } catch (error) {
+            if (
+                [
+                    "EACCES",
+                    "EMLINK",
+                    "ENOSYS",
+                    "ENOTSUP",
+                    "EOPNOTSUPP",
+                    "EPERM",
+                    "EXDEV",
+                ].includes((error as NodeJS.ErrnoException).code ?? "")
+            )
+                throw new CrafletError(
+                    "ATOMIC_CREATE_UNSUPPORTED",
+                    "The filesystem refused safe exclusive file creation.",
+                    3,
+                    "Use a filesystem with hard-link support and verify write permission.",
+                );
+            throw error;
+        }
+    } catch (error) {
+        await removeTemporary(temporary).catch(() => undefined);
+        throw error;
+    }
+    // Publication is the commit point; cleanup cannot turn success into failure.
+    await removeTemporary(temporary).catch(() => undefined);
 }
 
 /** Windows readers may transiently deny replacement; never unlink the destination. */
@@ -68,13 +316,7 @@ export async function renameWithSharingRetry(
             await perform(source, destination);
             return;
         } catch (error) {
-            if (
-                platform !== "win32" ||
-                attempt >= 5 ||
-                !["EPERM", "EACCES", "EBUSY"].includes(
-                    (error as NodeJS.ErrnoException).code ?? "",
-                )
-            )
+            if (attempt >= 5 || !isWindowsSharingError(platform, error))
                 throw error;
             await delay(Math.min(10 * 2 ** attempt, 80));
         }

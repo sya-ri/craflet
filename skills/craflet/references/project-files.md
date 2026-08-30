@@ -6,6 +6,8 @@ Read this reference before creating or editing a Craflet project, workspace, art
 
 A standalone server has one `craflet.yaml`. A workspace has `craflet-workspace.yaml` at its root and one `craflet.yaml` per server.
 
+`craflet init` creates or extends `.gitignore` only when the destination is already inside a Git worktree. The generated rules cover `runtime/`, `shared-data/`, `.craflet/`, `imports/`, `.env`, and `.env.*`. It does not initialize Git, commit files, or touch `.gitignore` outside Git.
+
 | Path | Ownership |
 | --- | --- |
 | `craflet.yaml` | User-reviewed desired server, plugin, Java, secret-reference, and backup settings. |

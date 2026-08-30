@@ -20,7 +20,7 @@ export function registerProjectCommands(
     const init = program
         .command("init [directory]")
         .description(
-            "Create a server project; Paper requests EULA consent once per host user. Java is not started.",
+            "Create a server project; inside Git, add local-data ignore rules. Paper requests EULA consent once per host user. Java is not started.",
         )
         .option("--name <name>", "project name")
         .addOption(

@@ -1,8 +1,10 @@
-import { constants, type Stats } from "node:fs";
-import { type FileHandle, lstat, open } from "node:fs/promises";
 import { CrafletError, isConfigRecord } from "@craflet/core";
 import { type ConfigDocument, parseConfigDocument } from "../formats/config.js";
-import { assertNoSymlinks, atomicWrite } from "./io.js";
+import {
+    atomicWrite,
+    type BoundedFileFailure,
+    readBoundedRegularFile,
+} from "./io.js";
 
 export const EULA_URL = "https://www.minecraft.net/eula";
 const MAX_EULA_BYTES = 64 * 1024;
@@ -21,29 +23,24 @@ function changed(): never {
     );
 }
 
-function assertRegular(info: Stats): void {
-    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1)
+function readFailure(reason: BoundedFileFailure): never {
+    if (reason === "changed") changed();
+    if (reason === "unsafe")
         throw new CrafletError(
             "EULA_UNSAFE",
             "The EULA target must be a regular file without symbolic or hard links.",
             3,
         );
-    if (info.size > MAX_EULA_BYTES)
+    if (reason === "too-large")
         throw new CrafletError(
             "EULA_SIZE",
             "The EULA file exceeds the 64 KiB safety limit.",
             3,
         );
-}
-
-function sameFile(before: Stats, after: Stats): boolean {
-    return (
-        before.dev === after.dev &&
-        before.ino === after.ino &&
-        before.size === after.size &&
-        before.mtimeMs === after.mtimeMs &&
-        before.ctimeMs === after.ctimeMs &&
-        before.nlink === after.nlink
+    throw new CrafletError(
+        "EULA_UNREADABLE",
+        "The EULA file cannot be read safely. Inspect it locally; its contents are omitted.",
+        3,
     );
 }
 
@@ -52,70 +49,22 @@ export async function readEulaText(
     file: string,
     signal?: AbortSignal,
 ): Promise<string | null> {
-    signal?.throwIfAborted();
-    await assertNoSymlinks(file);
-    let before: Stats;
+    const snapshot = await readBoundedRegularFile(file, {
+        maxBytes: MAX_EULA_BYTES,
+        ...(signal ? { signal } : {}),
+        failure: readFailure,
+    });
+    if (snapshot === null) return null;
     try {
-        before = await lstat(file);
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-        throw error;
-    }
-    assertRegular(before);
-    let handle: FileHandle | undefined;
-    try {
-        const noFollow =
-            process.platform === "win32" ? 0 : constants.O_NOFOLLOW;
-        const nonblock =
-            process.platform === "win32" ? 0 : constants.O_NONBLOCK;
-        handle = await open(file, constants.O_RDONLY | noFollow | nonblock);
-        const opened = await handle.stat();
-        assertRegular(opened);
-        if (!sameFile(before, opened)) changed();
-        const buffer = Buffer.alloc(MAX_EULA_BYTES + 1);
-        let size = 0;
-        while (size < buffer.length) {
-            signal?.throwIfAborted();
-            const { bytesRead } = await handle.read(
-                buffer,
-                size,
-                buffer.length - size,
-                size,
-            );
-            if (bytesRead === 0) break;
-            size += bytesRead;
-        }
-        if (size > MAX_EULA_BYTES)
-            throw new CrafletError(
-                "EULA_SIZE",
-                "The EULA file exceeds the 64 KiB safety limit.",
-                3,
-            );
-        await assertNoSymlinks(file);
-        const after = await lstat(file);
-        assertRegular(after);
-        if (
-            size !== before.size ||
-            !sameFile(before, after) ||
-            !sameFile(before, await handle.stat())
-        )
-            changed();
-        signal?.throwIfAborted();
         // Preserve a BOM so properties parsing cannot silently treat it as absent.
         return new TextDecoder("utf-8", {
             fatal: true,
             ignoreBOM: true,
-        }).decode(buffer.subarray(0, size));
+        }).decode(snapshot.bytes);
     } catch (error) {
         signal?.throwIfAborted();
         if (error instanceof CrafletError) throw error;
-        throw new CrafletError(
-            "EULA_UNREADABLE",
-            "The EULA file cannot be read safely. Inspect it locally; its contents are omitted.",
-            3,
-        );
-    } finally {
-        await handle?.close();
+        return readFailure("unreadable");
     }
 }
 

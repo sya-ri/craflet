@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, stat } from "node:fs/promises";
+import type { BigIntStats } from "node:fs";
+import { lstat, mkdir, readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import {
     CrafletError,
@@ -22,9 +23,26 @@ import {
     type RequestEulaConsent,
 } from "./eula-consent.js";
 import { proposedEulaDocument } from "./eula-file.js";
-import { assertNoSymlinks, atomicWrite, exists } from "./io.js";
+import {
+    appendToBoundedRegularFile,
+    assertNoSymlinks,
+    atomicCreate,
+    atomicWrite,
+    type BoundedFileFailure,
+    exists,
+    readBoundedRegularFile,
+} from "./io.js";
 
 export const MAX_YAML_BYTES = 2 * 1024 * 1024;
+const MAX_GITIGNORE_BYTES = 1024 * 1024;
+const GITIGNORE_RULES = [
+    "runtime/",
+    "shared-data/",
+    ".craflet/",
+    "imports/",
+    ".env",
+    ".env.*",
+] as const;
 
 export interface ProjectContext {
     dir: string;
@@ -311,6 +329,169 @@ export async function selectProjects(
     return selected;
 }
 
+async function isGitManaged(directory: string): Promise<boolean> {
+    let current = path.resolve(directory);
+    while (true) {
+        try {
+            const marker = await lstat(path.join(current, ".git"));
+            if (marker.isDirectory() || marker.isFile()) return true;
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+        const parent = path.dirname(current);
+        if (parent === current) return false;
+        current = parent;
+    }
+}
+
+interface GitIgnoreSnapshot {
+    text: string | null;
+    mode: number;
+    stats: BigIntStats | null;
+}
+
+function gitIgnoreChanged(): never {
+    throw new CrafletError(
+        "CONCURRENT_EDIT",
+        ".gitignore changed while the project was being initialized. Review it and retry.",
+        3,
+    );
+}
+
+function gitIgnoreReadFailure(reason: BoundedFileFailure): never {
+    if (reason === "changed") gitIgnoreChanged();
+    if (reason === "unsafe")
+        throw new CrafletError(
+            "GITIGNORE_UNSAFE",
+            ".gitignore must be a regular file without symbolic or hard links.",
+            3,
+        );
+    if (reason === "too-large")
+        throw new CrafletError(
+            "GITIGNORE_SIZE",
+            ".gitignore exceeds the 1 MiB safety limit.",
+            3,
+        );
+    throw new CrafletError(
+        "GITIGNORE_UNREADABLE",
+        ".gitignore cannot be read safely. Its contents are omitted.",
+        3,
+    );
+}
+
+async function readGitIgnoreSnapshot(file: string): Promise<GitIgnoreSnapshot> {
+    const snapshot = await readBoundedRegularFile(file, {
+        maxBytes: MAX_GITIGNORE_BYTES,
+        failure: gitIgnoreReadFailure,
+    });
+    if (snapshot === null) return { text: null, mode: 0o644, stats: null };
+    try {
+        return {
+            text: new TextDecoder("utf-8", {
+                fatal: true,
+                ignoreBOM: true,
+            }).decode(snapshot.bytes),
+            mode: Number(snapshot.stats.mode & 0o777n),
+            stats: snapshot.stats,
+        };
+    } catch {
+        return gitIgnoreReadFailure("unreadable");
+    }
+}
+
+interface GitIgnoreUpdate {
+    content: string;
+    suffix: string;
+}
+
+function updatedGitIgnore(
+    snapshot: GitIgnoreSnapshot,
+): GitIgnoreUpdate | undefined {
+    const original = snapshot.text ?? "";
+    const entries = original.split(/\r?\n/);
+    if (entries[0]?.startsWith("\uFEFF")) entries[0] = entries[0].slice(1);
+    const lines = new Set(entries);
+    const missing = GITIGNORE_RULES.filter((rule) => !lines.has(rule));
+    if (!missing.length) return undefined;
+    const newline = original.includes("\r\n") ? "\r\n" : "\n";
+    const suffix = `${original && !original.endsWith("\n") ? newline : ""}${missing.join(newline)}${newline}`;
+    const content = `${original}${suffix}`;
+    if (Buffer.byteLength(content) > MAX_GITIGNORE_BYTES)
+        return gitIgnoreReadFailure("too-large");
+    return { content, suffix };
+}
+
+async function writeGitIgnore(
+    directory: string,
+    snapshot: GitIgnoreSnapshot,
+): Promise<void> {
+    const file = path.join(directory, ".gitignore");
+    const updated = updatedGitIgnore(snapshot);
+    if (updated === undefined) return;
+    if (snapshot.text === null) {
+        try {
+            await atomicCreate(file, updated.content, snapshot.mode);
+            return;
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "EEXIST")
+                gitIgnoreChanged();
+            throw error;
+        }
+    }
+    const current = await readGitIgnoreSnapshot(file);
+    if (
+        current.text !== snapshot.text ||
+        current.mode !== snapshot.mode ||
+        current.stats === null
+    )
+        gitIgnoreChanged();
+    await appendToBoundedRegularFile(file, current.stats, updated.suffix, {
+        maxBytes: MAX_GITIGNORE_BYTES,
+        failure: gitIgnoreReadFailure,
+    });
+}
+
+function projectExists(): never {
+    throw new CrafletError(
+        "PROJECT_EXISTS",
+        "craflet.yaml already exists; it will not be overwritten.",
+        3,
+    );
+}
+
+function workspaceExists(): never {
+    throw new CrafletError(
+        "WORKSPACE_EXISTS",
+        "Workspace manifest already exists.",
+        3,
+    );
+}
+
+async function prepareProjectInitialization(
+    directory: string,
+    manifestFile: string,
+): Promise<GitIgnoreSnapshot | undefined> {
+    await assertNoSymlinks(directory);
+    for (const child of ["craflet.yaml", "config", "runtime", "shared-data"])
+        await assertNoSymlinks(directory, child);
+    if (await exists(manifestFile)) projectExists();
+    if (!(await isGitManaged(directory))) return undefined;
+    return readGitIgnoreSnapshot(path.join(directory, ".gitignore"));
+}
+
+async function createExclusiveFile(
+    file: string,
+    text: string,
+    onConflict: () => never,
+): Promise<void> {
+    try {
+        await atomicCreate(file, text);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") onConflict();
+        throw error;
+    }
+}
+
 export async function initProject(
     dir: string,
     options: {
@@ -340,26 +521,9 @@ export async function initProject(
         },
     });
     const file = path.join(dir, "craflet.yaml");
-    const assertAvailable = async () => {
-        if (await exists(file))
-            throw new CrafletError(
-                "PROJECT_EXISTS",
-                "craflet.yaml already exists; it will not be overwritten.",
-                3,
-            );
-        await assertNoSymlinks(dir);
-        for (const child of ["config", "runtime", "shared-data", ".gitignore"])
-            await assertNoSymlinks(dir, child);
-    };
-    if (options.dryRun) {
-        if (await exists(file))
-            throw new CrafletError(
-                "PROJECT_EXISTS",
-                "craflet.yaml already exists; it will not be overwritten.",
-                3,
-            );
-    } else await assertAvailable();
-    if (options.kind === "paper" && options.eula)
+    const manifestText = await yamlText(file, manifest, null);
+    let gitIgnore = await prepareProjectInitialization(dir, file);
+    if (options.kind === "paper" && options.eula) {
         await ensureUserEulaConsent(
             options.eula.home,
             options.eula.requestConsent,
@@ -373,28 +537,15 @@ export async function initProject(
                 ),
             },
         );
+        if (!options.dryRun)
+            gitIgnore = await prepareProjectInitialization(dir, file);
+    }
     if (!options.dryRun) {
-        // Consent can remain open indefinitely, so revalidate before any project write.
-        await assertAvailable();
         for (const child of ["config", "runtime", "shared-data"])
             await mkdir(path.join(dir, child), { recursive: true });
-        await writeYaml(file, manifest);
-        const ignore = path.join(dir, ".gitignore");
-        const original = (await exists(ignore))
-            ? await readFile(ignore, "utf8")
-            : "";
-        const rules = [
-            "runtime/",
-            "shared-data/",
-            ".craflet/",
-            "imports/",
-            ".env",
-            ".env.*",
-        ];
-        await atomicWrite(
-            ignore,
-            `${original}${original && !original.endsWith("\n") ? "\n" : ""}${rules.filter((rule) => !original.split(/\r?\n/).includes(rule)).join("\n")}\n`,
-        );
+        if (gitIgnore) await writeGitIgnore(dir, gitIgnore);
+        // The manifest is the commit marker: retries remain possible after an earlier write fails.
+        await createExclusiveFile(file, manifestText, projectExists);
     }
     return manifest;
 }
@@ -405,14 +556,12 @@ export async function initWorkspace(
     dryRun = false,
 ): Promise<void> {
     const file = path.join(dir, "craflet-workspace.yaml");
-    if (await exists(file))
-        throw new CrafletError(
-            "WORKSPACE_EXISTS",
-            "Workspace manifest already exists.",
-            3,
-        );
+    await assertNoSymlinks(dir, "craflet-workspace.yaml");
+    if (await exists(file)) workspaceExists();
     for (const pattern of projects) workspacePattern(pattern);
-    if (!dryRun) await writeYaml(file, { schemaVersion: 1, projects });
+    const text = await yamlText(file, { schemaVersion: 1, projects }, null);
+    if (dryRun) return;
+    await createExclusiveFile(file, text, workspaceExists);
 }
 
 function workspacePattern(input: string): {

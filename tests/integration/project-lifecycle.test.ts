@@ -4,6 +4,7 @@ import {
     chmod,
     copyFile,
     link,
+    lstat,
     mkdir,
     mkdtemp,
     readdir,
@@ -324,6 +325,100 @@ async function treeBytes(root: string): Promise<Record<string, string>> {
         ),
     );
 }
+
+describe("bounded regular file reads", () => {
+    it("returns content with bigint identity, mode, size and timestamps", async () => {
+        const root = await directory();
+        const file = await put(root, "bounded.txt", "bounded\n");
+        const snapshot = await io.readBoundedRegularFile(file, {
+            maxBytes: 1024,
+            failure: (reason) => {
+                throw new Error(`Unexpected bounded read failure: ${reason}`);
+            },
+        });
+        if (!snapshot) throw new Error("Expected a bounded file snapshot.");
+
+        expect(snapshot.bytes.toString("utf8")).toBe("bounded\n");
+        for (const key of [
+            "dev",
+            "ino",
+            "size",
+            "mode",
+            "atimeNs",
+            "mtimeNs",
+            "ctimeNs",
+            "birthtimeNs",
+        ] as const)
+            expect(typeof snapshot.stats[key]).toBe("bigint");
+    });
+});
+
+describe("atomic file creation", () => {
+    it("allows exactly one concurrent creator without clobbering its content", async () => {
+        const root = await directory();
+        const file = path.join(root, "created.txt");
+        const contents = ["first\n", "second\n"];
+
+        const results = await Promise.allSettled(
+            contents.map((content) => io.atomicCreate(file, content)),
+        );
+
+        expect(
+            results.filter((result) => result.status === "fulfilled"),
+        ).toHaveLength(1);
+        expect(
+            results.filter((result) => result.status === "rejected"),
+        ).toHaveLength(1);
+        const winner = results.findIndex(
+            (result) => result.status === "fulfilled",
+        );
+        const loser = results.find((result) => result.status === "rejected");
+        expect(loser).toMatchObject({
+            status: "rejected",
+            reason: { code: "EEXIST" },
+        });
+        expect(await readFile(file, "utf8")).toBe(contents[winner]);
+        expect(await readdir(root)).toEqual(["created.txt"]);
+    });
+
+    it("leaves a pre-existing target unchanged and removes its temporary file", async () => {
+        const root = await directory();
+        const file = await put(root, "created.txt", "original\n");
+
+        await expect(
+            io.atomicCreate(file, "replacement\n"),
+        ).rejects.toMatchObject({ code: "EEXIST" });
+
+        expect(await readFile(file, "utf8")).toBe("original\n");
+        expect(await readdir(root)).toEqual(["created.txt"]);
+    });
+
+    it("removes its temporary file after rejecting an invalid write payload", async () => {
+        const root = await directory();
+        const file = path.join(root, "created.txt");
+
+        await expect(
+            io.atomicCreate(file, {} as Uint8Array),
+        ).rejects.toMatchObject({ code: "ERR_INVALID_ARG_TYPE" });
+
+        expect(await io.exists(file)).toBe(false);
+        expect(await readdir(root)).toEqual([]);
+    });
+
+    it.runIf(process.platform !== "win32")(
+        "applies the process umask to the requested target mode",
+        async () => {
+            const root = await directory();
+            const file = path.join(root, "created.txt");
+            const requestedMode = 0o764;
+            const expectedMode = requestedMode & (~process.umask() & 0o777);
+
+            await io.atomicCreate(file, "created\n", requestedMode);
+
+            expect((await stat(file)).mode & 0o777).toBe(expectedMode);
+        },
+    );
+});
 
 describe("bounded Windows atomic replacement", () => {
     it.each(["EPERM", "EACCES", "EBUSY"])(
@@ -1270,9 +1365,8 @@ describe("project initialization and workspaces", () => {
         await installProjects(contexts, provider.store, { frozen: true });
         expect((await readLock(root)).projects).toEqual(lock.projects);
     });
-    it("initializes data directories and one validated custom manifest without overwriting gitignore", async () => {
+    it("initializes data directories and one validated custom manifest", async () => {
         const root = await directory();
-        await put(root, ".gitignore", "# custom\n*.local\nruntime/");
         const created = await initProject(root, {
             name: "alpha",
             kind: "paper",
@@ -1289,10 +1383,6 @@ describe("project initialization and workspaces", () => {
             expect((await stat(path.join(root, child))).isDirectory()).toBe(
                 true,
             );
-        const ignore = await readFile(path.join(root, ".gitignore"), "utf8");
-        expect(ignore).toContain("# custom\n*.local\nruntime/\n");
-        expect(ignore.match(/^runtime\/$/gm)).toHaveLength(1);
-        expect(ignore).toContain("shared-data/\n");
         expect(created.server).toEqual({
             type: "paper",
             version: "26.1",
@@ -1307,6 +1397,287 @@ describe("project initialization and workspaces", () => {
             }),
         ).rejects.toMatchObject({ code: "PROJECT_EXISTS" });
         expect((await loadProject(root, "unused")).manifest).toEqual(created);
+    });
+
+    it("allows exactly one concurrent initialization without replacing its manifest", async () => {
+        const root = await directory();
+        const target = path.join(root, "survival");
+        const results = await Promise.allSettled(
+            ["alpha", "beta"].map((name) =>
+                initProject(target, {
+                    name,
+                    kind: "paper",
+                    version: "26.1",
+                }),
+            ),
+        );
+
+        expect(
+            results.filter((result) => result.status === "fulfilled"),
+        ).toHaveLength(1);
+        expect(
+            results.filter((result) => result.status === "rejected"),
+        ).toHaveLength(1);
+        const successful = results.find(
+            (result) => result.status === "fulfilled",
+        );
+        const failed = results.find((result) => result.status === "rejected");
+        if (successful?.status !== "fulfilled")
+            throw new Error("Expected one successful initialization.");
+        expect(failed).toMatchObject({
+            status: "rejected",
+            reason: { code: "PROJECT_EXISTS" },
+        });
+
+        const loaded = await loadProject(target, path.join(root, "home"));
+        expect(loaded.manifest).toEqual(successful.value);
+    });
+
+    it("creates gitignore rules for a project nested in a Git worktree", async () => {
+        const root = await directory();
+        const target = path.join(root, "servers", "survival");
+        await mkdir(path.join(root, ".git"));
+
+        await initProject(target, {
+            name: "survival",
+            kind: "paper",
+            version: "26.1",
+        });
+
+        expect(await io.exists(path.join(target, ".git"))).toBe(false);
+        expect(await contents(target, ".gitignore")).toBe(
+            "runtime/\nshared-data/\n.craflet/\nimports/\n.env\n.env.*\n",
+        );
+    });
+
+    it("treats an ancestor linked-worktree git file as a managed marker", async () => {
+        const root = await directory();
+        const target = path.join(root, "servers", "survival");
+        await put(root, ".git", "gitdir: ../metadata/worktrees/survival\n");
+
+        await initProject(target, {
+            name: "survival",
+            kind: "paper",
+            version: "26.1",
+        });
+
+        expect(await contents(target, ".gitignore")).toBe(
+            "runtime/\nshared-data/\n.craflet/\nimports/\n.env\n.env.*\n",
+        );
+    });
+
+    it("does not create gitignore outside a Git worktree", async () => {
+        const root = await directory();
+        const target = path.join(root, "survival");
+
+        await initProject(target, {
+            name: "survival",
+            kind: "paper",
+            version: "26.1",
+        });
+
+        expect(await io.exists(path.join(target, ".gitignore"))).toBe(false);
+    });
+
+    it("preserves existing gitignore content and appends each missing rule once", async () => {
+        const root = await directory();
+        const target = path.join(root, "servers", "survival");
+        await mkdir(path.join(root, ".git"));
+        const file = await put(
+            target,
+            ".gitignore",
+            "# custom\n*.local\nruntime/",
+        );
+        const before = await lstat(file, { bigint: true });
+
+        await initProject(target, {
+            name: "survival",
+            kind: "paper",
+            version: "26.1",
+        });
+
+        const ignore = await contents(target, ".gitignore");
+        expect(ignore).toBe(
+            "# custom\n*.local\nruntime/\nshared-data/\n.craflet/\nimports/\n.env\n.env.*\n",
+        );
+        expect(ignore?.match(/^runtime\/$/gm)).toHaveLength(1);
+        const after = await lstat(file, { bigint: true });
+        expect({
+            dev: after.dev,
+            ino: after.ino,
+            birthtimeNs: after.birthtimeNs,
+        }).toEqual({
+            dev: before.dev,
+            ino: before.ino,
+            birthtimeNs: before.birthtimeNs,
+        });
+    });
+
+    it("preserves CRLF while appending each missing gitignore rule once", async () => {
+        const root = await directory();
+        const target = path.join(root, "servers", "survival");
+        await put(root, ".git", "gitdir: ../metadata/worktrees/survival\n");
+        await put(target, ".gitignore", "# custom\r\n*.local\r\nruntime/\r\n");
+
+        await initProject(target, {
+            name: "survival",
+            kind: "paper",
+            version: "26.1",
+        });
+
+        const ignore = await contents(target, ".gitignore");
+        expect(ignore).toBe(
+            "# custom\r\n*.local\r\nruntime/\r\nshared-data/\r\n.craflet/\r\nimports/\r\n.env\r\n.env.*\r\n",
+        );
+        expect(ignore?.match(/^runtime\/$/gm)).toHaveLength(1);
+    });
+
+    it("preserves a BOM-prefixed first rule without duplicating it", async () => {
+        const root = await directory();
+        const target = path.join(root, "servers", "survival");
+        await mkdir(path.join(root, ".git"));
+        await put(target, ".gitignore", "\uFEFFruntime/\n# custom\n");
+
+        await initProject(target, {
+            name: "survival",
+            kind: "paper",
+            version: "26.1",
+        });
+
+        const ignore = await contents(target, ".gitignore");
+        expect(ignore).toBe(
+            "\uFEFFruntime/\n# custom\nshared-data/\n.craflet/\nimports/\n.env\n.env.*\n",
+        );
+        expect(ignore?.match(/runtime\//g)).toHaveLength(1);
+    });
+
+    it.each([
+        {
+            label: "invalid UTF-8",
+            code: "GITIGNORE_UNREADABLE",
+            prepare: async (_root: string, target: string) => {
+                await put(target, ".gitignore", Buffer.from([0xc3, 0x28]));
+            },
+        },
+        {
+            label: "content over 1 MiB",
+            code: "GITIGNORE_SIZE",
+            prepare: async (_root: string, target: string) => {
+                await put(
+                    target,
+                    ".gitignore",
+                    Buffer.alloc(1024 * 1024 + 1, 0x61),
+                );
+            },
+        },
+        {
+            label: "a hard link",
+            code: "GITIGNORE_UNSAFE",
+            prepare: async (root: string, target: string) => {
+                const external = await put(
+                    root,
+                    "external-ignore",
+                    "runtime/\n",
+                );
+                await mkdir(target, { recursive: true });
+                await link(external, path.join(target, ".gitignore"));
+            },
+        },
+    ])(
+        "rejects gitignore with $label before creating the manifest",
+        async ({ code, prepare }) => {
+            const root = await directory();
+            const target = path.join(root, "servers", "survival");
+            await mkdir(path.join(root, ".git"));
+            await prepare(root, target);
+
+            await expect(
+                initProject(target, {
+                    name: "survival",
+                    kind: "paper",
+                    version: "26.1",
+                }),
+            ).rejects.toMatchObject({ code });
+            expect(await io.exists(path.join(target, "craflet.yaml"))).toBe(
+                false,
+            );
+        },
+    );
+
+    it.runIf(process.platform !== "win32")(
+        "preserves the mode of an existing gitignore",
+        async () => {
+            const root = await directory();
+            const target = path.join(root, "servers", "survival");
+            await mkdir(path.join(root, ".git"));
+            const ignore = await put(target, ".gitignore", "# custom\n");
+            const originalUmask = process.umask(0o077);
+            try {
+                await chmod(ignore, 0o664);
+                await initProject(target, {
+                    name: "survival",
+                    kind: "paper",
+                    version: "26.1",
+                });
+                expect((await stat(ignore)).mode & 0o777).toBe(0o664);
+            } finally {
+                process.umask(originalUmask);
+            }
+        },
+    );
+
+    it.each([false, true])(
+        "rejects a linked gitignore before project creation (dryRun: %s)",
+        async (dryRun) => {
+            const root = await directory();
+            const target = path.join(root, "servers", "survival");
+            const external = path.join(root, "external-ignore");
+            await put(root, ".git", "gitdir: ../metadata/worktrees/survival\n");
+            await mkdir(target, { recursive: true });
+            if (process.platform === "win32") {
+                await mkdir(external);
+                await symlink(
+                    external,
+                    path.join(target, ".gitignore"),
+                    "junction",
+                );
+            } else {
+                await writeFile(external, "# external\n");
+                await symlink(
+                    external,
+                    path.join(target, ".gitignore"),
+                    "file",
+                );
+            }
+
+            await expect(
+                initProject(target, {
+                    name: "survival",
+                    kind: "paper",
+                    version: "26.1",
+                    dryRun,
+                }),
+            ).rejects.toMatchObject({ code: "SYMLINK_UNSAFE" });
+            expect(await io.exists(path.join(target, "craflet.yaml"))).toBe(
+                false,
+            );
+        },
+    );
+
+    it("does not create project or gitignore files during a Git-managed dry run", async () => {
+        const root = await directory();
+        const target = path.join(root, "servers", "survival");
+        await mkdir(path.join(root, ".git"));
+
+        await initProject(target, {
+            name: "survival",
+            kind: "paper",
+            version: "26.1",
+            dryRun: true,
+        });
+
+        expect(await io.exists(target)).toBe(false);
+        expect(await io.exists(path.join(target, ".gitignore"))).toBe(false);
     });
 
     it("validates source and manifest before creating any files, including dry runs", async () => {
@@ -1383,6 +1754,80 @@ describe("project initialization and workspaces", () => {
             expect(requestConsent).not.toHaveBeenCalled();
             expect(await io.exists(target)).toBe(false);
             expect(await io.exists(path.join(home, "eula.json"))).toBe(false);
+        },
+    );
+
+    it("allows exactly one concurrent workspace initialization without replacing its YAML", async () => {
+        const root = await directory();
+        const projectSets = [["servers/*"], ["proxies/*", "!proxies/retired"]];
+        const results = await Promise.allSettled(
+            projectSets.map((projects) => initWorkspace(root, projects)),
+        );
+
+        expect(
+            results.filter((result) => result.status === "fulfilled"),
+        ).toHaveLength(1);
+        expect(
+            results.filter((result) => result.status === "rejected"),
+        ).toHaveLength(1);
+        const winner = results.findIndex(
+            (result) => result.status === "fulfilled",
+        );
+        const winningProjects = projectSets[winner];
+        if (!winningProjects)
+            throw new Error(
+                "Expected one successful workspace initialization.",
+            );
+        expect(
+            results.find((result) => result.status === "rejected"),
+        ).toMatchObject({
+            status: "rejected",
+            reason: { code: "WORKSPACE_EXISTS" },
+        });
+        expect(
+            await readYaml(path.join(root, "craflet-workspace.yaml")),
+        ).toEqual({
+            schemaVersion: 1,
+            projects: winningProjects,
+        });
+    });
+
+    it.each([false, true])(
+        "rejects a linked workspace directory without writing through it (dryRun: %s)",
+        async (dryRun) => {
+            const root = await directory();
+            const external = path.join(root, "external");
+            const workspace = path.join(root, "workspace");
+            await mkdir(external);
+            await symlink(
+                external,
+                workspace,
+                process.platform === "win32" ? "junction" : "dir",
+            );
+
+            await expect(
+                initWorkspace(workspace, ["servers/*"], dryRun),
+            ).rejects.toMatchObject({ code: "SYMLINK_UNSAFE" });
+            expect(
+                await io.exists(path.join(external, "craflet-workspace.yaml")),
+            ).toBe(false);
+        },
+    );
+
+    it.each([false, true])(
+        "rejects an oversized generated workspace manifest without writing it (dryRun: %s)",
+        async (dryRun) => {
+            const root = await directory();
+            const suffix = "a".repeat(1024);
+            const projects = Array.from(
+                { length: 2_048 },
+                (_, index) => `servers/${index}-${suffix}`,
+            );
+
+            await expect(
+                initWorkspace(root, projects, dryRun),
+            ).rejects.toMatchObject({ code: "YAML_SIZE" });
+            expect(await readdir(root)).toEqual([]);
         },
     );
 
