@@ -25,6 +25,7 @@ import {
     readState,
     saveState,
 } from "@craflet/adapters";
+import { CRAFLET_VERSION } from "@craflet/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NodeServerController } from "../../packages/adapters/src/runtime/controller.js";
 import {
@@ -421,7 +422,13 @@ describe("server identity and control", () => {
             code: "RUNNER_EXITED",
         });
         const hash = createHash("sha256").update(source).digest("hex");
-        const cached = path.join(home, "runners", "0.1.0", hash, "runner.mjs");
+        const cached = path.join(
+            home,
+            "runners",
+            CRAFLET_VERSION,
+            hash,
+            "runner.mjs",
+        );
         expect(await readFile(cached, "utf8")).toBe(source);
         await writeFile(cached, "changed");
         await expect(controller.start(installation.id)).rejects.toMatchObject({

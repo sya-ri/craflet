@@ -4,6 +4,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
+    CRAFLET_VERSION,
     CrafletError,
     type ServerController,
     type ServerStatus,
@@ -138,7 +139,7 @@ export class NodeServerController implements ServerController {
         const runner = path.join(
             this.home,
             "runners",
-            "0.1.0",
+            CRAFLET_VERSION,
             hash,
             "runner.mjs",
         );

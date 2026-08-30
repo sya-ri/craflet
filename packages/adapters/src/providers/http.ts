@@ -1,6 +1,7 @@
 import { isIP } from "node:net";
 import {
     type ArtifactContext,
+    CRAFLET_VERSION,
     CrafletError,
     type SourceSpec,
 } from "@craflet/core";
@@ -111,7 +112,7 @@ export class ProviderHttp {
         this.fetcher = options.fetch ?? globalThis.fetch;
         this.userAgent =
             options.userAgent ??
-            "craflet/0.1.0 (https://github.com/sya-ri/craflet)";
+            `craflet/${CRAFLET_VERSION} (https://github.com/sya-ri/craflet)`;
         this.timeoutMs = options.timeoutMs ?? 120_000;
         this.maxMetadataBytes = options.maxMetadataBytes ?? 8 * 1024 * 1024;
     }

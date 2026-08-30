@@ -19,7 +19,10 @@
         "test:package": "node scripts/test-package.mjs",
         "check:architecture": "node scripts/check-architecture.mjs",
         "build": "tsdown && node scripts/build-assets.mjs",
-        "verify": "pnpm check && pnpm typecheck && pnpm check:architecture && pnpm test:coverage && pnpm build && pnpm test:package"
+        "verify": "pnpm check && pnpm typecheck && pnpm check:architecture && pnpm test:coverage && pnpm build && pnpm test:package",
+        "release:prepare": "pnpm verify && node scripts/release.mjs prepare",
+        "release:check": "node scripts/release.mjs check",
+        "release:publish": "node scripts/release.mjs publish"
     },
     "devDependencies": {
         "@craflet/core": "workspace:*",

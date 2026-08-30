@@ -1,4 +1,4 @@
-import { CrafletError } from "@craflet/core";
+import { CRAFLET_VERSION, CrafletError } from "@craflet/core";
 import { Command, CommanderError } from "commander";
 import { CommandContext } from "./commands/context.js";
 import { registerCommands } from "./commands/register.js";
@@ -38,7 +38,7 @@ export function createCli(
         .description(
             "Manage reproducible Minecraft servers, safe updates and cold backups.",
         )
-        .version("0.1.0");
+        .version(CRAFLET_VERSION);
     program.exitOverride().configureOutput({
         writeOut: (text) =>
             process.stdout.write(

@@ -25,6 +25,7 @@ import {
 } from "@craflet/adapters";
 import {
     type BackupMetadata,
+    CRAFLET_VERSION,
     CrafletError,
     type LockedArtifact,
     parseSource,
@@ -182,7 +183,7 @@ describe("CLI usage and package-style project management", () => {
         expect((await loadProject(target, home)).manifest.id).toMatch(
             /^[a-f0-9-]{36}$/,
         );
-        expect((await command(["--version"])).reply.help).toBe("0.1.0");
+        expect((await command(["--version"])).reply.help).toBe(CRAFLET_VERSION);
     });
 
     it.each([

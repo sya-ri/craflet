@@ -129,8 +129,9 @@ To test the actual distribution instead of the development bundle, pack it and
 set `CRAFLET_E2E_PACKAGE` to the tarball path before invoking Vitest:
 
 ```sh
+CRAFLET_VERSION="$(node -p "require('./packages/cli/package.json').version")"
 pnpm --dir packages/cli pack --pack-destination "$PWD/artifacts"
-CRAFLET_E2E_PACKAGE=artifacts/craflet-0.1.0.tgz pnpm exec vitest run --project e2e tests/e2e/real-server.test.ts -t Velocity
+CRAFLET_E2E_PACKAGE="artifacts/craflet-${CRAFLET_VERSION}.tgz" pnpm exec vitest run --project e2e tests/e2e/real-server.test.ts -t Velocity
 ```
 
 In PowerShell, set `$env:CRAFLET_E2E_PACKAGE` before running the same Vitest command.

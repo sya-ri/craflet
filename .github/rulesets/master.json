@@ -1,0 +1,22 @@
+{
+    "name": "Protect master",
+    "target": "branch",
+    "enforcement": "active",
+    "conditions": {
+        "ref_name": {
+            "include": ["refs/heads/master"],
+            "exclude": []
+        }
+    },
+    "rules": [
+        {
+            "type": "deletion"
+        },
+        {
+            "type": "non_fast_forward"
+        },
+        {
+            "type": "required_signatures"
+        }
+    ]
+}

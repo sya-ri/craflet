@@ -2,6 +2,17 @@
     "name": "craflet",
     "version": "0.1.0",
     "description": "Reproducible Minecraft servers, safe updates, configuration capture and cold backups.",
+    "keywords": [
+        "minecraft",
+        "paper",
+        "velocity",
+        "server-management",
+        "plugin-management",
+        "backup",
+        "cli"
+    ],
+    "homepage": "https://github.com/sya-ri/craflet#readme",
+    "bugs": "https://github.com/sya-ri/craflet/issues",
     "type": "module",
     "bin": {
         "craflet": "./dist/cli.mjs"
@@ -18,10 +29,15 @@
     },
     "repository": {
         "type": "git",
-        "url": "git+ssh://git@github.com/sya-ri/craflet.git",
+        "url": "git+https://github.com/sya-ri/craflet.git",
         "directory": "packages/cli"
     },
     "license": "MIT",
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/",
+        "tag": "latest"
+    },
     "dependencies": {
         "@clack/prompts": "1.7.0",
         "@craflet/adapters": "workspace:*",

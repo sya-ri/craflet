@@ -16,13 +16,14 @@ import {
 import { delimiter, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { crafletVersion } from "../../scripts/version.mjs";
 
 const execute = promisify(execFile);
 const repository = fileURLToPath(new URL("../../", import.meta.url));
 const fixtureDirectory = fileURLToPath(new URL("./", import.meta.url));
 const outputDirectory = join(repository, "artifacts", "fixtures");
 const packageDirectory = "dev/craflet/fixtures";
-const userAgent = "craflet/0.1.0 (https://github.com/sya-ri/craflet)";
+const userAgent = `craflet/${crafletVersion} (https://github.com/sya-ri/craflet)`;
 const versions = { v1: "1.0.0", v2: "2.0.0" };
 const platforms = {
     bukkit: { id: "CrafletBukkitFixture", main: "BukkitFixture" },

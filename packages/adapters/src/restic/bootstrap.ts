@@ -206,7 +206,7 @@ export class ResticBootstrap {
         if (!asset) {
             throw new CrafletError(
                 "RESTIC_PLATFORM",
-                "There is no pinned official restic binary for this OS/CPU. Supply an explicitly trusted compatible restic executable.",
+                "There is no pinned official restic binary for this OS/CPU. Restic-backed backup operations are unavailable on this platform in this release.",
                 3,
             );
         }

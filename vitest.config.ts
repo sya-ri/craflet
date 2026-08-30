@@ -1,9 +1,17 @@
 import { defineConfig } from "vitest/config";
+import { crafletVersionDefine } from "./scripts/version.mjs";
 
 export default defineConfig({
+    define: crafletVersionDefine,
     test: {
+        server: {
+            deps: {
+                inline: [/^@craflet\//u],
+            },
+        },
         projects: [
             {
+                extends: true,
                 test: {
                     name: "unit",
                     include: [
@@ -14,6 +22,7 @@ export default defineConfig({
                 },
             },
             {
+                extends: true,
                 test: {
                     name: "integration",
                     include: ["tests/integration/**/*.test.ts"],
@@ -22,6 +31,7 @@ export default defineConfig({
                 },
             },
             {
+                extends: true,
                 test: {
                     name: "e2e",
                     include: ["tests/e2e/**/*.test.ts"],

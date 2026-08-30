@@ -2,19 +2,17 @@
 
 Manage Paper and Velocity server JARs, plugins, configuration, and backups. Keep your intended setup in Git, capture changes made by the server, and apply updates during a managed start or restart.
 
-Craflet runs on the server host and targets Linux, Windows, and macOS. For remote servers, install it on that host and connect with your usual SSH client.
+Craflet runs on the server host and targets Linux, Windows, and macOS. Automatic restic setup supports Linux x64/arm64, macOS x64/arm64, and Windows x64; restic-backed backup operations are unavailable on other architectures in this release. For remote servers, install Craflet on that host and connect with your usual SSH client.
 
 ## See setup, console control, and plugin updates in action
 
-![Craflet terminal demo showing Paper initialization, server and plugin installation, recent console logs and history, backup setup, a pending plugin update, and restart-time deployment](docs/assets/craflet-demo.gif)
+![Craflet terminal demo showing Paper initialization, server and plugin installation, recent console logs and history, backup setup, a pending plugin update, and restart-time deployment](https://raw.githubusercontent.com/sya-ri/craflet/master/docs/assets/craflet-demo.gif)
 
 The demo follows a first install, opens the interactive console with recent logs, loads older history, runs `list`, and detaches while Paper keeps running. It then stages and applies a LuckPerms update during restart.
 
 ## Installation
 
 You need **Node.js 24.20.0 through Node.js 26** and the Java version required by your server. Make Java available on `PATH`, or set an absolute `java.command` in `craflet.yaml`. Craflet does not install Java, establish SSH connections, or register OS services.
-
-> The first npm release is pending; the npm/npx commands below will be available after publication.
 
 Install the CLI globally:
 
@@ -173,6 +171,8 @@ Unchanged files retain their original text. Managed configuration is not run thr
 ## Backups
 
 Backups use encrypted restic repositories in an explicitly registered local directory or mounted NAS location. Choose an absolute destination outside the runtime and staging directories, with an existing parent. For a new repository, the destination must be empty or absent.
+
+Craflet downloads and verifies a pinned official restic build on Linux x64/arm64, macOS x64/arm64, and Windows x64. Other architectures can preview file selection with `craflet backup plan`, but operations that create, inspect, prune, or restore restic snapshots are unavailable. Artifact and configuration commands, plus lifecycle operations that do not require a safety backup, remain available when the Node.js and Java requirements are met.
 
 Set `CRAFLET_BACKUP_PASSWORD` securely in your environment before these commands, or use `--password-file` with a private file. Only the reference is saved, so it must remain available in later sessions. Replace the example paths with paths on your host, such as `C:\Backups\survival` on Windows.
 

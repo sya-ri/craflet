@@ -95,6 +95,21 @@ try {
     );
     assert.equal(published.name, "craflet");
     assert.equal(published.engines?.node, ">=24.20.0 <27");
+    assert.equal(published.publishConfig?.access, "public");
+    assert.equal(
+        published.publishConfig?.registry,
+        "https://registry.npmjs.org/",
+    );
+    assert.equal(published.publishConfig?.tag, "latest");
+    assert.equal(
+        published.repository?.url,
+        "git+https://github.com/sya-ri/craflet.git",
+    );
+    assert.equal(
+        published.homepage,
+        "https://github.com/sya-ri/craflet#readme",
+    );
+    assert.equal(published.bugs, "https://github.com/sya-ri/craflet/issues");
     assert.equal(
         Object.keys(published.dependencies ?? {}).length,
         0,

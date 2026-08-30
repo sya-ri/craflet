@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
     group: verification-${{ github.workflow }}-${{ github.ref }}
-    cancel-in-progress: true
+    cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
     compatibility:
@@ -53,7 +53,6 @@ jobs:
             # An unset value fails Paper E2E; it is never silently skipped.
             CRAFLET_E2E_EULA: ${{ vars.CRAFLET_E2E_EULA }}
             CRAFLET_TEST_RESTIC: "1"
-            CRAFLET_E2E_PACKAGE: artifacts/craflet-0.1.0.tgz
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
@@ -76,6 +75,10 @@ jobs:
             - run: pnpm build
             - name: Verify the distributable package
               run: pnpm test:package
+            - name: Select the verified package for real server tests
+              run: >-
+                  node -e "const fs=require('node:fs'),v=require('./packages/cli/package.json').version;
+                  fs.appendFileSync(process.env.GITHUB_ENV,'CRAFLET_E2E_PACKAGE=artifacts/craflet-'+v+'.tgz\n')"
             - name: Build locked real server and plugin fixtures
               run: node tests/fixtures/build.mjs --with-servers --verify-reproducible
             - name: Real Paper and Velocity E2E using the verified tarball
@@ -161,3 +164,64 @@ jobs:
                   test "$COMPATIBILITY" = success &&
                   test "$SERVERS" = success &&
                   test "$DATABASES" = success
+
+    publish:
+        name: Publish npm package
+        if: >-
+            github.event_name == 'push' &&
+            startsWith(github.ref, 'refs/tags/v') &&
+            github.ref_protected == true &&
+            vars.CRAFLET_NPM_TRUSTED_PUBLISHING == 'true'
+        needs: [required]
+        runs-on: ubuntu-latest
+        environment: npm
+        permissions:
+            contents: read
+            id-token: write
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  fetch-depth: 0
+                  persist-credentials: false
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version-file: .node-version
+                  package-manager-cache: false
+                  registry-url: https://registry.npmjs.org
+            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+              with:
+                  version: 11.24.0
+                  cache: false
+            - run: pnpm install --frozen-lockfile
+            - name: Load the authorized release key
+              shell: bash
+              run: |
+                  expected='3C7F5488B337C1D85A8620122162A8E62C120348'
+                  gnupg_home="$RUNNER_TEMP/craflet-release-gnupg"
+                  install -d -m 700 "$gnupg_home"
+                  export GNUPGHOME="$gnupg_home"
+                  echo "GNUPGHOME=$gnupg_home" >> "$GITHUB_ENV"
+                  primary="$(gpg --batch --with-colons --import-options show-only --import .github/keys/release-signing-key.asc 2>/dev/null | awk -F: '$1 == "pub" { wanted=1; next } wanted && $1 == "fpr" { print $10; wanted=0 }')"
+                  test "$primary" = "$expected"
+                  gpg --batch --import-options import-minimal --import .github/keys/release-signing-key.asc
+            - name: Prepare the exact release tarball
+              run: pnpm release:prepare
+            - name: Publish with npm trusted publishing and provenance
+              run: pnpm release:publish
+
+    github-release:
+        name: Create GitHub release
+        needs: [publish]
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        steps:
+            - name: Create release from the verified tag
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: >-
+                  gh release create "$GITHUB_REF_NAME"
+                  --repo "$GITHUB_REPOSITORY"
+                  --verify-tag
+                  --generate-notes
+                  --title "$GITHUB_REF_NAME"

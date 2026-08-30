@@ -129,7 +129,12 @@ describe("pinned restic bootstrap", () => {
         });
         await expect(
             unsupported.prepare({ offline: true }),
-        ).rejects.toMatchObject({ code: "RESTIC_PLATFORM" });
+        ).rejects.toMatchObject({
+            code: "RESTIC_PLATFORM",
+            message: expect.stringContaining(
+                "Restic-backed backup operations are unavailable",
+            ),
+        });
         await expect(
             unsupported.prepare({ binaryPath: "relative.exe" }),
         ).rejects.toMatchObject({ code: "RESTIC_PATH" });
