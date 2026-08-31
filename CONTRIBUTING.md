@@ -114,6 +114,12 @@ npm install --global "./artifacts/crafleet-${CRAFLEET_VERSION}.tgz"
 crafleet --help
 ```
 
+### Changelog and release notes
+
+Record user-visible changes in `CHANGELOG.md` in English, newest first, and keep work that has not shipped under `Unreleased`. Before publishing, replace those entries with a dated `## <version> - YYYY-MM-DD` section and add curated notes at `docs/releases/v<version>.md`. The changelog is a categorized history; the release notes should add the overview, installation or migration guidance, compatibility boundaries, and distribution details that help someone use that specific release.
+
+Every release-notes file must start with `# Crafleet <version>`. Release-note validation derives the expected `v<version>` tag and verifies that it agrees with the stable package version, dated changelog section, filename, and title. `release:check` and `release:publish` additionally require that the actual Git tag exists at the release commit.
+
 ### Publishing
 
 Never publish `packages/cli` directly. Its executable bundle and schemas are generated, while tracked package assets may be stale until the distribution build runs. Release only the exact tarball produced and verified by `pnpm release:prepare`.
@@ -130,13 +136,13 @@ pnpm release:publish
 npm view crafleet@0.1.0 version --registry=https://registry.npmjs.org/
 ```
 
-Do not push the tag or create the GitHub release until the package publish succeeds. The release helper fetches `origin/master`, requires `HEAD` to be included there, and accepts only a commit signed by the pinned release key. It also requires a clean worktree, an exact `v<package-version>` tag at `HEAD`, and a receipt whose commit, package version, size, and SHA-256 still match. It publishes an exclusive staged copy through the public npm registry with public access and the `latest` dist-tag. Local provenance is explicitly disabled; the helper enables it only after validating the exact GitHub Actions repository, push event, version tag, and commit.
+Do not push the tag or create the GitHub release until the package publish succeeds. The release helper fetches `origin/master`, requires `HEAD` to be included there, and accepts only a commit signed by the pinned release key. It also requires a clean worktree, an exact `v<package-version>` tag at `HEAD`, a matching changelog section and curated release-notes file, and a receipt whose commit, package version, size, and SHA-256 still match. It publishes an exclusive staged copy through the public npm registry with public access and the `latest` dist-tag. Local provenance is explicitly disabled; the helper enables it only after validating the exact GitHub Actions repository, push event, version tag, and commit.
 
 Once npm confirms `0.1.0`, push the immutable tag and create its GitHub release manually. The trusted-publishing flag is deliberately absent during this first tag run, so CI reruns the full test matrix without trying to publish the package again; the local `release:check` has already verified the tag.
 
 ```sh
 git push origin v0.1.0
-gh release create v0.1.0 --repo sya-ri/crafleet --verify-tag --generate-notes --title v0.1.0
+gh release create v0.1.0 --repo sya-ri/crafleet --verify-tag --notes-file docs/releases/v0.1.0.md --title "Crafleet 0.1.0"
 ```
 
 After the initial release exists on both npm and GitHub, install the version-controlled repository rulesets and create an npm environment restricted to `v*` tags with `sya-ri` as its required reviewer. The master ruleset requires signed commits and prevents deletion and force pushes. The release-tag ruleset prevents existing version tags from being moved or deleted. Required environment approval keeps a repository writer from replacing the release key and publishing without the release owner's approval.
@@ -156,10 +162,10 @@ npm trust list crafleet
 gh variable set CRAFLEET_NPM_TRUSTED_PUBLISHING --repo sya-ri/crafleet --body true
 ```
 
-Subsequent stable `v<version>` tag pushes run the full required Node, operating system, real server, and database matrix before publishing the freshly verified tarball with npm provenance and creating the GitHub release. The publish job requires a protected tag and rejects a triggering tag that differs from the package version. Workflow dispatches never publish. No long-lived npm token belongs in GitHub or the repository.
+Subsequent stable `v<version>` tag pushes run the full required Node, operating system, real server, and database matrix before publishing the freshly verified tarball with npm provenance and creating the GitHub release from `docs/releases/v<version>.md`. The publish job requires a protected tag and rejects a triggering tag that differs from the package version. Workflow dispatches never publish. No long-lived npm token belongs in GitHub or the repository.
 
 The publish job imports only the public key in `.github/keys/release-signing-key.asc`, requires exactly one authorized primary fingerprint, and checks the commit's primary signer fingerprint. Update the key and both pinned fingerprint checks in one reviewed change when the authorized release signer changes.
 
 If a local publish is interrupted, first query npm for the exact version. If it exists, treat npm publication as complete and do not publish it again. If it does not exist, read `artifacts/.release-publish.lock`, inspect the recorded PID, and confirm that no npm or Node publisher still owns the operation. Only after both checks may you remove that lock and the matching `artifacts/.release-*.tgz` staging file, run `pnpm release:check`, and retry. Never infer failure from a missing terminal response alone.
 
-If npm contains the new version but the GitHub release step fails, do not rerun an immutable npm publication. Inspect the failed run and create the release manually with `gh release create` as shown above. If npm does not contain the version, fix the failure without moving or replacing the existing tag, then rerun the failed workflow only after confirming that another publisher did not complete it.
+If npm contains the new version but the GitHub release step fails, do not rerun an immutable npm publication. Inspect the failed run and create the release manually with `gh release create` as shown above, substituting the exact published version and its tracked release-notes file. If npm does not contain the version, fix the failure without moving or replacing the existing tag, then rerun the failed workflow only after confirming that another publisher did not complete it.
