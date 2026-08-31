@@ -253,6 +253,9 @@ jobs:
         permissions:
             contents: write
         steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
             - name: Create release from the verified tag
               env:
                   GH_TOKEN: ${{ github.token }}
@@ -260,5 +263,5 @@ jobs:
                   gh release create "$GITHUB_REF_NAME"
                   --repo "$GITHUB_REPOSITORY"
                   --verify-tag
-                  --generate-notes
-                  --title "$GITHUB_REF_NAME"
+                  --notes-file "docs/releases/$GITHUB_REF_NAME.md"
+                  --title "Crafleet ${GITHUB_REF_NAME#v}"

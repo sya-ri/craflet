@@ -264,4 +264,4 @@ npx skills add sya-ri/crafleet --skill crafleet
 
 Restart the agent tool after installation so it reloads available skills.
 
-For contribution instructions, see [CONTRIBUTING.md](https://github.com/sya-ri/crafleet/blob/master/CONTRIBUTING.md).
+For release history, see [CHANGELOG.md](https://github.com/sya-ri/crafleet/blob/master/CHANGELOG.md). For contribution instructions, see [CONTRIBUTING.md](https://github.com/sya-ri/crafleet/blob/master/CONTRIBUTING.md).
