@@ -6,6 +6,8 @@ For installation and server administration, see the [README](README.md). This gu
 
 Use the versions pinned in `mise.toml`, `.node-version`, and the root `packageManager` field. The development toolchain uses Node.js 24.20.0, pnpm 11.24.0, and Temurin 25.0.3+9.0.LTS. Keep tool selection local to the project; do not change a contributor's global Java or Node settings.
 
+The published CLI supports every Node.js 24 release, but the development toolchain requires Node.js 24.11.1 or later because of its build dependencies and a config-loading bug in Node.js 24.11.0. CI builds with a supported development runtime, then runs the packaged CLI and targeted runtime tests separately on Node.js 24.0.0.
+
 After selecting the pinned tools, run:
 
 ```sh

@@ -12,6 +12,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const root = process.cwd();
+const scriptArguments = process.argv.slice(2);
+assert(
+    scriptArguments.length === 0 ||
+        (scriptArguments.length === 1 && scriptArguments[0] === "--existing"),
+    "Usage: node scripts/test-package.mjs [--existing]",
+);
+const useExistingTarball = scriptArguments[0] === "--existing";
 const temporaryParent = await realpath(tmpdir());
 const temporary = await mkdtemp(
     path.join(temporaryParent, "crafleet-package-"),
@@ -20,10 +27,10 @@ const env = {
     ...process.env,
     CRAFLEET_HOME: path.join(temporary, "home"),
     NO_COLOR: "1",
+    npm_config_cache: path.join(temporary, "npm-cache"),
     npm_config_update_notifier: "false",
 };
 const pnpm = process.env.npm_execpath;
-assert(pnpm, "Run this verification using pnpm test:package.");
 const run = (executable, args, cwd = temporary) =>
     execFileSync(executable, args, {
         cwd,
@@ -33,10 +40,12 @@ const run = (executable, args, cwd = temporary) =>
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
     });
-const runPnpm = (args) =>
-    /\.[cm]?js$/.test(pnpm)
+const runPnpm = (args) => {
+    assert(pnpm, "Run package creation using pnpm test:package.");
+    return /\.[cm]?js$/.test(pnpm)
         ? run(process.execPath, [pnpm, ...args], root)
         : run(pnpm, args, root);
+};
 async function cleanup(directory, prefix) {
     const absolute = path.resolve(directory);
     assert.equal(path.dirname(absolute), temporaryParent);
@@ -63,13 +72,6 @@ for (const candidate of [
 }
 assert(npm, "The selected Node runtime must include npm for package E2E.");
 try {
-    runPnpm([
-        "--dir",
-        "packages/cli",
-        "pack",
-        "--pack-destination",
-        path.join(root, "artifacts"),
-    ]);
     const manifest = JSON.parse(
         await readFile(path.join(root, "packages/cli/package.json"), "utf8"),
     );
@@ -78,6 +80,14 @@ try {
         "artifacts",
         `crafleet-${manifest.version}.tgz`,
     );
+    if (!useExistingTarball)
+        runPnpm([
+            "--dir",
+            "packages/cli",
+            "pack",
+            "--pack-destination",
+            path.join(root, "artifacts"),
+        ]);
     await writeFile(
         path.join(temporary, "package.json"),
         JSON.stringify({ private: true, type: "module" }),
@@ -99,7 +109,7 @@ try {
     assert.deepEqual(published.bin, {
         crafleet: "./dist/cli.mjs",
     });
-    assert.equal(published.engines?.node, ">=24.20.0 <27");
+    assert.equal(published.engines?.node, ">=24.0.0 <27");
     assert.equal(published.publishConfig?.access, "public");
     assert.equal(
         published.publishConfig?.registry,

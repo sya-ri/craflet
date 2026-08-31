@@ -12,7 +12,7 @@ The demo follows a first install, opens the interactive console with recent logs
 
 ## Installation
 
-You need **Node.js 24.20.0 through Node.js 26** and the Java version required by your server. Make Java available on `PATH`, or set an absolute `java.command` in `crafleet.yaml`. Crafleet does not install Java, establish SSH connections, or register OS services.
+You need **Node.js 24, 25, or 26** and the Java version required by your server. Use the latest patch release available for your selected Node.js major. Make Java available on `PATH`, or set an absolute `java.command` in `crafleet.yaml`. Crafleet does not install Java, establish SSH connections, or register OS services.
 
 Install the CLI globally:
 

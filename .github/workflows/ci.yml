@@ -14,11 +14,11 @@ concurrency:
 
 jobs:
     compatibility:
-        name: Node.js ${{ matrix.node }}
+        name: Development Node.js ${{ matrix.node }}
         strategy:
             fail-fast: false
             matrix:
-                node: ["24.20.0", "25.9.0", "26.8.1"]
+                node: ["24.11.1", "25.9.0", "26.8.1"]
         runs-on: ubuntu-latest
         timeout-minutes: 20
         env:
@@ -37,6 +37,41 @@ jobs:
                   cache: true
             - run: pnpm install --frozen-lockfile
             - run: pnpm verify
+
+    runtime-compatibility:
+        name: Packaged CLI on Node.js 24.0.0
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        env:
+            CI: "true"
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version-file: .node-version
+                  package-manager-cache: false
+            - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+              with:
+                  version: 11.24.0
+                  cache: true
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm build
+            - run: pnpm test:package
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version: "24.0.0"
+                  package-manager-cache: false
+            - name: Exercise APIs used by the minimum runtime
+              run: >-
+                  node node_modules/vitest/vitest.mjs run
+                  --project unit --project integration
+                  packages/cli/src/presentation/console.test.ts
+                  tests/integration/backup-database.test.ts
+                  tests/integration/artifacts-jar.test.ts
+            - name: Install and run the tarball on the minimum runtime
+              run: node scripts/test-package.mjs --existing
 
     servers:
         name: Real servers (${{ matrix.os }})
@@ -152,16 +187,18 @@ jobs:
     required:
         name: All supported environments
         if: always()
-        needs: [compatibility, servers, databases]
+        needs: [compatibility, runtime-compatibility, servers, databases]
         runs-on: ubuntu-latest
         steps:
             - name: Require every supported environment to succeed
               env:
                   COMPATIBILITY: ${{ needs.compatibility.result }}
+                  RUNTIME_COMPATIBILITY: ${{ needs.runtime-compatibility.result }}
                   SERVERS: ${{ needs.servers.result }}
                   DATABASES: ${{ needs.databases.result }}
               run: >-
                   test "$COMPATIBILITY" = success &&
+                  test "$RUNTIME_COMPATIBILITY" = success &&
                   test "$SERVERS" = success &&
                   test "$DATABASES" = success
 
