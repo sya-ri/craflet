@@ -12,6 +12,11 @@ vi.mock("@clack/prompts", () => ({
     isCancel: (value: unknown) => typeof value === "symbol",
 }));
 const originalTty = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+const originalErrorTty = Object.getOwnPropertyDescriptor(
+    process.stderr,
+    "isTTY",
+);
+const originalCi = process.env.CI;
 const originalExit = process.exitCode;
 let context: CommandContext;
 let command: Command;
@@ -24,12 +29,22 @@ beforeEach(() => {
         configurable: true,
         value: true,
     });
+    Object.defineProperty(process.stderr, "isTTY", {
+        configurable: true,
+        value: true,
+    });
+    Reflect.deleteProperty(process.env, "CI");
     prompts.confirm.mockReset();
     prompts.text.mockReset();
 });
 afterEach(() => {
     if (originalTty) Object.defineProperty(process.stdin, "isTTY", originalTty);
     else Reflect.deleteProperty(process.stdin, "isTTY");
+    if (originalErrorTty)
+        Object.defineProperty(process.stderr, "isTTY", originalErrorTty);
+    else Reflect.deleteProperty(process.stderr, "isTTY");
+    if (originalCi === undefined) Reflect.deleteProperty(process.env, "CI");
+    else process.env.CI = originalCi;
     vi.restoreAllMocks();
     process.exitCode = originalExit;
 });
@@ -84,6 +99,43 @@ describe("interactive CLI boundaries", () => {
         ).rejects.toMatchObject({ code: "CANCELLED" });
         expect(context.abort.signal.aborted).toBe(true);
     });
+    it("accepts only an interactive terminal without JSON or --yes", () => {
+        expect(() =>
+            context.requireInteractiveInput(command, "Required"),
+        ).not.toThrow();
+
+        command.setOptionValue("json", true);
+        expect(() =>
+            context.requireInteractiveInput(command, "Required"),
+        ).toThrowError(expect.objectContaining({ code: "INPUT_REQUIRED" }));
+        command.setOptionValue("json", false);
+        command.setOptionValue("yes", true);
+        expect(() =>
+            context.requireInteractiveInput(command, "Required"),
+        ).toThrowError(expect.objectContaining({ code: "INPUT_REQUIRED" }));
+        command.setOptionValue("yes", false);
+
+        Object.defineProperty(process.stderr, "isTTY", {
+            configurable: true,
+            value: false,
+        });
+        expect(() =>
+            context.requireInteractiveInput(command, "Required"),
+        ).toThrowError(expect.objectContaining({ code: "INPUT_REQUIRED" }));
+    });
+    it.each(["1", "true", "yes", "on"])(
+        "rejects CI environment value %s while treating CI=false as local",
+        (value) => {
+            process.env.CI = value;
+            expect(() =>
+                context.requireInteractiveInput(command, "Required"),
+            ).toThrowError(expect.objectContaining({ code: "INPUT_REQUIRED" }));
+            process.env.CI = "false";
+            expect(() =>
+                context.requireInteractiveInput(command, "Required"),
+            ).not.toThrow();
+        },
+    );
     it("retains parent flags while combining repeatable filters", () => {
         const parent = new Command()
             .option("--cwd <path>")

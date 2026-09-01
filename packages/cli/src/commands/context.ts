@@ -7,6 +7,7 @@ import {
     crafleetHome,
     NodeArtifactStore,
     NodeDeploymentManager,
+    NodePluginCatalog,
     NodeRecoveryGroup,
     NodeServerController,
     nearestFile,
@@ -28,9 +29,17 @@ export interface Globals {
     offline?: boolean;
     dryRun?: boolean;
 }
+
+function isCiEnvironment(value: string | undefined): boolean {
+    if (value === undefined) return false;
+    const normalized = value.trim().toLowerCase();
+    return !["", "0", "false", "no", "off"].includes(normalized);
+}
+
 export class CommandContext {
     readonly home = crafleetHome();
     readonly store = new NodeArtifactStore(this.home);
+    readonly pluginCatalog = new NodePluginCatalog();
     readonly abort = new AbortController();
     readonly runnerEntry: string;
     private activeGlobals: Globals = {};
@@ -172,6 +181,17 @@ export class CommandContext {
             dryRun: options.dryRun ?? false,
             signal: this.abort.signal,
         };
+    }
+    requireInteractiveInput(command: Command, message: string): void {
+        const options = this.globals(command);
+        if (
+            options.json ||
+            options.yes ||
+            isCiEnvironment(process.env.CI) ||
+            !process.stdin.isTTY ||
+            !process.stderr.isTTY
+        )
+            throw new CrafleetError("INPUT_REQUIRED", message, 2);
     }
     async ask(command: Command, message: string): Promise<void> {
         const options = this.globals(command);

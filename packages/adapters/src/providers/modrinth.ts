@@ -1,6 +1,7 @@
 import {
     type ArtifactContext,
     CrafleetError,
+    type ServerKind,
     type SourceSpec,
 } from "@crafleet/core";
 import { type } from "arktype";
@@ -28,16 +29,31 @@ const versionSchema = type({
     }).array(),
 });
 
+export function modrinthLoaders(serverKind: ServerKind): string[] {
+    return serverKind === "paper"
+        ? ["paper", "spigot", "bukkit"]
+        : ["velocity"];
+}
+
+export function isModrinthVersionCompatible(
+    version: { loaders: string[]; game_versions: string[] },
+    context: { serverKind: ServerKind; minecraftVersion?: string },
+): boolean {
+    const loaders = modrinthLoaders(context.serverKind);
+    return (
+        version.loaders.some((loader) => loaders.includes(loader)) &&
+        (!context.minecraftVersion ||
+            version.game_versions.includes(context.minecraftVersion))
+    );
+}
+
 export async function resolveModrinth(
     http: ProviderHttp,
     source: Extract<SourceSpec, { provider: "modrinth" | "hangar" }>,
     context: ArtifactContext,
 ): Promise<DownloadSpec> {
     const base = `https://api.modrinth.com/v2/project/${encodeURIComponent(source.project)}/version`;
-    const loaders =
-        context.serverKind === "paper"
-            ? ["paper", "spigot", "bukkit"]
-            : ["velocity"];
+    const loaders = modrinthLoaders(context.serverKind);
     let version: typeof versionSchema.infer;
     if (source.version === "latest") {
         const query = new URLSearchParams({ loaders: JSON.stringify(loaders) });
@@ -54,9 +70,7 @@ export async function resolveModrinth(
             .filter(
                 (item) =>
                     item.version_type === "release" &&
-                    item.loaders.some((loader) => loaders.includes(loader)) &&
-                    (!context.minecraftVersion ||
-                        item.game_versions.includes(context.minecraftVersion)),
+                    isModrinthVersionCompatible(item, context),
             )
             .sort((a, b) =>
                 b.date_published.localeCompare(a.date_published),
@@ -72,12 +86,7 @@ export async function resolveModrinth(
             ),
         );
     }
-    if (
-        !version.loaders.some((loader) => loaders.includes(loader)) ||
-        (context.minecraftVersion &&
-            !version.game_versions.includes(context.minecraftVersion))
-    )
-        return noVersion();
+    if (!isModrinthVersionCompatible(version, context)) return noVersion();
     const jars = version.files.filter((file) => /\.jar$/iu.test(file.filename));
     const primary = jars.filter((file) => file.primary);
     const selected =

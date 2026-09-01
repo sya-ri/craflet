@@ -44,6 +44,7 @@ Inspect `crafleet import --help`, confirm the source server is stopped, and keep
 
 ```sh
 crafleet plugins inspect ../build/MyPlugin.jar
+crafleet plugins add
 crafleet plugins add file:../build/MyPlugin.jar
 crafleet plugins
 crafleet server
@@ -55,6 +56,8 @@ crafleet deploy plan
 ```
 
 - `plugins` and `server` show desired, locked, pending, and active artifact state without querying providers. Add `--latest` to either inventory when the latest provider version and update status are needed.
+- `plugins add` with no source opens an online Modrinth search for exactly one selected project in an interactive terminal outside CI. Space chooses the latest compatible release, Right Arrow opens exact versions, `a` includes prereleases, and Enter reviews then confirms the cart. It is unavailable with `--json`, `--yes`, or `--offline`; pass explicit sources for scripts and multi-project selections.
+- `plugins add --dry-run` may use the interactive search, but does not download JARs or change declarations, the lock, cache, pending, or active state.
 - `plugins add` and `plugins remove` update declarations and prepare pending. Removing a plugin leaves its data.
 - `install` reproduces unchanged lock entries and resolves only changed declarations. `--frozen-lockfile` refuses missing or stale lock data.
 - `plugins check [names...]` and `server check` only report provider updates.

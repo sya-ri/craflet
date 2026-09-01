@@ -31,6 +31,7 @@ export * from "./filesystem/state.js";
 export * from "./filesystem/validation.js";
 export * from "./formats/config.js";
 export * from "./formats/jar.js";
+export * from "./providers/plugin-catalog.js";
 export * from "./restic/backup-service.js";
 export * from "./restic/bootstrap.js";
 export * from "./runtime/controller.js";
