@@ -106,6 +106,10 @@ Keep the declarations, lock, and reviewed base configuration in Git. Keep runtim
 
 `plugins add` reads the plugin's name from `plugin.yml` or `paper-plugin.yml`, or its ID from `velocity-plugin.json`. It does not execute the JAR. Use `crafleet plugins inspect ../build/MyPlugin.jar` to inspect a local JAR first; `crafleet plugins` shows the names to use in later commands.
 
+Run `crafleet plugins add` without a source to open the interactive Modrinth browser for one selected project. It starts with popular compatible plugins and searches as you type. Use Tab or the arrow keys to move through results, Space to select the latest compatible release, and Right Arrow to choose an exact version; press `a` in the version list to include beta and alpha releases. Enter opens the review screen and Enter again confirms the exact versions, while Esc goes back and Ctrl-C cancels without changing the project.
+
+The browser needs an online interactive terminal outside CI and is unavailable with `--json`, `--yes`, `--offline`, or a multi-project selection. Scripts and workspace-wide operations should continue to pass one or more explicit sources. `crafleet plugins add --dry-run` may search and select versions online, but it does not download JARs or change the cache, declaration, lock, pending installation, or running server. After a normal confirmation, Crafleet still downloads each selected JAR and verifies its real descriptor identity and platform compatibility before recording anything.
+
 Supported source forms:
 
 ```text

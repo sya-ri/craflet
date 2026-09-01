@@ -14,13 +14,16 @@ import {
     validateManagedProjectLock,
 } from "@crafleet/adapters";
 import {
+    CrafleetError,
     type LockedArtifact,
     type LockFile,
     parsePluginSource,
     parseServerSource,
+    type SourceInput,
     stableStringify,
 } from "@crafleet/core";
 import type { Command } from "commander";
+import { choosePluginSources } from "../presentation/plugin-picker.js";
 import type { CommandContext } from "./context.js";
 
 function checkOptions(context: CommandContext, command: Command) {
@@ -243,6 +246,49 @@ async function serverUpdateChecks(
     return results;
 }
 
+async function pluginAddSelection(
+    context: CommandContext,
+    command: Command,
+    explicitSources: string[],
+): Promise<{ projects: ProjectContext[]; sources: SourceInput[] }> {
+    if (explicitSources.length)
+        return {
+            projects: await context.projects(command),
+            sources: explicitSources,
+        };
+    const globals = context.globals(command);
+    if (globals.offline)
+        throw new CrafleetError(
+            "OFFLINE_MISS",
+            "Interactive plugin search requires network access. Remove --offline or supply explicit plugin sources.",
+            3,
+        );
+    context.requireInteractiveInput(
+        command,
+        "Interactive plugin search requires a terminal outside CI without --json or --yes. Supply one or more explicit plugin sources instead.",
+    );
+    const project = await context.one(command);
+    const catalogContext = {
+        serverKind: project.manifest.server.type,
+        ...(project.manifest.server.type === "paper"
+            ? { minecraftVersion: project.manifest.server.version }
+            : {}),
+        offline: false,
+        signal: context.abort.signal,
+    } as const;
+    return {
+        projects: [project],
+        sources: await choosePluginSources(
+            context.pluginCatalog,
+            catalogContext,
+            {
+                dryRun: globals.dryRun ?? false,
+                signal: context.abort.signal,
+            },
+        ),
+    };
+}
+
 export function registerArtifactCommands(
     program: Command,
     context: CommandContext,
@@ -309,17 +355,23 @@ export function registerArtifactCommands(
     );
     context.action(
         plugins
-            .command("add <sources...>")
+            .command("add [sources...]")
             .description(
-                "Inspect identities, declare plugins and prepare pending; never replace running JARs.",
+                "Search Modrinth interactively or add explicit sources, then prepare pending without replacing running JARs.",
             ),
-        async ([sources], command) =>
-            addPlugins(
-                await context.projects(command),
-                context.store,
+        async ([sources], command) => {
+            const selection = await pluginAddSelection(
+                context,
+                command,
                 sources as string[],
+            );
+            return addPlugins(
+                selection.projects,
+                context.store,
+                selection.sources,
                 context.installOptions(command),
-            ),
+            );
+        },
     );
     context.action(
         plugins

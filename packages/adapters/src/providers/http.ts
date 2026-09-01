@@ -1,6 +1,5 @@
 import { isIP } from "node:net";
 import {
-    type ArtifactContext,
     CRAFLEET_VERSION,
     CrafleetError,
     type SourceSpec,
@@ -20,6 +19,11 @@ export interface ProviderOptions {
     userAgent?: string;
     timeoutMs?: number;
     maxMetadataBytes?: number;
+}
+
+export interface ProviderRequestContext {
+    offline?: boolean;
+    signal?: AbortSignal;
 }
 
 export function safeDownloadUrl(value: string): URL {
@@ -119,7 +123,7 @@ export class ProviderHttp {
 
     async open(
         value: string,
-        context: ArtifactContext,
+        context: ProviderRequestContext,
         accept = "application/octet-stream",
     ): Promise<Response> {
         if (context.offline)
@@ -187,7 +191,7 @@ export class ProviderHttp {
         );
     }
 
-    async json(url: string, context: ArtifactContext): Promise<unknown> {
+    async json(url: string, context: ProviderRequestContext): Promise<unknown> {
         const response = await this.open(url, context, "application/json");
         if (!response.body)
             throw new CrafleetError(

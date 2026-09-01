@@ -11,4 +11,5 @@ export * from "./domain/project.js";
 export * from "./domain/sources.js";
 export * from "./domain/version.js";
 export * from "./ports/backup.js";
+export * from "./ports/plugin-catalog.js";
 export * from "./ports/runtime.js";

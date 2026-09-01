@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
     mkdir,
     mkdtemp,
@@ -34,6 +35,11 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCli } from "../../packages/cli/src/application.js";
 import { artifactJar, artifactZip } from "./artifacts-fixture.js";
+
+const pluginPicker = vi.hoisted(() => ({ choosePluginSources: vi.fn() }));
+vi.mock("../../packages/cli/src/presentation/plugin-picker.js", () => ({
+    choosePluginSources: pluginPicker.choosePluginSources,
+}));
 
 let root: string;
 const temporaryParent = await realpath(tmpdir());
@@ -76,6 +82,7 @@ beforeEach(async () => {
         errors += String(chunk);
         return true;
     });
+    pluginPicker.choosePluginSources.mockReset();
 });
 afterEach(async () => {
     process.exitCode = originalExitCode;
@@ -116,6 +123,34 @@ async function result(args: string[], cwd = project): Promise<unknown> {
     expect(execution.code, execution.output || execution.errors).toBe(0);
     expect(execution.reply.ok).toBe(true);
     return execution.reply.result;
+}
+
+async function withInteractiveTerminal<T>(
+    operation: () => Promise<T>,
+): Promise<T> {
+    const stdinTty = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stderrTty = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+    const ci = process.env.CI;
+    Object.defineProperty(process.stdin, "isTTY", {
+        configurable: true,
+        value: true,
+    });
+    Object.defineProperty(process.stderr, "isTTY", {
+        configurable: true,
+        value: true,
+    });
+    Reflect.deleteProperty(process.env, "CI");
+    try {
+        return await operation();
+    } finally {
+        if (stdinTty) Object.defineProperty(process.stdin, "isTTY", stdinTty);
+        else Reflect.deleteProperty(process.stdin, "isTTY");
+        if (stderrTty)
+            Object.defineProperty(process.stderr, "isTTY", stderrTty);
+        else Reflect.deleteProperty(process.stderr, "isTTY");
+        if (ci === undefined) Reflect.deleteProperty(process.env, "CI");
+        else process.env.CI = ci;
+    }
 }
 
 interface WorkspaceProjectSpec {
@@ -375,7 +410,6 @@ describe("CLI usage and package-style project management", () => {
             ["update"],
             ["plugins", "list"],
             ["plugins", "outdated"],
-            ["plugins", "add"],
             ["init", "--type", "fabric"],
             ["config", "resolve", "x.yml"],
             ["plugins", "update", "--to", "2"],
@@ -389,6 +423,28 @@ describe("CLI usage and package-style project management", () => {
         expect(execution.code).toBe(2);
         expect(execution.reply.ok).toBe(false);
         expect(execution.reply.error?.code).toBe("CLI_USAGE");
+    });
+    it("requires an eligible interaction when plugins add has no sources", async () => {
+        const structured = await command(["plugins", "add"]);
+        expect(structured.code).toBe(2);
+        expect(structured.reply.error?.code).toBe("INPUT_REQUIRED");
+
+        const confirmed = await command(
+            ["plugins", "add", "--yes"],
+            project,
+            false,
+        );
+        expect(confirmed.code).toBe(2);
+        expect(confirmed.errors).toContain("INPUT_REQUIRED");
+
+        const offline = await command(
+            ["plugins", "add", "--offline"],
+            project,
+            false,
+        );
+        expect(offline.code).toBe(3);
+        expect(offline.errors).toContain("OFFLINE_MISS");
+        expect(pluginPicker.choosePluginSources).not.toHaveBeenCalled();
     });
     it.each([true, false])(
         "never echoes invalid secret-shaped option values (json=%s)",
@@ -551,6 +607,126 @@ describe("CLI usage and package-style project management", () => {
 });
 
 describe("CLI artifact and pending contracts", () => {
+    it("routes an interactive selection through the existing plugin add pipeline", async () => {
+        const selected = {
+            provider: "modrinth" as const,
+            project: "project-id",
+            version: "exact-version-id",
+        };
+        const bytes = artifactJar("Example", "1.0");
+        const fetcher = vi.fn<typeof fetch>(async (url) =>
+            String(url).includes("api.modrinth.com")
+                ? new Response(
+                      JSON.stringify({
+                          id: selected.version,
+                          project_id: selected.project,
+                          version_number: "1.0",
+                          version_type: "release",
+                          date_published: "2026-01-01T00:00:00Z",
+                          loaders: ["paper"],
+                          game_versions: ["1.21.11"],
+                          files: [
+                              {
+                                  filename: "Example.jar",
+                                  primary: true,
+                                  size: bytes.length,
+                                  url: "https://cdn.modrinth.com/example.jar",
+                                  hashes: {
+                                      sha512: createHash("sha512")
+                                          .update(bytes)
+                                          .digest("hex"),
+                                  },
+                              },
+                          ],
+                      }),
+                  )
+                : new Response(bytes),
+        );
+        vi.stubGlobal("fetch", fetcher);
+        pluginPicker.choosePluginSources.mockResolvedValue([selected]);
+
+        const execution = await withInteractiveTerminal(() =>
+            command(["plugins", "add"], project, false),
+        );
+
+        expect(execution.code, execution.errors).toBe(0);
+        expect(execution.output).toContain(
+            "Added plugins and prepared 1 pending installation.",
+        );
+        expect(pluginPicker.choosePluginSources).toHaveBeenCalledWith(
+            expect.anything(),
+            {
+                serverKind: "paper",
+                minecraftVersion: "1.21.11",
+                offline: false,
+                signal: expect.any(AbortSignal),
+            },
+            { dryRun: false, signal: expect.any(AbortSignal) },
+        );
+        expect((await loadProject(project, home)).manifest.plugins).toEqual({
+            Example: "modrinth:project-id@exact-version-id",
+        });
+        const state = await readState(project);
+        expect(state.pending?.lock.plugins.Example?.version).toBe("1.0");
+        expect(state.pending?.lock.plugins.Example?.source).toEqual(selected);
+        expect(state.active).toBeUndefined();
+        expect(
+            fetcher.mock.calls.some(([url]) =>
+                String(url).includes(
+                    "/project/project-id/version/exact-version-id",
+                ),
+            ),
+        ).toBe(true);
+        expect(
+            fetcher.mock.calls.some(([url]) =>
+                String(url).includes("cdn.modrinth.com/example.jar"),
+            ),
+        ).toBe(true);
+    });
+
+    it("keeps interactive dry-run selection online and leaves artifacts and project state unchanged", async () => {
+        const selected = {
+            provider: "modrinth" as const,
+            project: "luckperms",
+            version: "exact-version-id",
+        };
+        pluginPicker.choosePluginSources.mockResolvedValue([selected]);
+        const resolve = vi.spyOn(NodeArtifactStore.prototype, "resolve");
+
+        const execution = await withInteractiveTerminal(() =>
+            command(["plugins", "add", "--dry-run"], project, false),
+        );
+
+        expect(execution.code, execution.errors).toBe(0);
+        expect(execution.output).toContain("Plan: add 1 plugin source");
+        expect(execution.output).toContain(
+            "No declaration, lock, cache, pending installation, or running JAR was changed.",
+        );
+        expect(pluginPicker.choosePluginSources).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            { dryRun: true, signal: expect.any(AbortSignal) },
+        );
+        expect(resolve).not.toHaveBeenCalled();
+        expect((await loadProject(project, home)).manifest.plugins).toEqual({});
+        expect(await readState(project)).toEqual({ schemaVersion: 1 });
+    });
+
+    it("rejects a multi-project interactive plugin selection before opening the picker", async () => {
+        await initializeWorkspaceProjects([
+            { name: "alpha" },
+            { name: "beta" },
+        ]);
+
+        const execution = await withInteractiveTerminal(() =>
+            command(["-r", "plugins", "add", "--dry-run"], root, false),
+        );
+
+        expect(execution.code).toBe(2);
+        expect(execution.errors).toContain("SINGLE_PROJECT");
+        expect(pluginPicker.choosePluginSources).not.toHaveBeenCalled();
+    });
+
     it("preserves locked versions while adding provider display labels to update-check JSON", async () => {
         await result([
             "plugins",
